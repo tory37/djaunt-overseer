@@ -38,9 +38,47 @@
     "viewsWelcome": [
       {
         "view": "overseer.sessions",
-        "contents": "No pinned sessions yet."
+        "contents": "No pinned sessions yet.\n[Browse all sessions](command:overseer.allSessions)"
       }
-    ]
+    ],
+    "commands": [
+      {
+        "command": "overseer.allSessions",
+        "title": "All Sessions\u2026",
+        "category": "Overseer",
+        "icon": "$(search)"
+      },
+      {
+        "command": "overseer.refreshIndex",
+        "title": "Refresh Session Index",
+        "category": "Overseer",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "overseer.allSessions",
+          "when": "view == overseer.sessions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "overseer.refreshIndex",
+          "when": "view == overseer.sessions",
+          "group": "navigation@9"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Overseer",
+      "properties": {
+        "overseer.claudeHome": {
+          "type": "string",
+          "default": "",
+          "description": "Claude config directory. Empty means ~/.claude."
+        }
+      }
+    }
   },
   "scripts": {
     "build": "node esbuild.mjs",
