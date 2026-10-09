@@ -1,7 +1,8 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as readline from "readline";
-import { encodeProjectDir } from "./paths";
+import { createGitRootResolver, GitRootResolver } from "./gitRoots";
+import { encodeProjectDir, isTemporaryPath } from "./paths";
 
 export interface SessionMeta {
   sessionId: string;
@@ -14,6 +15,8 @@ export interface SessionMeta {
   agentName: string | undefined;
   aiTitle: string | undefined;
   prUrl: string | undefined;
+  homeRepo: string | undefined;
+  otherReposTouched: string[];
   lastActivityMs: number;
   sizeBytes: number;
 }
@@ -35,6 +38,8 @@ export interface IndexResult {
 const MAX_PROMPT_LENGTH = 200;
 const DEFAULT_SCAN_CONCURRENCY = 8;
 const TRANSCRIPT_EXTENSION = ".jsonl";
+const FILE_EDIT_TOOL_PATTERN = /"name":"(?:Write|Edit|MultiEdit|NotebookEdit)"/;
+const FILE_EDIT_TOOL_NAMES = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
 export function displayTitle(meta: SessionMeta): string {
   return meta.customTitle ?? meta.agentName ?? meta.aiTitle ?? meta.firstPrompt ?? meta.sessionId;
@@ -47,6 +52,7 @@ export async function indexSessions(
 ): Promise<IndexResult> {
   const transcriptFiles = await listTranscriptFiles(projectsRoot);
   const cacheEntries: IndexCacheEntries = {};
+  const resolveGitRoot = createGitRootResolver();
   let scannedFileCount = 0;
 
   await forEachWithConcurrency(transcriptFiles, scanConcurrency, async (transcriptFile) => {
@@ -62,7 +68,7 @@ export async function indexSessions(
       return;
     }
     scannedFileCount++;
-    const meta = await scanTranscript(transcriptFile, stats);
+    const meta = await scanTranscript(transcriptFile, stats, resolveGitRoot);
     cacheEntries[transcriptFile] = { mtimeMs: stats.mtimeMs, sizeBytes: stats.size, meta };
   });
 
@@ -93,7 +99,11 @@ async function listTranscriptFiles(projectsRoot: string): Promise<string[]> {
 }
 
 // One streaming pass per changed file; only lines carrying a field we need get JSON-parsed.
-export async function scanTranscript(transcriptFile: string, stats: fs.Stats): Promise<SessionMeta | null> {
+export async function scanTranscript(
+  transcriptFile: string,
+  stats: fs.Stats,
+  resolveGitRoot: GitRootResolver,
+): Promise<SessionMeta | null> {
   const projectDirName = path.basename(path.dirname(transcriptFile));
   const sessionId = path.basename(transcriptFile, TRANSCRIPT_EXTENSION);
   let startCwd: string | undefined;
@@ -104,6 +114,7 @@ export async function scanTranscript(transcriptFile: string, stats: fs.Stats): P
   let agentName: string | undefined;
   let aiTitle: string | undefined;
   let prUrl: string | undefined;
+  const touchedDirectories = new Set<string>();
 
   const lineReader = readline.createInterface({
     input: fs.createReadStream(transcriptFile, { encoding: "utf8" }),
@@ -111,13 +122,17 @@ export async function scanTranscript(transcriptFile: string, stats: fs.Stats): P
   });
 
   for await (const line of lineReader) {
-    if (resumeCwd === undefined) {
-      const lineCwd = readStringField(line, "cwd");
-      if (lineCwd !== undefined) {
-        startCwd ??= lineCwd;
-        if (encodeProjectDir(lineCwd) === projectDirName) {
-          resumeCwd = lineCwd;
-        }
+    const lineCwd = readStringField(line, "cwd");
+    if (lineCwd !== undefined) {
+      touchedDirectories.add(lineCwd);
+      startCwd ??= lineCwd;
+      if (resumeCwd === undefined && encodeProjectDir(lineCwd) === projectDirName) {
+        resumeCwd = lineCwd;
+      }
+    }
+    if (FILE_EDIT_TOOL_PATTERN.test(line)) {
+      for (const editedFile of readEditedFiles(line)) {
+        touchedDirectories.add(path.dirname(editedFile));
       }
     }
     gitBranch = readStringField(line, "gitBranch") ?? gitBranch;
@@ -138,6 +153,15 @@ export async function scanTranscript(transcriptFile: string, stats: fs.Stats): P
   if (startCwd === undefined) {
     return null;
   }
+  const sessionCwd = resumeCwd ?? startCwd;
+  const homeRepo = await resolveGitRoot(sessionCwd);
+  // Scratch clones in temp dirs are throwaway reference copies, not repos the session worked in.
+  const keepsTemporaryRepos = isTemporaryPath(sessionCwd);
+  const touchedRepos = await Promise.all([...touchedDirectories].map(resolveGitRoot));
+  const otherReposTouched = [...new Set(touchedRepos)]
+    .filter((repo): repo is string => repo !== undefined && repo !== homeRepo)
+    .filter((repo) => keepsTemporaryRepos || !isTemporaryPath(repo))
+    .sort();
   return {
     sessionId,
     transcriptFile,
@@ -149,6 +173,8 @@ export async function scanTranscript(transcriptFile: string, stats: fs.Stats): P
     agentName,
     aiTitle,
     prUrl,
+    homeRepo,
+    otherReposTouched,
     lastActivityMs: stats.mtimeMs,
     sizeBytes: stats.size,
   };
@@ -190,6 +216,24 @@ function readStringField(line: string, fieldName: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function readEditedFiles(line: string): string[] {
+  const content = parseRecord(line)?.message?.content;
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  const editedFiles: string[] = [];
+  for (const block of content) {
+    if (block?.type !== "tool_use" || !FILE_EDIT_TOOL_NAMES.has(block.name)) {
+      continue;
+    }
+    const editedFile: unknown = block.input?.file_path ?? block.input?.notebook_path;
+    if (typeof editedFile === "string" && path.isAbsolute(editedFile)) {
+      editedFiles.push(editedFile);
+    }
+  }
+  return editedFiles;
 }
 
 function readFirstPrompt(line: string): string | undefined {

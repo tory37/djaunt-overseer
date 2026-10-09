@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { IndexCacheEntries } from "./indexer";
 
-const CACHE_SCHEMA_VERSION = 1;
+const CACHE_SCHEMA_VERSION = 2;
 const CACHE_FILE_NAME = "session-index.json";
 
 interface IndexCacheFile {

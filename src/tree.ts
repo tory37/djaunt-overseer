@@ -7,6 +7,7 @@ import { LiveSession } from "./liveParse";
 import { LiveSessionMonitor } from "./liveSessions";
 import { tildePath } from "./paths";
 import { GroupRef, Registry } from "./registry";
+import { otherReposLabel } from "./repoFilter";
 import { SessionIndex } from "./sessionIndex";
 import { findSessionTerminal } from "./terminals";
 
@@ -147,7 +148,9 @@ function sessionDescription(pinned: PinnedSession): string {
     return pinned.pending ? `${path.basename(pinned.pending.cwd)} · new` : "not found in index";
   }
   const repoName = path.basename(meta.resumeCwd ?? meta.startCwd);
-  return [repoName, meta.gitBranch].filter((part) => part !== undefined && part !== "").join(" · ");
+  return [repoName, meta.gitBranch, otherReposLabel(meta)]
+    .filter((part) => part !== undefined && part !== "")
+    .join(" · ");
 }
 
 function sessionTooltip(pinned: PinnedSession, stateLabel: string): vscode.MarkdownString {
@@ -162,6 +165,10 @@ function sessionTooltip(pinned: PinnedSession, stateLabel: string): vscode.Markd
   tooltip.appendMarkdown(`\`${tildePath(meta.resumeCwd ?? meta.startCwd)}\``);
   if (meta.gitBranch) {
     tooltip.appendMarkdown(` on \`${meta.gitBranch}\``);
+  }
+  if (meta.otherReposTouched.length > 0) {
+    const otherRepoList = meta.otherReposTouched.map((repo) => `\`${tildePath(repo)}\``).join(", ");
+    tooltip.appendMarkdown(`\n\nAlso touched ${otherRepoList}`);
   }
   if (meta.prUrl) {
     tooltip.appendMarkdown(`\n\n[Pull request](${meta.prUrl})`);

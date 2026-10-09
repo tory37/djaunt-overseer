@@ -18,3 +18,9 @@ export function tildePath(absolutePath: string): string {
   const homeDir = os.homedir();
   return absolutePath.startsWith(homeDir) ? "~" + absolutePath.slice(homeDir.length) : absolutePath;
 }
+
+const TEMPORARY_ROOTS = ["/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/"];
+
+export function isTemporaryPath(absolutePath: string): boolean {
+  return TEMPORARY_ROOTS.some((temporaryRoot) => absolutePath.startsWith(temporaryRoot));
+}
