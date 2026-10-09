@@ -114,12 +114,12 @@
       "view/item/context": [
         {
           "command": "overseer.resumeSession",
-          "when": "view == overseer.sessions && viewItem == session.suspended",
+          "when": "view == overseer.sessions && viewItem =~ /^session\\.(suspended|elsewhere)$/",
           "group": "inline@1"
         },
         {
           "command": "overseer.resumeSession",
-          "when": "view == overseer.sessions && viewItem == session.suspended",
+          "when": "view == overseer.sessions && viewItem =~ /^session\\.(suspended|elsewhere)$/",
           "group": "1_session@1"
         },
         {

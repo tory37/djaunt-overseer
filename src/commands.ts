@@ -1,13 +1,17 @@
 import { randomUUID } from "crypto";
 import * as vscode from "vscode";
+import { autoGroupRefFor } from "./grouping";
+import { displayTitle, SessionMeta } from "./indexer";
+import { LiveSessionMonitor } from "./liveSessions";
 import { pickSession } from "./quickPick";
 import { Registry, userGroupRef } from "./registry";
 import { SessionIndex } from "./sessionIndex";
-import { findSessionTerminal, resumeSession } from "./terminals";
+import { attachBackgroundSession, findSessionTerminal, resumeSession } from "./terminals";
 import { TreeNode } from "./tree";
 
 export interface CommandDependencies {
   sessionIndex: SessionIndex;
+  liveMonitor: LiveSessionMonitor;
   registry: Registry;
   treeView: vscode.TreeView<TreeNode>;
   log: vscode.OutputChannel;
@@ -16,30 +20,61 @@ export interface CommandDependencies {
 type SessionNode = Extract<TreeNode, { kind: "session" }>;
 type GroupNode = Extract<TreeNode, { kind: "group" }>;
 
+const FORK_CHOICE = "Fork a Copy Here";
+const ATTACH_CHOICE = "Attach Here";
+
 export function registerCommands(dependencies: CommandDependencies): vscode.Disposable[] {
-  const { sessionIndex, registry, treeView, log } = dependencies;
+  const { sessionIndex, liveMonitor, registry, treeView, log } = dependencies;
 
   const selectedSessionNodes = (clickedNode?: TreeNode): SessionNode[] => {
     const candidateNodes = clickedNode && !treeView.selection.includes(clickedNode) ? [clickedNode] : treeView.selection;
     return candidateNodes.filter((node): node is SessionNode => node.kind === "session");
   };
 
-  const resumeSessionById = async (sessionId: string): Promise<void> => {
-    const openTerminal = findSessionTerminal(sessionId);
+  const findSessionMeta = async (sessionId: string): Promise<SessionMeta | undefined> => {
+    const indexedMeta = sessionIndex.currentSessions.find((session) => session.sessionId === sessionId);
+    if (indexedMeta) {
+      return indexedMeta;
+    }
+    const refreshedSessions = await sessionIndex.refresh();
+    return refreshedSessions.find((session) => session.sessionId === sessionId);
+  };
+
+  // A session already running outside this window must not be resumed again: two processes would append to one transcript.
+  const openSession = async (meta: SessionMeta): Promise<void> => {
+    const openTerminal = findSessionTerminal(meta.sessionId);
     if (openTerminal) {
       openTerminal.show();
       return;
     }
-    let meta = sessionIndex.currentSessions.find((session) => session.sessionId === sessionId);
-    if (meta === undefined) {
-      const refreshedSessions = await sessionIndex.refresh();
-      meta = refreshedSessions.find((session) => session.sessionId === sessionId);
-    }
-    if (meta === undefined) {
-      void vscode.window.showErrorMessage(`Overseer: no transcript found for session ${sessionId}.`);
+    const liveSession = (await liveMonitor.refresh()).get(meta.sessionId);
+    if (liveSession === undefined) {
+      await registry.pin(meta.sessionId);
+      resumeSession(meta, log);
       return;
     }
-    resumeSession(meta, log);
+
+    const isBackgroundAgent = liveSession.kind === "background" && liveSession.agentId !== undefined;
+    const runningWhere = isBackgroundAgent ? "as a background agent" : `in another terminal (pid ${liveSession.pid ?? "unknown"})`;
+    const choices = isBackgroundAgent ? [ATTACH_CHOICE, FORK_CHOICE] : [FORK_CHOICE];
+    const choice = await vscode.window.showWarningMessage(
+      `"${displayTitle(meta)}" is already running ${runningWhere}.`,
+      {
+        modal: true,
+        detail: "Resuming it here would run two copies of the same conversation. Switch to the other one, or fork a copy with its own session ID.",
+      },
+      ...choices,
+    );
+    if (choice === ATTACH_CHOICE && liveSession.agentId !== undefined) {
+      await registry.pin(meta.sessionId);
+      attachBackgroundSession(meta, liveSession.agentId, log);
+    } else if (choice === FORK_CHOICE) {
+      const forkSessionId = randomUUID();
+      const originalGroupRef = registry.assignments()[meta.sessionId] ?? autoGroupRefFor(meta);
+      await registry.pin(forkSessionId);
+      await registry.assign([forkSessionId], originalGroupRef);
+      resumeSession(meta, log, forkSessionId);
+    }
   };
 
   const renameGroup = async (groupNode: GroupNode): Promise<void> => {
@@ -62,19 +97,26 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
 
   return [
     vscode.commands.registerCommand("overseer.allSessions", async () => {
-      const pickedSession = await pickSession(sessionIndex, registry);
+      const pickedSession = await pickSession(sessionIndex, liveMonitor, registry);
       if (pickedSession) {
-        await registry.pin(pickedSession.sessionId);
-        resumeSession(pickedSession, log);
+        await openSession(pickedSession);
       }
     }),
-    vscode.commands.registerCommand("overseer.refreshIndex", () => sessionIndex.refresh()),
+    vscode.commands.registerCommand("overseer.refreshIndex", async () => {
+      await Promise.all([sessionIndex.refresh(), liveMonitor.refresh()]);
+    }),
     vscode.commands.registerCommand("overseer.focusSession", (sessionId: string) => {
       findSessionTerminal(sessionId)?.show();
     }),
     vscode.commands.registerCommand("overseer.resumeSession", async (clickedNode?: TreeNode) => {
       for (const sessionNode of selectedSessionNodes(clickedNode)) {
-        await resumeSessionById(sessionNode.pinned.sessionId);
+        const sessionId = sessionNode.pinned.sessionId;
+        const meta = sessionNode.pinned.meta ?? (await findSessionMeta(sessionId));
+        if (meta === undefined) {
+          void vscode.window.showErrorMessage(`Overseer: no transcript found for session ${sessionId}.`);
+          continue;
+        }
+        await openSession(meta);
       }
     }),
     vscode.commands.registerCommand("overseer.unpinSession", async (clickedNode?: TreeNode) => {

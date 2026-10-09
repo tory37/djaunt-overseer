@@ -15,7 +15,11 @@ export function findSessionTerminal(sessionId: string): vscode.Terminal | undefi
   return vscode.window.terminals.find((terminal) => sessionIdOfTerminal(terminal) === sessionId);
 }
 
-export function resumeSession(meta: SessionMeta, log: vscode.OutputChannel): vscode.Terminal | undefined {
+export function resumeSession(
+  meta: SessionMeta,
+  log: vscode.OutputChannel,
+  forkSessionId?: string,
+): vscode.Terminal | undefined {
   if (!SESSION_ID_PATTERN.test(meta.sessionId)) {
     void vscode.window.showErrorMessage(`Overseer: "${meta.sessionId}" is not a session ID Claude can resume.`);
     return undefined;
@@ -33,6 +37,16 @@ export function resumeSession(meta: SessionMeta, log: vscode.OutputChannel): vsc
     return undefined;
   }
 
+  if (forkSessionId !== undefined) {
+    log.appendLine(`Forking ${meta.sessionId} as ${forkSessionId} in ${meta.resumeCwd}`);
+    return launchClaudeTerminal(
+      `${displayTitle(meta)} (fork)`,
+      meta.resumeCwd,
+      forkSessionId,
+      `claude --resume ${meta.sessionId} --fork-session --session-id ${forkSessionId}`,
+    );
+  }
+
   const openTerminal = findSessionTerminal(meta.sessionId);
   if (openTerminal) {
     openTerminal.show();
@@ -41,6 +55,20 @@ export function resumeSession(meta: SessionMeta, log: vscode.OutputChannel): vsc
 
   log.appendLine(`Resuming ${meta.sessionId} in ${meta.resumeCwd}`);
   return launchClaudeTerminal(displayTitle(meta), meta.resumeCwd, meta.sessionId, `claude --resume ${meta.sessionId}`);
+}
+
+export function attachBackgroundSession(
+  meta: SessionMeta,
+  agentId: string,
+  log: vscode.OutputChannel,
+): vscode.Terminal | undefined {
+  if (!/^[0-9a-zA-Z-]+$/.test(agentId)) {
+    void vscode.window.showErrorMessage(`Overseer: "${agentId}" is not an agent ID Claude can attach to.`);
+    return undefined;
+  }
+  log.appendLine(`Attaching background agent ${agentId} (${meta.sessionId})`);
+  const attachCwd = meta.resumeCwd !== undefined && fs.existsSync(meta.resumeCwd) ? meta.resumeCwd : meta.startCwd;
+  return launchClaudeTerminal(displayTitle(meta), attachCwd, meta.sessionId, `claude attach ${agentId}`);
 }
 
 // Claude runs as the shell's own command, so /exit ends the process and VS Code closes the tab.

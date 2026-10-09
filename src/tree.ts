@@ -3,6 +3,8 @@ import * as vscode from "vscode";
 import { formatAge } from "./format";
 import { buildGroups, PinnedSession, SessionGroup } from "./grouping";
 import { displayTitle, SessionMeta } from "./indexer";
+import { LiveSession } from "./liveParse";
+import { LiveSessionMonitor } from "./liveSessions";
 import { tildePath } from "./paths";
 import { GroupRef, Registry } from "./registry";
 import { SessionIndex } from "./sessionIndex";
@@ -25,6 +27,7 @@ export class SessionTreeProvider
 
   constructor(
     private readonly sessionIndex: SessionIndex,
+    private readonly liveMonitor: LiveSessionMonitor,
     private readonly registry: Registry,
   ) {}
 
@@ -47,7 +50,9 @@ export class SessionTreeProvider
   }
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
-    return node.kind === "group" ? groupTreeItem(node.group) : sessionTreeItem(node.pinned);
+    return node.kind === "group"
+      ? groupTreeItem(node.group)
+      : sessionTreeItem(node.pinned, this.liveMonitor.get(node.pinned.sessionId));
   }
 
   handleDrag(sourceNodes: readonly TreeNode[], dataTransfer: vscode.DataTransfer): void {
@@ -94,18 +99,45 @@ function groupTreeItem(group: SessionGroup): vscode.TreeItem {
   return treeItem;
 }
 
-function sessionTreeItem(pinned: PinnedSession): vscode.TreeItem {
-  const isRunning = findSessionTerminal(pinned.sessionId) !== undefined;
+type SessionState = "working" | "running" | "elsewhere" | "suspended";
+
+function sessionState(sessionId: string, liveSession: LiveSession | undefined): SessionState {
+  const hasTerminalHere = findSessionTerminal(sessionId) !== undefined;
+  if (hasTerminalHere) {
+    return liveSession?.status === "busy" ? "working" : "running";
+  }
+  return liveSession === undefined ? "suspended" : "elsewhere";
+}
+
+const SESSION_STATE_ICONS: Record<SessionState, vscode.ThemeIcon> = {
+  working: new vscode.ThemeIcon("loading~spin", new vscode.ThemeColor("terminal.ansiGreen")),
+  running: new vscode.ThemeIcon("terminal", new vscode.ThemeColor("terminal.ansiGreen")),
+  elsewhere: new vscode.ThemeIcon("window", new vscode.ThemeColor("terminal.ansiYellow")),
+  suspended: new vscode.ThemeIcon("debug-pause"),
+};
+
+const SESSION_STATE_LABELS: Record<SessionState, string> = {
+  working: "Working in this window",
+  running: "Running in this window",
+  elsewhere: "Running outside this window",
+  suspended: "Suspended",
+};
+
+function sessionTreeItem(pinned: PinnedSession, liveSession: LiveSession | undefined): vscode.TreeItem {
+  const state = sessionState(pinned.sessionId, liveSession);
   const label = pinned.meta ? displayTitle(pinned.meta) : `Session ${pinned.sessionId.slice(0, SHORT_ID_LENGTH)}`;
   const treeItem = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
   treeItem.id = `session:${pinned.sessionId}`;
   treeItem.description = sessionDescription(pinned.meta);
-  treeItem.tooltip = sessionTooltip(pinned, isRunning);
-  treeItem.iconPath = isRunning
-    ? new vscode.ThemeIcon("terminal", new vscode.ThemeColor("terminal.ansiGreen"))
-    : new vscode.ThemeIcon("debug-pause");
-  treeItem.contextValue = isRunning ? "session.running" : "session.suspended";
-  if (isRunning) {
+  treeItem.tooltip = sessionTooltip(pinned, SESSION_STATE_LABELS[state]);
+  treeItem.iconPath = SESSION_STATE_ICONS[state];
+  treeItem.contextValue = `session.${state}`;
+  const copyCount = liveSession?.processCount ?? 0;
+  if (copyCount > 1) {
+    treeItem.iconPath = new vscode.ThemeIcon("warning", new vscode.ThemeColor("list.warningForeground"));
+    treeItem.description = `${copyCount} copies running · ${treeItem.description}`;
+  }
+  if (state === "working" || state === "running") {
     treeItem.command = { command: "overseer.focusSession", title: "Focus", arguments: [pinned.sessionId] };
   }
   return treeItem;
@@ -119,7 +151,7 @@ function sessionDescription(meta: SessionMeta | undefined): string {
   return [repoName, meta.gitBranch].filter((part) => part !== undefined && part !== "").join(" · ");
 }
 
-function sessionTooltip(pinned: PinnedSession, isRunning: boolean): vscode.MarkdownString {
+function sessionTooltip(pinned: PinnedSession, stateLabel: string): vscode.MarkdownString {
   const tooltip = new vscode.MarkdownString();
   const meta = pinned.meta;
   if (meta === undefined) {
@@ -127,7 +159,7 @@ function sessionTooltip(pinned: PinnedSession, isRunning: boolean): vscode.Markd
     return tooltip;
   }
   tooltip.appendMarkdown(`**${escapeMarkdown(displayTitle(meta))}**\n\n`);
-  tooltip.appendMarkdown(`${isRunning ? "Running" : "Suspended"} · last active ${formatAge(meta.lastActivityMs)}\n\n`);
+  tooltip.appendMarkdown(`${stateLabel} · last active ${formatAge(meta.lastActivityMs)}\n\n`);
   tooltip.appendMarkdown(`\`${tildePath(meta.resumeCwd ?? meta.startCwd)}\``);
   if (meta.gitBranch) {
     tooltip.appendMarkdown(` on \`${meta.gitBranch}\``);

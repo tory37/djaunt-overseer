@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { registerCommands } from "./commands";
+import { LiveSessionMonitor } from "./liveSessions";
 import { defaultClaudeHome } from "./paths";
 import { Registry } from "./registry";
 import { SessionIndex } from "./sessionIndex";
@@ -12,8 +13,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const configuredClaudeHome = vscode.workspace.getConfiguration("overseer").get<string>("claudeHome");
   const claudeHome = configuredClaudeHome || defaultClaudeHome();
   const sessionIndex = new SessionIndex(claudeHome, context.globalStorageUri.fsPath, log);
+  const liveMonitor = new LiveSessionMonitor(claudeHome, log);
   const registry = new Registry(context.globalState);
-  const treeProvider = new SessionTreeProvider(sessionIndex, registry);
+  const treeProvider = new SessionTreeProvider(sessionIndex, liveMonitor, registry);
   const treeView = vscode.window.createTreeView("overseer.sessions", {
     treeDataProvider: treeProvider,
     dragAndDropController: treeProvider,
@@ -28,26 +30,31 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     log,
     sessionIndex,
+    liveMonitor,
     treeProvider,
     treeView,
     { dispose: () => clearInterval(indexRefreshTimer) },
     sessionIndex.onDidChange(refreshTree),
+    liveMonitor.onDidChange(refreshTree),
     vscode.window.onDidOpenTerminal(refreshTree),
     vscode.window.onDidCloseTerminal(() => {
       refreshTree();
       void sessionIndex.refresh();
+      void liveMonitor.refresh();
     }),
     // Other windows write the same globalState; re-read it when this window comes back into focus.
     vscode.window.onDidChangeWindowState((windowState) => {
       if (windowState.focused) {
         registry.notifyExternalChange();
         void sessionIndex.refresh();
+        void liveMonitor.refresh();
       }
     }),
-    ...registerCommands({ sessionIndex, registry, treeView, log }),
+    ...registerCommands({ sessionIndex, liveMonitor, registry, treeView, log }),
   );
 
   void sessionIndex.refresh();
+  void liveMonitor.refresh();
 }
 
 export function deactivate(): void {}
