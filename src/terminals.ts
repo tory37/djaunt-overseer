@@ -6,6 +6,15 @@ const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 const FALLBACK_SHELL = "/bin/zsh";
 export const SESSION_ID_ENV_VAR = "OVERSEER_SESSION_ID";
 
+export function sessionIdOfTerminal(terminal: vscode.Terminal): string | undefined {
+  const creationOptions = terminal.creationOptions as vscode.TerminalOptions;
+  return creationOptions.env?.[SESSION_ID_ENV_VAR] ?? undefined;
+}
+
+export function findSessionTerminal(sessionId: string): vscode.Terminal | undefined {
+  return vscode.window.terminals.find((terminal) => sessionIdOfTerminal(terminal) === sessionId);
+}
+
 export function resumeSession(meta: SessionMeta, log: vscode.OutputChannel): vscode.Terminal | undefined {
   if (!SESSION_ID_PATTERN.test(meta.sessionId)) {
     void vscode.window.showErrorMessage(`Overseer: "${meta.sessionId}" is not a session ID Claude can resume.`);
@@ -22,6 +31,12 @@ export function resumeSession(meta: SessionMeta, log: vscode.OutputChannel): vsc
       `Overseer: ${meta.resumeCwd} no longer exists (a removed worktree?), so Claude can't resume this session there.`,
     );
     return undefined;
+  }
+
+  const openTerminal = findSessionTerminal(meta.sessionId);
+  if (openTerminal) {
+    openTerminal.show();
+    return openTerminal;
   }
 
   log.appendLine(`Resuming ${meta.sessionId} in ${meta.resumeCwd}`);

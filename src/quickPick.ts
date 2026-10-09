@@ -3,27 +3,48 @@ import * as vscode from "vscode";
 import { formatAge } from "./format";
 import { displayTitle, SessionMeta } from "./indexer";
 import { tildePath } from "./paths";
+import { Registry } from "./registry";
 import { SessionIndex } from "./sessionIndex";
 
 interface SessionPickItem extends vscode.QuickPickItem {
   session: SessionMeta;
 }
 
-export async function pickSession(sessionIndex: SessionIndex): Promise<SessionMeta | undefined> {
+const PIN_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon("pin"), tooltip: "Pin to sidebar" };
+const UNPIN_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon("pinned"), tooltip: "Unpin from sidebar" };
+
+export async function pickSession(sessionIndex: SessionIndex, registry: Registry): Promise<SessionMeta | undefined> {
   const quickPick = vscode.window.createQuickPick<SessionPickItem>();
   quickPick.title = "All Claude sessions";
-  quickPick.placeholder = "Search by title, repo, branch, or first prompt";
+  quickPick.placeholder = "Search by title, repo, branch, or first prompt. Enter resumes and pins.";
   quickPick.matchOnDescription = true;
   quickPick.matchOnDetail = true;
 
+  let shownSessions = sessionIndex.currentSessions;
   const showSessions = (sessions: SessionMeta[]): void => {
-    quickPick.items = sessions.map(toPickItem);
+    shownSessions = sessions;
+    const activeSessionId = quickPick.activeItems[0]?.session.sessionId;
+    quickPick.items = sessions.map((session) => toPickItem(session, registry.isPinned(session.sessionId)));
+    const activeItem = quickPick.items.find((item) => item.session.sessionId === activeSessionId);
+    if (activeItem) {
+      quickPick.activeItems = [activeItem];
+    }
   };
-  showSessions(sessionIndex.currentSessions);
+  showSessions(shownSessions);
   quickPick.busy = true;
   void sessionIndex.refresh().then((sessions) => {
     showSessions(sessions);
     quickPick.busy = false;
+  });
+
+  quickPick.onDidTriggerItemButton(async ({ item }) => {
+    const sessionId = item.session.sessionId;
+    if (registry.isPinned(sessionId)) {
+      await registry.unpin(sessionId);
+    } else {
+      await registry.pin(sessionId);
+    }
+    showSessions(shownSessions);
   });
 
   return new Promise<SessionMeta | undefined>((resolve) => {
@@ -39,7 +60,7 @@ export async function pickSession(sessionIndex: SessionIndex): Promise<SessionMe
   });
 }
 
-function toPickItem(session: SessionMeta): SessionPickItem {
+function toPickItem(session: SessionMeta, isPinned: boolean): SessionPickItem {
   const sessionCwd = session.resumeCwd ?? session.startCwd;
   const repoName = path.basename(sessionCwd);
   const descriptionParts = [repoName, session.gitBranch].filter((part) => part !== undefined && part !== "");
@@ -49,9 +70,10 @@ function toPickItem(session: SessionMeta): SessionPickItem {
     detailParts.push(session.firstPrompt);
   }
   return {
-    label: title,
+    label: isPinned ? `$(pinned) ${title}` : title,
     description: descriptionParts.join("  ·  "),
     detail: detailParts.join("  ·  "),
+    buttons: [isPinned ? UNPIN_BUTTON : PIN_BUTTON],
     session,
   };
 }

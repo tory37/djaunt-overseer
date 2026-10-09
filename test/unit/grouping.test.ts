@@ -1,0 +1,97 @@
+import { describe, expect, it } from "vitest";
+import { buildGroups, GroupingInput } from "../../src/grouping";
+import { SessionMeta } from "../../src/indexer";
+import { autoGroupRef, UNGROUPED_REF, userGroupRef } from "../../src/registry";
+
+function sessionMeta(sessionId: string, overrides: Partial<SessionMeta>): SessionMeta {
+  return {
+    sessionId,
+    transcriptFile: `/tmp/${sessionId}.jsonl`,
+    startCwd: "/repo",
+    resumeCwd: "/repo",
+    gitBranch: undefined,
+    firstPrompt: undefined,
+    customTitle: undefined,
+    agentName: undefined,
+    aiTitle: undefined,
+    prUrl: undefined,
+    lastActivityMs: 0,
+    sizeBytes: 0,
+    ...overrides,
+  };
+}
+
+function groupingInput(sessions: SessionMeta[], overrides: Partial<GroupingInput> = {}): GroupingInput {
+  return {
+    pinnedSessionIds: sessions.map((session) => session.sessionId),
+    sessionsById: new Map(sessions.map((session) => [session.sessionId, session])),
+    userGroups: [],
+    assignments: {},
+    ...overrides,
+  };
+}
+
+function summarize(input: GroupingInput): Array<[string, string[]]> {
+  return buildGroups(input).map((group) => [group.label, group.sessions.map((pinned) => pinned.sessionId)]);
+}
+
+describe("buildGroups", () => {
+  it("groups by ticket key and puts keyless sessions in Ungrouped last", () => {
+    const sessions = [
+      sessionMeta("a", { customTitle: "PROJ-1 triage", lastActivityMs: 10 }),
+      sessionMeta("b", { gitBranch: "fix/proj-1-followup", lastActivityMs: 30 }),
+      sessionMeta("c", { customTitle: "random chat", lastActivityMs: 50 }),
+      sessionMeta("d", { customTitle: "CR-9 fix", lastActivityMs: 20 }),
+    ];
+
+    expect(summarize(groupingInput(sessions))).toEqual([
+      ["PROJ-1", ["b", "a"]],
+      ["CR-9", ["d"]],
+      ["Ungrouped", ["c"]],
+    ]);
+  });
+
+  it("puts user groups first, including empty ones", () => {
+    const sessions = [sessionMeta("a", { customTitle: "CR-9 fix" })];
+
+    const input = groupingInput(sessions, {
+      userGroups: [
+        { id: "g1", name: "Waiting on review" },
+        { id: "g2", name: "Empty" },
+      ],
+      assignments: { a: userGroupRef("g1") },
+    });
+
+    expect(summarize(input)).toEqual([
+      ["Waiting on review", ["a"]],
+      ["Empty", []],
+    ]);
+  });
+
+  it("lets an explicit assignment override the ticket key", () => {
+    const sessions = [sessionMeta("a", { customTitle: "CR-9 fix" }), sessionMeta("b", { customTitle: "chat" })];
+
+    const input = groupingInput(sessions, {
+      assignments: { a: UNGROUPED_REF, b: autoGroupRef("CR-9") },
+    });
+
+    expect(summarize(input)).toEqual([
+      ["CR-9", ["b"]],
+      ["Ungrouped", ["a"]],
+    ]);
+  });
+
+  it("falls back to the ticket key when the assigned user group was deleted", () => {
+    const sessions = [sessionMeta("a", { customTitle: "CR-9 fix" })];
+
+    const input = groupingInput(sessions, { assignments: { a: userGroupRef("gone") } });
+
+    expect(summarize(input)).toEqual([["CR-9", ["a"]]]);
+  });
+
+  it("keeps pinned sessions missing from the index under Ungrouped", () => {
+    const input = groupingInput([], { pinnedSessionIds: ["missing"] });
+
+    expect(summarize(input)).toEqual([["Ungrouped", ["missing"]]]);
+  });
+});

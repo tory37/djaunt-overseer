@@ -53,6 +53,44 @@
         "title": "Refresh Session Index",
         "category": "Overseer",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "overseer.newGroup",
+        "title": "New Group\u2026",
+        "category": "Overseer",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "overseer.resumeSession",
+        "title": "Resume",
+        "category": "Overseer",
+        "icon": "$(play)"
+      },
+      {
+        "command": "overseer.focusSession",
+        "title": "Focus Session",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.unpinSession",
+        "title": "Remove from Sidebar",
+        "category": "Overseer",
+        "icon": "$(close)"
+      },
+      {
+        "command": "overseer.renameGroup",
+        "title": "Rename Group\u2026",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.deleteGroup",
+        "title": "Delete Group",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.rename",
+        "title": "Rename",
+        "category": "Overseer"
       }
     ],
     "menus": {
@@ -63,9 +101,67 @@
           "group": "navigation@1"
         },
         {
+          "command": "overseer.newGroup",
+          "when": "view == overseer.sessions",
+          "group": "navigation@2"
+        },
+        {
           "command": "overseer.refreshIndex",
           "when": "view == overseer.sessions",
           "group": "navigation@9"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "overseer.resumeSession",
+          "when": "view == overseer.sessions && viewItem == session.suspended",
+          "group": "inline@1"
+        },
+        {
+          "command": "overseer.resumeSession",
+          "when": "view == overseer.sessions && viewItem == session.suspended",
+          "group": "1_session@1"
+        },
+        {
+          "command": "overseer.unpinSession",
+          "when": "view == overseer.sessions && viewItem =~ /^session\\./",
+          "group": "9_remove@1"
+        },
+        {
+          "command": "overseer.renameGroup",
+          "when": "view == overseer.sessions && viewItem =~ /^group\\.(user|auto)$/",
+          "group": "1_group@1"
+        },
+        {
+          "command": "overseer.deleteGroup",
+          "when": "view == overseer.sessions && viewItem == group.user",
+          "group": "9_remove@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "overseer.resumeSession",
+          "when": "false"
+        },
+        {
+          "command": "overseer.focusSession",
+          "when": "false"
+        },
+        {
+          "command": "overseer.unpinSession",
+          "when": "false"
+        },
+        {
+          "command": "overseer.renameGroup",
+          "when": "false"
+        },
+        {
+          "command": "overseer.deleteGroup",
+          "when": "false"
+        },
+        {
+          "command": "overseer.rename",
+          "when": "false"
         }
       ]
     },
@@ -78,7 +174,14 @@
           "description": "Claude config directory. Empty means ~/.claude."
         }
       }
-    }
+    },
+    "keybindings": [
+      {
+        "command": "overseer.rename",
+        "key": "f2",
+        "when": "focusedView == overseer.sessions"
+      }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs",

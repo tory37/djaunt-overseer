@@ -1,25 +1,50 @@
 import * as vscode from "vscode";
+import { registerCommands } from "./commands";
 import { defaultClaudeHome } from "./paths";
-import { pickSession } from "./quickPick";
+import { Registry } from "./registry";
 import { SessionIndex } from "./sessionIndex";
-import { resumeSession } from "./terminals";
+import { SessionTreeProvider } from "./tree";
+
+const INDEX_REFRESH_INTERVAL_MS = 60_000;
 
 export function activate(context: vscode.ExtensionContext): void {
   const log = vscode.window.createOutputChannel("Overseer");
   const configuredClaudeHome = vscode.workspace.getConfiguration("overseer").get<string>("claudeHome");
   const claudeHome = configuredClaudeHome || defaultClaudeHome();
   const sessionIndex = new SessionIndex(claudeHome, context.globalStorageUri.fsPath, log);
+  const registry = new Registry(context.globalState);
+  const treeProvider = new SessionTreeProvider(sessionIndex, registry);
+  const treeView = vscode.window.createTreeView("overseer.sessions", {
+    treeDataProvider: treeProvider,
+    dragAndDropController: treeProvider,
+    canSelectMany: true,
+    showCollapseAll: true,
+  });
+
+  const refreshTree = (): void => treeProvider.refresh();
+  registry.onDidChange(refreshTree);
+  const indexRefreshTimer = setInterval(() => void sessionIndex.refresh(), INDEX_REFRESH_INTERVAL_MS);
 
   context.subscriptions.push(
     log,
     sessionIndex,
-    vscode.commands.registerCommand("overseer.allSessions", async () => {
-      const pickedSession = await pickSession(sessionIndex);
-      if (pickedSession) {
-        resumeSession(pickedSession, log);
+    treeProvider,
+    treeView,
+    { dispose: () => clearInterval(indexRefreshTimer) },
+    sessionIndex.onDidChange(refreshTree),
+    vscode.window.onDidOpenTerminal(refreshTree),
+    vscode.window.onDidCloseTerminal(() => {
+      refreshTree();
+      void sessionIndex.refresh();
+    }),
+    // Other windows write the same globalState; re-read it when this window comes back into focus.
+    vscode.window.onDidChangeWindowState((windowState) => {
+      if (windowState.focused) {
+        registry.notifyExternalChange();
+        void sessionIndex.refresh();
       }
     }),
-    vscode.commands.registerCommand("overseer.refreshIndex", () => sessionIndex.refresh()),
+    ...registerCommands({ sessionIndex, registry, treeView, log }),
   );
 
   void sessionIndex.refresh();
