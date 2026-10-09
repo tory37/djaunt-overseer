@@ -4,6 +4,7 @@ import { LiveSessionMonitor } from "./liveSessions";
 import { defaultClaudeHome } from "./paths";
 import { Registry } from "./registry";
 import { SessionIndex } from "./sessionIndex";
+import { adoptTerminalsByPid } from "./terminals";
 import { SessionTreeProvider } from "./tree";
 
 const INDEX_REFRESH_INTERVAL_MS = 60_000;
@@ -24,6 +25,11 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   const refreshTree = (): void => treeProvider.refresh();
+  const adoptRevivedTerminals = async (): Promise<void> => {
+    if (await adoptTerminalsByPid(await liveMonitor.refresh())) {
+      refreshTree();
+    }
+  };
   registry.onDidChange(refreshTree);
   const indexRefreshTimer = setInterval(() => void sessionIndex.refresh(), INDEX_REFRESH_INTERVAL_MS);
 
@@ -35,7 +41,10 @@ export function activate(context: vscode.ExtensionContext): void {
     treeView,
     { dispose: () => clearInterval(indexRefreshTimer) },
     sessionIndex.onDidChange(refreshTree),
-    liveMonitor.onDidChange(refreshTree),
+    liveMonitor.onDidChange(() => {
+      refreshTree();
+      void adoptRevivedTerminals();
+    }),
     vscode.window.onDidOpenTerminal(refreshTree),
     vscode.window.onDidCloseTerminal(() => {
       refreshTree();
@@ -54,7 +63,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   void sessionIndex.refresh();
-  void liveMonitor.refresh();
+  void adoptRevivedTerminals();
 }
 
 export function deactivate(): void {}

@@ -22,6 +22,13 @@ export function autoGroupRef(ticketKey: string): GroupRef {
 const PINNED_KEY = "overseer.pinnedSessionIds";
 const GROUPS_KEY = "overseer.userGroups";
 const ASSIGNMENTS_KEY = "overseer.groupAssignments";
+const LABELS_KEY = "overseer.sessionLabels";
+const PENDING_KEY = "overseer.pendingSessions";
+
+export interface PendingSession {
+  cwd: string;
+  createdAtMs: number;
+}
 
 // Each field lives under its own key so two windows writing different fields don't clobber each other.
 export class Registry {
@@ -49,6 +56,8 @@ export class Registry {
 
   async unpin(sessionId: string): Promise<void> {
     await this.write(PINNED_KEY, this.pinnedSessionIds().filter((pinnedId) => pinnedId !== sessionId));
+    const { [sessionId]: _removedPending, ...remainingPending } = this.pendingSessions();
+    await this.write(PENDING_KEY, remainingPending);
   }
 
   userGroups(): UserGroup[] {
@@ -88,6 +97,23 @@ export class Registry {
       updatedAssignments[sessionId] = groupRef;
     }
     await this.write(ASSIGNMENTS_KEY, updatedAssignments);
+  }
+
+  labels(): Record<string, string> {
+    return this.store.get<Record<string, string>>(LABELS_KEY) ?? {};
+  }
+
+  async setLabel(sessionId: string, label: string): Promise<void> {
+    await this.write(LABELS_KEY, { ...this.labels(), [sessionId]: label });
+  }
+
+  // A brand-new session has no transcript until Claude writes one, so the registry remembers where it started.
+  pendingSessions(): Record<string, PendingSession> {
+    return this.store.get<Record<string, PendingSession>>(PENDING_KEY) ?? {};
+  }
+
+  async addPendingSession(sessionId: string, pendingSession: PendingSession): Promise<void> {
+    await this.write(PENDING_KEY, { ...this.pendingSessions(), [sessionId]: pendingSession });
   }
 
   notifyExternalChange(): void {

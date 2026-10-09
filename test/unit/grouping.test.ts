@@ -27,6 +27,8 @@ function groupingInput(sessions: SessionMeta[], overrides: Partial<GroupingInput
     sessionsById: new Map(sessions.map((session) => [session.sessionId, session])),
     userGroups: [],
     assignments: {},
+    labels: {},
+    pendingSessions: {},
     ...overrides,
   };
 }
@@ -87,6 +89,24 @@ describe("buildGroups", () => {
     const input = groupingInput(sessions, { assignments: { a: userGroupRef("gone") } });
 
     expect(summarize(input)).toEqual([["CR-9", ["a"]]]);
+  });
+
+  it("groups by the ticket key in a user-set label before the transcript title", () => {
+    const sessions = [sessionMeta("a", { customTitle: "CR-9 fix" })];
+
+    const input = groupingInput(sessions, { labels: { a: "PROJ-77 renamed" } });
+
+    expect(summarize(input)).toEqual([["PROJ-77", ["a"]]]);
+  });
+
+  it("files a brand-new session by its label before Claude writes a transcript", () => {
+    const input = groupingInput([], {
+      pinnedSessionIds: ["new"],
+      labels: { new: "CR-5 spike" },
+      pendingSessions: { new: { cwd: "/repo", createdAtMs: 1 } },
+    });
+
+    expect(summarize(input)).toEqual([["CR-5", ["new"]]]);
   });
 
   it("keeps pinned sessions missing from the index under Ungrouped", () => {

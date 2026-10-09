@@ -1,7 +1,7 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { formatAge } from "./format";
-import { buildGroups, PinnedSession, SessionGroup } from "./grouping";
+import { buildGroups, PinnedSession, pinnedSessionTitle, SessionGroup } from "./grouping";
 import { displayTitle, SessionMeta } from "./indexer";
 import { LiveSession } from "./liveParse";
 import { LiveSessionMonitor } from "./liveSessions";
@@ -15,7 +15,6 @@ export type TreeNode =
   | { kind: "session"; pinned: PinnedSession; groupRef: GroupRef };
 
 const SESSION_DRAG_MIME = "application/vnd.code.tree.overseer.sessions";
-const SHORT_ID_LENGTH = 8;
 
 export class SessionTreeProvider
   implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode>
@@ -82,6 +81,8 @@ export class SessionTreeProvider
       sessionsById,
       userGroups: this.registry.userGroups(),
       assignments: this.registry.assignments(),
+      labels: this.registry.labels(),
+      pendingSessions: this.registry.pendingSessions(),
     });
   }
 
@@ -125,10 +126,9 @@ const SESSION_STATE_LABELS: Record<SessionState, string> = {
 
 function sessionTreeItem(pinned: PinnedSession, liveSession: LiveSession | undefined): vscode.TreeItem {
   const state = sessionState(pinned.sessionId, liveSession);
-  const label = pinned.meta ? displayTitle(pinned.meta) : `Session ${pinned.sessionId.slice(0, SHORT_ID_LENGTH)}`;
-  const treeItem = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+  const treeItem = new vscode.TreeItem(pinnedSessionTitle(pinned), vscode.TreeItemCollapsibleState.None);
   treeItem.id = `session:${pinned.sessionId}`;
-  treeItem.description = sessionDescription(pinned.meta);
+  treeItem.description = sessionDescription(pinned);
   treeItem.tooltip = sessionTooltip(pinned, SESSION_STATE_LABELS[state]);
   treeItem.iconPath = SESSION_STATE_ICONS[state];
   treeItem.contextValue = `session.${state}`;
@@ -137,15 +137,14 @@ function sessionTreeItem(pinned: PinnedSession, liveSession: LiveSession | undef
     treeItem.iconPath = new vscode.ThemeIcon("warning", new vscode.ThemeColor("list.warningForeground"));
     treeItem.description = `${copyCount} copies running · ${treeItem.description}`;
   }
-  if (state === "working" || state === "running") {
-    treeItem.command = { command: "overseer.focusSession", title: "Focus", arguments: [pinned.sessionId] };
-  }
+  treeItem.command = { command: "overseer.clickSession", title: "Open", arguments: [pinned.sessionId] };
   return treeItem;
 }
 
-function sessionDescription(meta: SessionMeta | undefined): string {
+function sessionDescription(pinned: PinnedSession): string {
+  const meta = pinned.meta;
   if (meta === undefined) {
-    return "not found in index";
+    return pinned.pending ? `${path.basename(pinned.pending.cwd)} · new` : "not found in index";
   }
   const repoName = path.basename(meta.resumeCwd ?? meta.startCwd);
   return [repoName, meta.gitBranch].filter((part) => part !== undefined && part !== "").join(" · ");
@@ -154,11 +153,11 @@ function sessionDescription(meta: SessionMeta | undefined): string {
 function sessionTooltip(pinned: PinnedSession, stateLabel: string): vscode.MarkdownString {
   const tooltip = new vscode.MarkdownString();
   const meta = pinned.meta;
+  tooltip.appendMarkdown(`**${escapeMarkdown(pinnedSessionTitle(pinned))}**\n\n`);
   if (meta === undefined) {
-    tooltip.appendMarkdown(`Session \`${pinned.sessionId}\``);
+    tooltip.appendMarkdown(`${stateLabel} · \`${pinned.pending ? tildePath(pinned.pending.cwd) : pinned.sessionId}\``);
     return tooltip;
   }
-  tooltip.appendMarkdown(`**${escapeMarkdown(displayTitle(meta))}**\n\n`);
   tooltip.appendMarkdown(`${stateLabel} · last active ${formatAge(meta.lastActivityMs)}\n\n`);
   tooltip.appendMarkdown(`\`${tildePath(meta.resumeCwd ?? meta.startCwd)}\``);
   if (meta.gitBranch) {

@@ -91,10 +91,43 @@
         "command": "overseer.rename",
         "title": "Rename",
         "category": "Overseer"
+      },
+      {
+        "command": "overseer.newSession",
+        "title": "New Session\u2026",
+        "category": "Overseer",
+        "icon": "$(add)"
+      },
+      {
+        "command": "overseer.suspendSession",
+        "title": "Suspend",
+        "category": "Overseer",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "overseer.suspendGroup",
+        "title": "Suspend All in Group",
+        "category": "Overseer",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "overseer.renameSession",
+        "title": "Rename Session\u2026",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.clickSession",
+        "title": "Open Session",
+        "category": "Overseer"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "overseer.newSession",
+          "when": "view == overseer.sessions",
+          "group": "navigation@0"
+        },
         {
           "command": "overseer.allSessions",
           "when": "view == overseer.sessions",
@@ -136,6 +169,31 @@
           "command": "overseer.deleteGroup",
           "when": "view == overseer.sessions && viewItem == group.user",
           "group": "9_remove@1"
+        },
+        {
+          "command": "overseer.suspendSession",
+          "when": "view == overseer.sessions && viewItem =~ /^session\\.(running|working)$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "overseer.suspendSession",
+          "when": "view == overseer.sessions && viewItem =~ /^session\\.(running|working)$/",
+          "group": "1_session@2"
+        },
+        {
+          "command": "overseer.renameSession",
+          "when": "view == overseer.sessions && viewItem =~ /^session\\./",
+          "group": "1_session@3"
+        },
+        {
+          "command": "overseer.newSession",
+          "when": "view == overseer.sessions && viewItem =~ /^group\\./",
+          "group": "1_group@0"
+        },
+        {
+          "command": "overseer.suspendGroup",
+          "when": "view == overseer.sessions && viewItem =~ /^group\\./",
+          "group": "1_group@2"
         }
       ],
       "commandPalette": [
@@ -161,6 +219,22 @@
         },
         {
           "command": "overseer.rename",
+          "when": "false"
+        },
+        {
+          "command": "overseer.suspendSession",
+          "when": "false"
+        },
+        {
+          "command": "overseer.suspendGroup",
+          "when": "false"
+        },
+        {
+          "command": "overseer.renameSession",
+          "when": "false"
+        },
+        {
+          "command": "overseer.clickSession",
           "when": "false"
         }
       ]
