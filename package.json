@@ -262,7 +262,7 @@
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "package": "vsce package --no-dependencies --allow-missing-repository"
+    "package": "npm run build && vsce package --no-dependencies --allow-missing-repository --skip-license"
   },
   "devDependencies": {
     "@types/node": "22.20.5",

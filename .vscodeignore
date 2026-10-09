@@ -5,3 +5,4 @@ node_modules/**
 *.mjs
 tsconfig.json
 **/*.map
+.agents/**
