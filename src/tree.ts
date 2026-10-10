@@ -7,6 +7,7 @@ import { LiveSession } from "./liveParse";
 import { LiveSessionMonitor } from "./liveSessions";
 import { tildePath } from "./paths";
 import { GroupRef, Registry } from "./registry";
+import { moveBeside } from "./reorder";
 import { otherReposLabel } from "./repoFilter";
 import { SessionIndex } from "./sessionIndex";
 import { findSessionTerminal } from "./terminals";
@@ -15,13 +16,26 @@ export type TreeNode =
   | { kind: "group"; group: SessionGroup }
   | { kind: "session"; pinned: PinnedSession; groupRef: GroupRef };
 
-const SESSION_DRAG_MIME = "application/vnd.code.tree.overseer.sessions";
+type SessionNode = Extract<TreeNode, { kind: "session" }>;
+type GroupNode = Extract<TreeNode, { kind: "group" }>;
+
+interface DraggedSession {
+  sessionId: string;
+  groupRef: GroupRef;
+}
+
+interface DragPayload {
+  draggedSessions: DraggedSession[];
+  draggedGroupRefs: GroupRef[];
+}
+
+const TREE_DRAG_MIME = "application/vnd.code.tree.overseer.sessions";
 
 export class SessionTreeProvider
   implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode>
 {
-  readonly dragMimeTypes = [SESSION_DRAG_MIME];
-  readonly dropMimeTypes = [SESSION_DRAG_MIME];
+  readonly dragMimeTypes = [TREE_DRAG_MIME];
+  readonly dropMimeTypes = [TREE_DRAG_MIME];
   private readonly treeChangeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.treeChangeEmitter.event;
 
@@ -56,21 +70,57 @@ export class SessionTreeProvider
   }
 
   handleDrag(sourceNodes: readonly TreeNode[], dataTransfer: vscode.DataTransfer): void {
-    const draggedSessionIds = sourceNodes
-      .filter((node): node is Extract<TreeNode, { kind: "session" }> => node.kind === "session")
-      .map((node) => node.pinned.sessionId);
-    if (draggedSessionIds.length > 0) {
-      dataTransfer.set(SESSION_DRAG_MIME, new vscode.DataTransferItem(draggedSessionIds));
-    }
+    const draggedSessions = sourceNodes
+      .filter((node): node is SessionNode => node.kind === "session")
+      .map((node) => ({ sessionId: node.pinned.sessionId, groupRef: node.groupRef }));
+    const draggedGroupRefs = sourceNodes
+      .filter((node): node is GroupNode => node.kind === "group")
+      .map((node) => node.group.ref);
+    const payload: DragPayload = { draggedSessions, draggedGroupRefs };
+    dataTransfer.set(TREE_DRAG_MIME, new vscode.DataTransferItem(payload));
   }
 
   async handleDrop(targetNode: TreeNode | undefined, dataTransfer: vscode.DataTransfer): Promise<void> {
-    const draggedSessionIds = dataTransfer.get(SESSION_DRAG_MIME)?.value as string[] | undefined;
-    if (targetNode === undefined || draggedSessionIds === undefined) {
+    const payload = dataTransfer.get(TREE_DRAG_MIME)?.value as DragPayload | undefined;
+    if (payload === undefined) {
+      return;
+    }
+    if (payload.draggedSessions.length > 0) {
+      await this.dropSessions(payload.draggedSessions, targetNode);
+    } else if (payload.draggedGroupRefs.length > 0) {
+      await this.dropGroups(payload.draggedGroupRefs, targetNode);
+    }
+  }
+
+  private async dropSessions(draggedSessions: DraggedSession[], targetNode: TreeNode | undefined): Promise<void> {
+    if (targetNode === undefined) {
       return;
     }
     const targetGroupRef = targetNode.kind === "group" ? targetNode.group.ref : targetNode.groupRef;
-    await this.registry.assign(draggedSessionIds, targetGroupRef);
+    const draggedSessionIds = draggedSessions.map((dragged) => dragged.sessionId);
+    const targetGroup = this.currentGroups().find((group) => group.ref === targetGroupRef);
+    const targetGroupSessionIds = targetGroup?.sessions.map((pinned) => pinned.sessionId) ?? [];
+    const movedIntoGroupIds = draggedSessions
+      .filter((dragged) => dragged.groupRef !== targetGroupRef)
+      .map((dragged) => dragged.sessionId);
+    if (movedIntoGroupIds.length > 0) {
+      await this.registry.assign(movedIntoGroupIds, targetGroupRef);
+    }
+
+    const reorderedGroupSessionIds =
+      targetNode.kind === "group"
+        ? [...draggedSessionIds, ...targetGroupSessionIds.filter((sessionId) => !draggedSessionIds.includes(sessionId))]
+        : moveBeside(targetGroupSessionIds, draggedSessionIds, targetNode.pinned.sessionId);
+    const otherOrderedSessionIds = this.registry
+      .sessionOrder()
+      .filter((sessionId) => !reorderedGroupSessionIds.includes(sessionId));
+    await this.registry.setSessionOrder([...otherOrderedSessionIds, ...reorderedGroupSessionIds]);
+  }
+
+  private async dropGroups(draggedGroupRefs: GroupRef[], targetNode: TreeNode | undefined): Promise<void> {
+    const targetGroupRef = targetNode?.kind === "session" ? targetNode.groupRef : targetNode?.group.ref;
+    const displayedGroupRefs = this.currentGroups().map((group) => group.ref);
+    await this.registry.setGroupOrder(moveBeside(displayedGroupRefs, draggedGroupRefs, targetGroupRef));
   }
 
   private currentGroups(): SessionGroup[] {
@@ -84,6 +134,8 @@ export class SessionTreeProvider
       assignments: this.registry.assignments(),
       labels: this.registry.labels(),
       pendingSessions: this.registry.pendingSessions(),
+      groupOrder: this.registry.groupOrder(),
+      sessionOrder: this.registry.sessionOrder(),
     });
   }
 

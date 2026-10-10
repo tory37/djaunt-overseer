@@ -95,12 +95,15 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     }
   };
 
-  const pickDirectory = async (): Promise<string | undefined> => {
+  const pickDirectory = async (groupDirectories: string[]): Promise<string | undefined> => {
     const workspaceDirectories = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
     const recentDirectories = sessionIndex.currentSessions
       .map((session) => session.resumeCwd ?? session.startCwd)
       .filter((directory) => fs.existsSync(directory));
-    const uniqueDirectories = [...new Set([...workspaceDirectories, ...recentDirectories])].slice(0, RECENT_DIRECTORY_LIMIT);
+    const uniqueDirectories = [...new Set([...groupDirectories, ...workspaceDirectories, ...recentDirectories])].slice(
+      0,
+      RECENT_DIRECTORY_LIMIT,
+    );
     const directoryItems: DirectoryPickItem[] = uniqueDirectories.map((directory) => ({
       label: path.basename(directory),
       description: tildePath(directory),
@@ -187,6 +190,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       group.sessions.map((pinned) => pinned.sessionId),
       userGroupRef(createdGroup.id),
     );
+    await registry.replaceGroupRef(group.ref, userGroupRef(createdGroup.id));
   };
 
   return [
@@ -195,6 +199,20 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       if (pickedSession) {
         await openSession(pickedSession);
       }
+    }),
+    vscode.commands.registerCommand("overseer.addExistingToGroup", async (clickedNode?: TreeNode) => {
+      if (clickedNode?.kind !== "group") {
+        return;
+      }
+      const pickedSession = await pickSession(sessionIndex, liveMonitor, registry);
+      if (pickedSession === undefined) {
+        return;
+      }
+      if (clickedNode.group.kind !== "ungrouped") {
+        await registry.assign([pickedSession.sessionId], clickedNode.group.ref);
+      }
+      await registry.pin(pickedSession.sessionId);
+      await openSession(pickedSession);
     }),
     vscode.commands.registerCommand("overseer.refreshIndex", async () => {
       await Promise.all([sessionIndex.refresh(), liveMonitor.refresh()]);
@@ -216,6 +234,21 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     vscode.commands.registerCommand("overseer.unpinSession", async (clickedNode?: TreeNode) => {
       for (const sessionNode of selectedSessionNodes(clickedNode)) {
         await registry.unpin(sessionNode.pinned.sessionId);
+      }
+    }),
+    // The transcript stays on disk, so a killed session can still be resumed from All Sessions.
+    vscode.commands.registerCommand("overseer.killSession", async (clickedNode?: TreeNode) => {
+      const liveSessions = await liveMonitor.refresh();
+      for (const sessionNode of selectedSessionNodes(clickedNode)) {
+        const sessionId = sessionNode.pinned.sessionId;
+        const terminal = findSessionTerminal(sessionId);
+        const liveSession = liveSessions.get(sessionId);
+        if (terminal !== undefined) {
+          terminal.dispose();
+        } else if (liveSession?.pid !== undefined && liveSession.kind !== "background") {
+          killProcess(liveSession.pid, log);
+        }
+        await registry.unpin(sessionId);
       }
     }),
     vscode.commands.registerCommand("overseer.newGroup", async () => {
@@ -263,7 +296,9 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       findSessionTerminal(sessionId)?.show(true);
     }),
     vscode.commands.registerCommand("overseer.newSession", async (clickedNode?: TreeNode) => {
-      const startDirectory = await pickDirectory();
+      const groupDirectories =
+        clickedNode?.kind === "group" ? clickedNode.group.sessions.map(pinnedSessionDirectory).filter(isDefined) : [];
+      const startDirectory = await pickDirectory(groupDirectories);
       if (startDirectory === undefined) {
         return;
       }
@@ -281,7 +316,8 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       if (sessionName !== "") {
         await registry.setLabel(sessionId, sessionName);
       }
-      if (clickedNode?.kind === "group") {
+      // Ungrouped stays implicit so a ticket key in the name still files the session under that ticket.
+      if (clickedNode?.kind === "group" && clickedNode.group.kind !== "ungrouped") {
         await registry.assign([sessionId], clickedNode.group.ref);
       }
       await registry.pin(sessionId);
@@ -297,4 +333,21 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       }
     }),
   ];
+}
+
+function pinnedSessionDirectory(pinned: PinnedSession): string | undefined {
+  return pinned.meta?.resumeCwd ?? pinned.meta?.startCwd ?? pinned.pending?.cwd;
+}
+
+function isDefined<Value>(value: Value | undefined): value is Value {
+  return value !== undefined;
+}
+
+function killProcess(pid: number, log: vscode.OutputChannel): void {
+  try {
+    process.kill(pid, "SIGTERM");
+    log.appendLine(`Killed Claude process ${pid}`);
+  } catch (error) {
+    log.appendLine(`Could not kill Claude process ${pid}: ${String(error)}`);
+  }
 }

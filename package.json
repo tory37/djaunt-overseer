@@ -14,7 +14,10 @@
     "Other"
   ],
   "main": "./dist/extension.js",
-  "repository": { "type": "git", "url": "https://github.com/tory37/djaunt-overseer" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tory37/djaunt-overseer"
+  },
   "homepage": "https://tory37.github.io/djaunt-overseer/",
   "activationEvents": [
     "onStartupFinished"
@@ -46,7 +49,7 @@
     "commands": [
       {
         "command": "overseer.allSessions",
-        "title": "All Sessions\u2026",
+        "title": "All Sessions…",
         "category": "Overseer",
         "icon": "$(search)"
       },
@@ -58,7 +61,7 @@
       },
       {
         "command": "overseer.newGroup",
-        "title": "New Group\u2026",
+        "title": "New Group…",
         "category": "Overseer",
         "icon": "$(new-folder)"
       },
@@ -74,6 +77,18 @@
         "category": "Overseer"
       },
       {
+        "command": "overseer.addExistingToGroup",
+        "title": "Add Existing Session…",
+        "category": "Overseer",
+        "icon": "$(search)"
+      },
+      {
+        "command": "overseer.killSession",
+        "title": "Kill and Remove",
+        "category": "Overseer",
+        "icon": "$(trash)"
+      },
+      {
         "command": "overseer.unpinSession",
         "title": "Remove from Sidebar",
         "category": "Overseer",
@@ -81,7 +96,7 @@
       },
       {
         "command": "overseer.renameGroup",
-        "title": "Rename Group\u2026",
+        "title": "Rename Group…",
         "category": "Overseer"
       },
       {
@@ -96,7 +111,7 @@
       },
       {
         "command": "overseer.newSession",
-        "title": "New Session\u2026",
+        "title": "New Session…",
         "category": "Overseer",
         "icon": "$(add)"
       },
@@ -114,7 +129,7 @@
       },
       {
         "command": "overseer.renameSession",
-        "title": "Rename Session\u2026",
+        "title": "Rename Session…",
         "category": "Overseer"
       },
       {
@@ -163,6 +178,11 @@
           "group": "9_remove@1"
         },
         {
+          "command": "overseer.killSession",
+          "when": "view == overseer.sessions && viewItem =~ /^session\\./",
+          "group": "9_remove@2"
+        },
+        {
           "command": "overseer.renameGroup",
           "when": "view == overseer.sessions && viewItem =~ /^group\\.(user|auto)$/",
           "group": "1_group@1"
@@ -190,6 +210,21 @@
         {
           "command": "overseer.newSession",
           "when": "view == overseer.sessions && viewItem =~ /^group\\./",
+          "group": "inline@0"
+        },
+        {
+          "command": "overseer.addExistingToGroup",
+          "when": "view == overseer.sessions && viewItem =~ /^group\\./",
+          "group": "inline@1"
+        },
+        {
+          "command": "overseer.addExistingToGroup",
+          "when": "view == overseer.sessions && viewItem =~ /^group\\./",
+          "group": "1_group@0"
+        },
+        {
+          "command": "overseer.newSession",
+          "when": "view == overseer.sessions && viewItem =~ /^group\\./",
           "group": "1_group@0"
         },
         {
@@ -209,6 +244,14 @@
         },
         {
           "command": "overseer.unpinSession",
+          "when": "false"
+        },
+        {
+          "command": "overseer.killSession",
+          "when": "false"
+        },
+        {
+          "command": "overseer.addExistingToGroup",
           "when": "false"
         },
         {

@@ -24,6 +24,8 @@ const GROUPS_KEY = "overseer.userGroups";
 const ASSIGNMENTS_KEY = "overseer.groupAssignments";
 const LABELS_KEY = "overseer.sessionLabels";
 const PENDING_KEY = "overseer.pendingSessions";
+const GROUP_ORDER_KEY = "overseer.groupOrder";
+const SESSION_ORDER_KEY = "overseer.sessionOrder";
 
 export interface PendingSession {
   cwd: string;
@@ -56,6 +58,7 @@ export class Registry {
 
   async unpin(sessionId: string): Promise<void> {
     await this.write(PINNED_KEY, this.pinnedSessionIds().filter((pinnedId) => pinnedId !== sessionId));
+    await this.write(SESSION_ORDER_KEY, this.sessionOrder().filter((orderedId) => orderedId !== sessionId));
     const { [sessionId]: _removedPending, ...remainingPending } = this.pendingSessions();
     await this.write(PENDING_KEY, remainingPending);
   }
@@ -97,6 +100,29 @@ export class Registry {
       updatedAssignments[sessionId] = groupRef;
     }
     await this.write(ASSIGNMENTS_KEY, updatedAssignments);
+  }
+
+  groupOrder(): GroupRef[] {
+    return this.store.get<GroupRef[]>(GROUP_ORDER_KEY) ?? [];
+  }
+
+  async setGroupOrder(groupRefs: GroupRef[]): Promise<void> {
+    await this.write(GROUP_ORDER_KEY, groupRefs);
+  }
+
+  async replaceGroupRef(oldRef: GroupRef, newRef: GroupRef): Promise<void> {
+    await this.write(
+      GROUP_ORDER_KEY,
+      this.groupOrder().map((groupRef) => (groupRef === oldRef ? newRef : groupRef)),
+    );
+  }
+
+  sessionOrder(): string[] {
+    return this.store.get<string[]>(SESSION_ORDER_KEY) ?? [];
+  }
+
+  async setSessionOrder(sessionIds: string[]): Promise<void> {
+    await this.write(SESSION_ORDER_KEY, sessionIds);
   }
 
   labels(): Record<string, string> {

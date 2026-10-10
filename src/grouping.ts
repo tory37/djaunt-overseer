@@ -1,5 +1,6 @@
 import { displayTitle, SessionMeta } from "./indexer";
 import { autoGroupRef, GroupRef, PendingSession, UNGROUPED_REF, UserGroup, userGroupRef } from "./registry";
+import { sortBySavedOrder } from "./reorder";
 import { extractTicketKey } from "./ticket";
 
 export type GroupKind = "user" | "auto" | "ungrouped";
@@ -37,6 +38,8 @@ export interface GroupingInput {
   assignments: Record<string, GroupRef>;
   labels: Record<string, string>;
   pendingSessions: Record<string, PendingSession>;
+  groupOrder: GroupRef[];
+  sessionOrder: string[];
 }
 
 export function autoGroupRefFor(meta: SessionMeta | undefined, label?: string): GroupRef {
@@ -64,7 +67,10 @@ export function buildGroups(input: GroupingInput): SessionGroup[] {
     groupSessions.push(pinnedSession);
     sessionsByRef.set(groupRef, groupSessions);
   }
-  sessionsByRef.forEach((groupSessions) => groupSessions.sort(byMostRecentActivity));
+  sessionsByRef.forEach((groupSessions, groupRef) => {
+    const sessionsByRecency = [...groupSessions].sort(byMostRecentActivity);
+    sessionsByRef.set(groupRef, sortBySavedOrder(sessionsByRecency, input.sessionOrder, (pinned) => pinned.sessionId));
+  });
 
   const userGroups: SessionGroup[] = input.userGroups.map((group) => ({
     ref: userGroupRef(group.id),
@@ -87,7 +93,7 @@ export function buildGroups(input: GroupingInput): SessionGroup[] {
       ? [{ ref: UNGROUPED_REF, kind: "ungrouped", label: "Ungrouped", sessions: ungroupedSessions }]
       : [];
 
-  return [...userGroups, ...autoGroups, ...ungroupedGroups];
+  return sortBySavedOrder([...userGroups, ...autoGroups, ...ungroupedGroups], input.groupOrder, (group) => group.ref);
 }
 
 // An explicit drag wins, unless it points at a user group that was since deleted.

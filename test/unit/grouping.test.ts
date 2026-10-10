@@ -31,6 +31,8 @@ function groupingInput(sessions: SessionMeta[], overrides: Partial<GroupingInput
     assignments: {},
     labels: {},
     pendingSessions: {},
+    groupOrder: [],
+    sessionOrder: [],
     ...overrides,
   };
 }
@@ -115,5 +117,36 @@ describe("buildGroups", () => {
     const input = groupingInput([], { pinnedSessionIds: ["missing"] });
 
     expect(summarize(input)).toEqual([["Ungrouped", ["missing"]]]);
+  });
+
+  it("applies a saved group order and a saved session order", () => {
+    const sessions = [
+      sessionMeta("a", { customTitle: "PROJ-1 triage", lastActivityMs: 10 }),
+      sessionMeta("b", { customTitle: "PROJ-1 notes", lastActivityMs: 30 }),
+      sessionMeta("c", { customTitle: "CR-9 fix", lastActivityMs: 50 }),
+      sessionMeta("d", { customTitle: "chat", lastActivityMs: 40 }),
+    ];
+
+    const input = groupingInput(sessions, {
+      groupOrder: [UNGROUPED_REF, autoGroupRef("PROJ-1"), autoGroupRef("CR-9")],
+      sessionOrder: ["a", "b"],
+    });
+
+    expect(summarize(input)).toEqual([
+      ["Ungrouped", ["d"]],
+      ["PROJ-1", ["a", "b"]],
+      ["CR-9", ["c"]],
+    ]);
+  });
+
+  it("puts a group missing from the saved order on top", () => {
+    const sessions = [
+      sessionMeta("a", { customTitle: "PROJ-1 triage" }),
+      sessionMeta("c", { customTitle: "CR-9 fix" }),
+    ];
+
+    const input = groupingInput(sessions, { groupOrder: [autoGroupRef("PROJ-1")] });
+
+    expect(summarize(input).map(([label]) => label)).toEqual(["CR-9", "PROJ-1"]);
   });
 });
