@@ -14,6 +14,8 @@
     "Other"
   ],
   "main": "./dist/extension.js",
+  "repository": { "type": "git", "url": "https://github.com/tory37/djaunt-overseer" },
+  "homepage": "https://tory37.github.io/djaunt-overseer/",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -262,7 +264,7 @@
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "package": "npm run build && vsce package --no-dependencies --allow-missing-repository --skip-license"
+    "package": "npm run build && vsce package --no-dependencies --skip-license"
   },
   "devDependencies": {
     "@types/node": "22.20.5",

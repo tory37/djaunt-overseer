@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en" data-dj-theme="hoard">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Overseer — vertical tabs for Claude sessions</title>
+    <meta name="description" content="A VS Code extension that keeps every Claude CLI session in a sidebar tree, grouped by ticket. Suspend idle sessions, resume any of them from any repo in one click.">
+    <meta property="og:title" content="Overseer — vertical tabs for Claude sessions">
+    <meta property="og:description" content="Group Claude CLI sessions by ticket, suspend the idle ones, resume any of them from any repo. Everything stays in the real terminal.">
+    <meta property="og:image" content="https://tory37.github.io/djaunt-overseer/assets/og.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" href="assets/favicon.svg">
+
+    <link rel="stylesheet" href="assets/tokens.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- React & ReactDOM (UMD) — crossorigin is required or CORS silently breaks the mount -->
+    <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+
+    <!-- Babel standalone — required to transpile the type="text/babel" block below -->
+    <script src="https://unpkg.com/@babel/standalone@7.29.9/babel.min.js"></script>
+
+    <!-- Lucide icons — use instead of emojis for all iconography -->
+    <script src="https://unpkg.com/lucide@1.49.0/dist/umd/lucide.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        bg: 'var(--dj-bg)',
+                        surface: 'var(--dj-surface)',
+                        raised: 'var(--dj-surface-raised)',
+                        line: 'var(--dj-border)',
+                        bone: 'var(--dj-text)',
+                        muted: 'var(--dj-text-muted)',
+                        accent: 'var(--dj-accent)',
+                        'accent-hi': 'var(--dj-accent-hi)',
+                        'accent-deep': 'var(--dj-accent-deep)',
+                        'on-accent': 'var(--dj-on-accent)',
+                        success: 'var(--dj-success)',
+                        warning: 'var(--dj-warning)',
+                    },
+                    fontFamily: {
+                        display: ['var(--dj-font-display)'],
+                        sans: ['var(--dj-font-body)'],
+                        mono: ['var(--dj-font-mono)'],
+                    },
+                    boxShadow: {
+                        glow: 'var(--dj-glow)',
+                        float: 'var(--dj-shadow-md)',
+                    },
+                    transitionTimingFunction: {
+                        dj: 'var(--dj-ease)',
+                    },
+                    letterSpacing: {
+                        display: 'var(--dj-tracking-display)',
+                        label: 'var(--dj-tracking-label)',
+                    },
+                    spacing: {
+                        '72': '18rem',
+                    },
+                },
+            },
+        };
+    </script>
+</head>
+<body class="bg-bg text-bone font-sans antialiased selection:bg-accent selection:text-on-accent min-h-screen overflow-x-hidden">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const REPO_URL = 'https://github.com/tory37/djaunt-overseer';
+        const VSIX_NAME = 'djaunt-overseer-0.0.1.vsix';
+        const VSIX_URL = `${REPO_URL}/releases/latest/download/${VSIX_NAME}`;
+
+        const Icon = ({ name, className = 'w-4 h-4' }) => {
+            const iconHost = useRef(null);
+            useEffect(() => {
+                const iconSvg = lucide.createElement(lucide.icons[name]);
+                iconSvg.setAttribute('width', '100%');
+                iconSvg.setAttribute('height', '100%');
+                iconSvg.setAttribute('stroke-width', '1.5');
+                iconHost.current.replaceChildren(iconSvg);
+            }, [name]);
+            return <span ref={iconHost} aria-hidden="true" className={`inline-flex shrink-0 ${className}`} />;
+        };
+
+        const Eyebrow = ({ children }) => (
+            <p className="font-mono text-xs uppercase tracking-label text-accent">{children}</p>
+        );
+
+        // ---------- Live mock of the extension ----------
+
+        const INITIAL_SESSIONS = [
+            { id: '5f1c9a2e', title: 'PROJ-2567 login timeout', group: 'PROJ-2567', repo: 'web-app', branch: 'fix/proj-2567-login-timeout', extraRepos: ['api'], state: 'running' },
+            { id: 'a83d0b17', title: 'PROJ-2567 review notes', group: 'PROJ-2567', repo: 'web-app', branch: 'main', extraRepos: [], state: 'suspended' },
+            { id: 'c27e4f90', title: 'OPS-4410 billing export', group: 'OPS-4410', repo: 'api', branch: 'ops-4410-export', extraRepos: ['infra', 'web-app'], state: 'working' },
+            { id: '0d9b6c33', title: 'Rate limiter refactor', group: 'Waiting on review', repo: 'api', branch: 'feat/rate-limit', extraRepos: [], state: 'suspended' },
+            { id: '7e15a2c8', title: 'Docs site migration', group: 'Waiting on review', repo: 'docs', branch: 'main', extraRepos: [], state: 'elsewhere' },
+            { id: '9a4c7d21', title: 'Flaky e2e triage', group: 'Ungrouped', repo: 'web-app', branch: 'main', extraRepos: [], state: 'duplicate' },
+        ];
+
+        const GROUPS = [
+            { name: 'PROJ-2567', icon: 'Tag' },
+            { name: 'OPS-4410', icon: 'Tag' },
+            { name: 'Waiting on review', icon: 'Folder' },
+            { name: 'Ungrouped', icon: 'Folder' },
+        ];
+
+        const STATE_ICONS = {
+            running: { name: 'SquareTerminal', className: 'text-success' },
+            working: { name: 'LoaderCircle', className: 'text-success animate-spin motion-reduce:animate-none' },
+            elsewhere: { name: 'AppWindow', className: 'text-warning' },
+            suspended: { name: 'Pause', className: 'text-muted' },
+            duplicate: { name: 'TriangleAlert', className: 'text-warning' },
+        };
+
+        const isLiveHere = (session) => session.state === 'running' || session.state === 'working' || session.state === 'duplicate';
+
+        const reposLabel = (session) => {
+            const extraCount = session.extraRepos.length;
+            if (extraCount === 0) return '';
+            return extraCount === 1 ? ' · +1 repo' : ` · +${extraCount} repos`;
+        };
+
+        const resumeTranscript = (session) => [
+            { kind: 'prompt', text: `~/src/${session.repo} $ claude --resume ${session.id}-…` },
+            { kind: 'muted', text: `resumed · ${session.title}` },
+            { kind: 'input', text: '> where did we leave this' },
+            { kind: 'out', text: 'Last step was the refresh check in src/auth/session.ts.' },
+            { kind: 'out', text: 'The fix is in place. Tests still need a run.' },
+        ];
+
+        const SessionRow = ({ session, isSelected, onSelect, onToggle, onRename }) => {
+            const [isEditing, setIsEditing] = useState(false);
+            const [draftTitle, setDraftTitle] = useState(session.title);
+            const stateIcon = STATE_ICONS[session.state];
+            const canSuspend = isLiveHere(session);
+            const commitRename = () => {
+                setIsEditing(false);
+                const trimmedTitle = draftTitle.trim();
+                if (trimmedTitle !== '' && trimmedTitle !== session.title) onRename(session.id, trimmedTitle);
+                else setDraftTitle(session.title);
+            };
+            const description = session.state === 'duplicate'
+                ? `2 copies running · ${session.repo}`
+                : `${session.repo} · ${session.branch}${reposLabel(session)}`;
+            return (
+                <div
+                    onClick={() => onSelect(session.id)}
+                    onDoubleClick={() => setIsEditing(true)}
+                    title="Double-click to rename"
+                    className={`group flex items-center gap-2 h-6 pl-8 pr-2 cursor-pointer border transition-colors duration-200 ease-dj ${isSelected ? 'bg-raised border-accent-deep' : 'border-transparent hover:bg-surface'}`}
+                >
+                    <Icon name={stateIcon.name} className={`w-4 h-4 ${stateIcon.className}`} />
+                    {isEditing ? (
+                        <input
+                            autoFocus
+                            value={draftTitle}
+                            onChange={(event) => setDraftTitle(event.target.value)}
+                            onBlur={commitRename}
+                            onKeyDown={(event) => { if (event.key === 'Enter') commitRename(); if (event.key === 'Escape') { setDraftTitle(session.title); setIsEditing(false); } }}
+                            onClick={(event) => event.stopPropagation()}
+                            className="flex-1 min-w-0 h-5 px-1 bg-bg border border-accent text-bone font-mono text-xs outline-none"
+                        />
+                    ) : (
+                        <span className="flex-1 min-w-0 truncate text-xs">
+                            <span className="text-bone">{session.title}</span>
+                            <span className="text-muted ml-2">{description}</span>
+                        </span>
+                    )}
+                    <button
+                        onClick={(event) => { event.stopPropagation(); onToggle(session.id); }}
+                        aria-label={canSuspend ? 'Suspend' : 'Resume'}
+                        className={`p-0.5 text-muted hover:text-accent transition-opacity duration-200 ease-dj ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                    >
+                        <Icon name={canSuspend ? 'Pause' : 'Play'} className="w-4 h-4" />
+                    </button>
+                </div>
+            );
+        };
+
+        const TerminalLine = ({ line }) => {
+            const lineColors = { prompt: 'text-accent', muted: 'text-muted', input: 'text-bone', out: 'text-bone', system: 'text-success' };
+            return <div className={`whitespace-pre-wrap break-words ${lineColors[line.kind]}`}>{line.text}</div>;
+        };
+
+        const OverseerMock = () => {
+            const [sessions, setSessions] = useState(INITIAL_SESSIONS);
+            const [selectedId, setSelectedId] = useState(INITIAL_SESSIONS[0].id);
+            const [terminalLines, setTerminalLines] = useState(() => {
+                const initialLines = {};
+                INITIAL_SESSIONS.forEach((session) => { initialLines[session.id] = resumeTranscript(session); });
+                return initialLines;
+            });
+
+            const selectedSession = sessions.find((session) => session.id === selectedId);
+            const openTabs = sessions.filter(isLiveHere);
+
+            const appendLines = (sessionId, newLines) =>
+                setTerminalLines((previous) => ({ ...previous, [sessionId]: [...previous[sessionId], ...newLines] }));
+
+            const toggleSession = (sessionId) => {
+                const target = sessions.find((session) => session.id === sessionId);
+                const nextState = isLiveHere(target) ? 'suspended' : 'running';
+                setSessions((previous) => previous.map((session) => (session.id === sessionId ? { ...session, state: nextState } : session)));
+                if (nextState === 'suspended') {
+                    appendLines(sessionId, [{ kind: 'input', text: '> /exit' }, { kind: 'muted', text: 'process exited · transcript kept on disk' }]);
+                } else {
+                    setTerminalLines((previous) => ({ ...previous, [sessionId]: resumeTranscript(target) }));
+                }
+                setSelectedId(sessionId);
+            };
+
+            const renameSession = (sessionId, newTitle) => {
+                const target = sessions.find((session) => session.id === sessionId);
+                setSessions((previous) => previous.map((session) => (session.id === sessionId ? { ...session, title: newTitle } : session)));
+                if (isLiveHere(target)) {
+                    appendLines(sessionId, [{ kind: 'input', text: `> /rename ${newTitle}` }, { kind: 'system', text: `Session renamed to: ${newTitle}` }]);
+                }
+                setSelectedId(sessionId);
+            };
+
+            const isSelectedLive = selectedSession && isLiveHere(selectedSession);
+
+            return (
+                <div className="border border-line bg-bg font-mono text-xs shadow-float">
+                    <div className="flex items-center gap-2 h-8 px-3 border-b border-line bg-surface">
+                        <span className="w-2.5 h-2.5 rounded-full bg-line" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-line" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-line" />
+                        <span className="flex-1 text-center text-muted truncate">agent-tools — Visual Studio Code</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-[3rem_26rem_1fr]">
+                        <div className="hidden md:flex flex-col items-center gap-4 py-3 border-r border-line bg-surface text-muted">
+                            <Icon name="Files" className="w-5 h-5" />
+                            <Icon name="Search" className="w-5 h-5" />
+                            <Icon name="GitBranch" className="w-5 h-5" />
+                            <span className="relative flex justify-center w-full">
+                                <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-accent" />
+                                <img src="assets/overseer-gold.svg" alt="" className="w-6 h-6" />
+                            </span>
+                        </div>
+                        <div className="border-b md:border-b-0 md:border-r border-line bg-surface">
+                            <div className="flex items-center justify-between h-8 px-3 text-muted">
+                                <span className="uppercase tracking-label">Overseer</span>
+                                <span className="flex gap-2">
+                                    <Icon name="Plus" className="w-4 h-4" />
+                                    <Icon name="Search" className="w-4 h-4" />
+                                    <Icon name="FolderPlus" className="w-4 h-4" />
+                                    <Icon name="RefreshCw" className="w-4 h-4" />
+                                </span>
+                            </div>
+                            <div className="pb-3">
+                                {GROUPS.map((group) => {
+                                    const groupSessions = sessions.filter((session) => session.group === group.name);
+                                    return (
+                                        <div key={group.name}>
+                                            <div className="flex items-center gap-1 h-6 px-2 text-bone">
+                                                <Icon name="ChevronDown" className="w-4 h-4 text-muted" />
+                                                <Icon name={group.icon} className="w-4 h-4 text-muted" />
+                                                <span className="font-medium">{group.name}</span>
+                                                <span className="text-muted ml-1">{groupSessions.length}</span>
+                                            </div>
+                                            {groupSessions.map((session) => (
+                                                <SessionRow
+                                                    key={session.id}
+                                                    session={session}
+                                                    isSelected={session.id === selectedId}
+                                                    onSelect={setSelectedId}
+                                                    onToggle={toggleSession}
+                                                    onRename={renameSession}
+                                                />
+                                            ))}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        <div className="flex flex-col min-w-0 min-h-72">
+                            <div className="flex h-8 border-b border-line bg-surface overflow-hidden">
+                                {openTabs.map((session) => (
+                                    <button
+                                        key={session.id}
+                                        onClick={() => setSelectedId(session.id)}
+                                        className={`flex items-center gap-2 px-3 border-r border-line max-w-48 ${session.id === selectedId ? 'bg-bg text-bone border-t border-t-accent' : 'text-muted hover:text-bone'}`}
+                                    >
+                                        <Icon name="SquareTerminal" className="w-4 h-4" />
+                                        <span className="truncate">{session.title}</span>
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="flex-1 p-4 space-y-1 leading-relaxed">
+                                {isSelectedLive ? (
+                                    terminalLines[selectedId].map((line, lineIndex) => <TerminalLine key={lineIndex} line={line} />)
+                                ) : (
+                                    <div className="flex flex-col items-start gap-3 text-muted">
+                                        <span>{selectedSession.state === 'elsewhere' ? 'Running in another window.' : 'Suspended. No process, no memory. The transcript is on disk.'}</span>
+                                        <button
+                                            onClick={() => toggleSession(selectedId)}
+                                            className="flex items-center gap-2 px-3 h-7 border border-line text-bone hover:border-accent hover:text-accent transition-colors duration-200 ease-dj"
+                                        >
+                                            <Icon name="Play" className="w-4 h-4" />
+                                            {selectedSession.state === 'elsewhere' ? 'Fork a copy here' : 'Resume'}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ---------- Feature visuals ----------
+
+        const QuickPickVisual = () => (
+            <div className="border border-line bg-surface font-mono text-xs">
+                <div className="flex items-center gap-2 h-8 px-3 border-b border-line">
+                    <Icon name="Search" className="w-4 h-4 text-muted" />
+                    <span className="text-bone">repo:api billing</span>
+                    <span className="w-px h-4 bg-accent animate-pulse motion-reduce:animate-none" />
+                </div>
+                {[
+                    { title: 'OPS-4410 billing export', meta: 'api · ops-4410-export · +2 repos', detail: 'working · ~/src/api' },
+                    { title: 'Billing webhook retries', meta: 'web-app · main · +1 repo', detail: '3d ago · ~/src/web-app · also api' },
+                ].map((item, itemIndex) => (
+                    <div key={item.title} className={`px-3 py-2 ${itemIndex === 0 ? 'bg-raised' : ''}`}>
+                        <div className="flex gap-2 truncate"><span className="text-bone">{item.title}</span><span className="text-muted truncate">{item.meta}</span></div>
+                        <div className="text-muted truncate">{item.detail}</div>
+                    </div>
+                ))}
+            </div>
+        );
+
+        const SuspendVisual = () => (
+            <div className="font-mono text-xs space-y-2">
+                {[
+                    { icon: 'SquareTerminal', iconClass: 'text-success', label: 'running', note: 'process + memory' },
+                    { icon: 'Pause', iconClass: 'text-muted', label: '/exit', note: 'tab closes, transcript stays' },
+                    { icon: 'Play', iconClass: 'text-accent', label: 'claude --resume <id>', note: 'right directory, full history' },
+                ].map((step) => (
+                    <div key={step.label} className="flex items-center gap-3 h-8 px-3 border border-line bg-surface">
+                        <Icon name={step.icon} className={`w-4 h-4 ${step.iconClass}`} />
+                        <span className="text-bone">{step.label}</span>
+                        <span className="ml-auto text-muted truncate">{step.note}</span>
+                    </div>
+                ))}
+            </div>
+        );
+
+        const GroupVisual = () => (
+            <div className="font-mono text-xs border border-line bg-surface py-1">
+                {[
+                    { indent: false, icon: 'Tag', text: 'PROJ-2567', count: '3' },
+                    { indent: true, icon: 'SquareTerminal', text: 'PROJ-2567 login timeout' },
+                    { indent: true, icon: 'Pause', text: 'proj-2567 review notes' },
+                    { indent: true, icon: 'Pause', text: 'branch fix/proj-2567-cookie' },
+                ].map((row) => (
+                    <div key={row.text} className={`flex items-center gap-2 h-6 ${row.indent ? 'pl-8' : 'pl-3'} text-bone`}>
+                        <Icon name={row.icon} className="w-4 h-4 text-muted" />
+                        <span className="truncate">{row.text}</span>
+                        {row.count && <span className="text-muted">{row.count}</span>}
+                    </div>
+                ))}
+            </div>
+        );
+
+        const RenameVisual = () => (
+            <div className="font-mono text-xs space-y-2">
+                <div className="flex items-center gap-2 h-7 px-2 border border-accent bg-bg">
+                    <Icon name="Pencil" className="w-4 h-4 text-accent" />
+                    <span className="text-bone">PROJ-2567 cookie expiry fix</span>
+                </div>
+                <div className="px-2 text-muted">sent to the session:</div>
+                <div className="px-2 text-bone">&gt; /rename PROJ-2567 cookie expiry fix</div>
+            </div>
+        );
+
+        const StatusVisual = () => (
+            <div className="font-mono text-xs grid grid-cols-1 gap-2">
+                {[
+                    { state: 'working', label: 'working here' },
+                    { state: 'running', label: 'idle here' },
+                    { state: 'elsewhere', label: 'open in another window' },
+                    { state: 'suspended', label: 'suspended' },
+                ].map((entry) => (
+                    <div key={entry.state} className="flex items-center gap-3">
+                        <Icon name={STATE_ICONS[entry.state].name} className={`w-4 h-4 ${STATE_ICONS[entry.state].className}`} />
+                        <span className="text-bone">{entry.label}</span>
+                    </div>
+                ))}
+            </div>
+        );
+
+        const DuplicateVisual = () => (
+            <div className="font-mono text-xs space-y-3">
+                <div className="flex items-center gap-2 h-7 px-3 border border-line bg-surface">
+                    <Icon name="TriangleAlert" className="w-4 h-4 text-warning" />
+                    <span className="text-bone">Flaky e2e triage</span>
+                    <span className="text-muted truncate">2 copies running · web-app</span>
+                </div>
+                <div className="border border-line bg-raised p-3 space-y-3 shadow-float">
+                    <p className="text-bone">"Docs site migration" is already running in another window.</p>
+                    <div className="flex flex-wrap gap-2">
+                        <span className="flex items-center gap-2 px-3 h-7 bg-accent text-on-accent"><Icon name="GitFork" className="w-4 h-4" />Fork a copy here</span>
+                        <span className="flex items-center px-3 h-7 border border-line text-bone">Cancel</span>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const ReposVisual = () => (
+            <div className="font-mono text-xs space-y-2">
+                <div className="flex items-center gap-2 h-7 px-3 border border-line bg-surface">
+                    <Icon name="LoaderCircle" className="w-4 h-4 text-success animate-spin motion-reduce:animate-none" />
+                    <span className="text-bone">OPS-4410 billing export</span>
+                    <span className="text-muted truncate">api · ops-4410-export · <span className="text-accent">+2 repos</span></span>
+                </div>
+                <div className="ml-8 border border-line bg-raised p-3 space-y-1 shadow-float">
+                    <p className="text-muted">Also touched</p>
+                    <p className="text-bone">~/src/infra</p>
+                    <p className="text-bone">~/src/web-app</p>
+                </div>
+            </div>
+        );
+
+        const FEATURES = [
+            { span: 'md:col-span-3', eyebrow: 'Cross-repo', title: 'Resume from any window', body: 'claude --resume only lists sessions from the current directory. All Sessions searches every repo and resumes in the directory the session lives in.', Visual: QuickPickVisual },
+            { span: 'md:col-span-3', eyebrow: 'Suspend', title: 'Close it. Keep it.', body: 'Waiting two days on review? Suspend sends /exit, so the process and its memory go away. Resume brings back the same session with its history.', Visual: SuspendVisual },
+            { span: 'md:col-span-2', eyebrow: 'Grouping', title: 'Filed by ticket', body: 'Ticket keys in the title, branch, or first prompt group sessions on their own. Drag to override.', Visual: GroupVisual },
+            { span: 'md:col-span-2', eyebrow: 'Rename', title: 'Rename once', body: 'Double-click or F2 renames the row and sends /rename, so the tree, tab, and Claude agree.', Visual: RenameVisual },
+            { span: 'md:col-span-2', eyebrow: 'Live status', title: 'See what is running', body: 'Status comes from claude agents --json and updates on every busy or idle flip.', Visual: StatusVisual },
+            { span: 'md:col-span-3', eyebrow: 'Guard', title: 'No double resumes', body: 'Two processes on one transcript corrupt it. Overseer flags duplicates and offers a fork instead of a second resume.', Visual: DuplicateVisual },
+            { span: 'md:col-span-3', eyebrow: 'Repos touched', title: 'Find the fix from either side', body: 'A session that starts in one repo and edits another shows +N repos. repo:<name> in All Sessions finds it from the repo it edited.', Visual: ReposVisual },
+        ];
+
+        const HOW_IT_WORKS = [
+            { step: '01', title: 'Index', body: 'Reads ~/.claude/projects/*/*.jsonl and caches by size and mtime. 130 sessions, 700 MB: 1.6s cold, about 2ms after.' },
+            { step: '02', title: 'Watch', body: 'claude agents --json for live status, plus a file watch on ~/.claude/sessions so busy and idle show up within a second.' },
+            { step: '03', title: 'Launch', body: 'Each session is a terminal that execs claude directly. /exit closes the tab. A window reload reattaches terminals by pid.' },
+        ];
+
+        const INSTALL_COMMANDS = `curl -LO ${VSIX_URL}\ncode --install-extension ${VSIX_NAME}`;
+
+        const CopyBlock = ({ text }) => {
+            const [wasCopied, setWasCopied] = useState(false);
+            const copyText = async () => {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    setWasCopied(true);
+                    setTimeout(() => setWasCopied(false), 1600);
+                } catch {
+                    setWasCopied(false);
+                }
+            };
+            return (
+                <div className="relative border border-line bg-surface">
+                    <button
+                        onClick={copyText}
+                        aria-label="Copy commands"
+                        className="absolute top-3 right-3 p-1 text-muted hover:text-accent transition-colors duration-200 ease-dj"
+                    >
+                        <Icon name={wasCopied ? 'Check' : 'Copy'} className="w-4 h-4" />
+                    </button>
+                    <pre className="p-5 pr-12 font-mono text-sm leading-relaxed whitespace-pre-wrap break-all">
+                        {text.split('\n').map((commandLine) => (
+                            <div key={commandLine}><span className="text-accent select-none">$ </span><span className="text-bone">{commandLine}</span></div>
+                        ))}
+                    </pre>
+                </div>
+            );
+        };
+
+        const App = () => (
+            <div className="w-full">
+                <header className="max-w-6xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between border-b border-line">
+                    <a href="#" className="flex items-center gap-3">
+                        <img src="assets/overseer-gold.svg" alt="" className="w-6 h-6" />
+                        <span className="font-display font-bold tracking-display text-lg">overseer</span>
+                    </a>
+                    <nav className="flex items-center gap-6 font-mono text-xs uppercase tracking-label text-muted">
+                        <a href="#features" className="hidden sm:inline hover:text-accent transition-colors duration-200 ease-dj">Features</a>
+                        <a href="#install" className="hidden sm:inline hover:text-accent transition-colors duration-200 ease-dj">Install</a>
+                        <a href={REPO_URL} className="flex items-center gap-2 hover:text-accent transition-colors duration-200 ease-dj"><Icon name="GitBranch" className="w-4 h-4" />Source</a>
+                    </nav>
+                </header>
+
+                <section className="relative max-w-6xl mx-auto px-4 md:px-8 pt-16 pb-24 md:pt-24">
+                    <img src="assets/djaunt-icon-bone.svg" alt="" aria-hidden="true" className="pointer-events-none select-none absolute -left-24 top-8 w-[36rem] opacity-[0.04]" />
+                    <div className="relative space-y-16">
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-end">
+                        <div className="lg:col-span-7 space-y-6">
+                            <Eyebrow>VS Code extension · for Claude Code</Eyebrow>
+                            <h1 className="font-display font-bold tracking-display leading-[1.08] text-[clamp(2.5rem,5.5vw,4.5rem)]">
+                                Vertical tabs for Claude sessions.
+                            </h1>
+                        </div>
+                        <div className="lg:col-span-5 space-y-6">
+                            <p className="text-lg text-bone leading-relaxed">
+                                Overseer keeps every Claude CLI session in a sidebar tree, grouped by ticket. Suspend the ones you are waiting on. Resume any of them from any repo, without remembering an ID.
+                            </p>
+                            <p className="text-muted">Everything stays in the real terminal.</p>
+                            <div className="flex flex-wrap gap-3 pt-2">
+                                <a href={VSIX_URL} className="flex items-center gap-2 h-11 px-5 bg-accent text-on-accent font-medium shadow-glow transition-transform duration-200 ease-dj hover:scale-[1.02]">
+                                    <Icon name="Download" className="w-4 h-4" />Download .vsix
+                                </a>
+                                <a href={REPO_URL} className="flex items-center gap-2 h-11 px-5 border border-line text-bone hover:border-accent hover:text-accent transition-colors duration-200 ease-dj">
+                                    <Icon name="GitBranch" className="w-4 h-4" />Source on GitHub
+                                </a>
+                            </div>
+                        </div>
+                        </div>
+                        <div className="xl:-mr-32 space-y-3">
+                            <OverseerMock />
+                            <p className="font-mono text-xs text-muted">Live demo. Click the pause or play icon on a row. Double-click a title to rename.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section className="border-y border-line bg-surface">
+                    <div className="max-w-6xl mx-auto px-4 md:px-8 py-16 grid grid-cols-1 md:grid-cols-12 gap-8">
+                        <div className="md:col-span-4"><Eyebrow>The problem</Eyebrow></div>
+                        <div className="md:col-span-8 space-y-6">
+                            <h2 className="font-display font-bold tracking-display text-3xl leading-tight">Twelve terminal tabs, and none of them say which ticket.</h2>
+                            <ul className="space-y-3 text-bone max-w-[65ch]">
+                                {[
+                                    'Tabs pile up across the top of the editor and blur together.',
+                                    'An idle session waiting two days on review still holds its memory.',
+                                    'claude --resume lists only sessions started in the current directory. A fix that began in one repo cannot be found from another.',
+                                ].map((problemLine) => (
+                                    <li key={problemLine} className="flex gap-3">
+                                        <Icon name="ChevronRight" className="w-4 h-4 mt-1 text-accent" />
+                                        <span>{problemLine}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="features" className="max-w-6xl mx-auto px-4 md:px-8 py-24 space-y-12">
+                    <div className="space-y-4 max-w-[40rem]">
+                        <Eyebrow>Features</Eyebrow>
+                        <h2 className="font-display font-bold tracking-display text-3xl leading-tight">A file explorer for sessions.</h2>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-px bg-line border border-line">
+                        {FEATURES.map(({ span, eyebrow, title, body, Visual }) => (
+                            <article key={title} className={`${span} bg-bg p-6 md:p-8 flex flex-col gap-6`}>
+                                <div className="space-y-2">
+                                    <p className="font-mono text-xs uppercase tracking-label text-muted">{eyebrow}</p>
+                                    <h3 className="font-display font-semibold tracking-display text-xl">{title}</h3>
+                                    <p className="text-muted leading-relaxed">{body}</p>
+                                </div>
+                                <div className="mt-auto"><Visual /></div>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="border-y border-line bg-surface">
+                    <div className="max-w-6xl mx-auto px-4 md:px-8 py-24 grid grid-cols-1 md:grid-cols-12 gap-8">
+                        <div className="md:col-span-4 space-y-4">
+                            <Eyebrow>How it works</Eyebrow>
+                            <h2 className="font-display font-bold tracking-display text-3xl leading-tight">No agent, no service.</h2>
+                            <p className="text-muted">It reads what Claude Code already writes to disk. No model calls, no tokens.</p>
+                        </div>
+                        <ol className="md:col-span-8 border-t border-line">
+                            {HOW_IT_WORKS.map((item) => (
+                                <li key={item.step} className="grid grid-cols-[3rem_1fr] md:grid-cols-[4rem_8rem_1fr] gap-4 py-6 border-b border-line">
+                                    <span className="font-mono text-sm text-accent">{item.step}</span>
+                                    <span className="font-display font-semibold">{item.title}</span>
+                                    <span className="col-span-2 md:col-span-1 text-muted leading-relaxed">{item.body}</span>
+                                </li>
+                            ))}
+                        </ol>
+                    </div>
+                </section>
+
+                <section id="install" className="max-w-6xl mx-auto px-4 md:px-8 py-24 grid grid-cols-1 md:grid-cols-12 gap-8">
+                    <div className="md:col-span-4 space-y-4">
+                        <Eyebrow>Install</Eyebrow>
+                        <h2 className="font-display font-bold tracking-display text-3xl leading-tight">Two commands.</h2>
+                        <p className="text-muted">Or in VS Code: Extensions, the ... menu, Install from VSIX.</p>
+                    </div>
+                    <div className="md:col-span-8 space-y-6">
+                        <CopyBlock text={INSTALL_COMMANDS} />
+                        <dl className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-line border border-line font-mono text-xs">
+                            {[
+                                ['VS Code', '1.100 or newer'],
+                                ['Claude Code', 'claude on your PATH'],
+                                ['Platform', 'macOS, Linux. Windows untested.'],
+                            ].map(([requirement, value]) => (
+                                <div key={requirement} className="bg-bg p-4 space-y-1">
+                                    <dt className="uppercase tracking-label text-muted">{requirement}</dt>
+                                    <dd className="text-bone">{value}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                    </div>
+                </section>
+
+                <footer className="border-t border-line">
+                    <div className="max-w-6xl mx-auto px-4 md:px-8 py-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+                        <img src="assets/djaunt-lockup-gold.svg" alt="Djaunt" className="h-8" />
+                        <p className="font-mono text-xs text-muted">Overseer is a Djaunt tool. Not affiliated with Anthropic.</p>
+                    </div>
+                </footer>
+            </div>
+        );
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
