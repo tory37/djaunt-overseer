@@ -2,7 +2,7 @@
   "name": "djaunt-overseer",
   "displayName": "Overseer",
   "description": "Vertical tabs for Claude CLI sessions: group by ticket, suspend, and resume from any repo.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "djaunt",
   "private": true,
   "license": "UNLICENSED",
@@ -136,6 +136,26 @@
         "command": "overseer.clickSession",
         "title": "Open Session",
         "category": "Overseer"
+      },
+      {
+        "command": "overseer.compactSession",
+        "title": "Compact",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.switchModel",
+        "title": "Switch Model…",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.clearSession",
+        "title": "Clear Context",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.costSession",
+        "title": "Show Cost",
+        "category": "Overseer"
       }
     ],
     "menus": {
@@ -231,6 +251,26 @@
           "command": "overseer.suspendGroup",
           "when": "view == overseer.sessions && viewItem =~ /^group\\./",
           "group": "1_group@2"
+        },
+        {
+          "command": "overseer.compactSession",
+          "when": "view == overseer.sessions && viewItem == session.running",
+          "group": "2_claude@1"
+        },
+        {
+          "command": "overseer.switchModel",
+          "when": "view == overseer.sessions && viewItem == session.running",
+          "group": "2_claude@2"
+        },
+        {
+          "command": "overseer.clearSession",
+          "when": "view == overseer.sessions && viewItem == session.running",
+          "group": "2_claude@3"
+        },
+        {
+          "command": "overseer.costSession",
+          "when": "view == overseer.sessions && viewItem == session.running",
+          "group": "2_claude@4"
         }
       ],
       "commandPalette": [
@@ -280,6 +320,22 @@
         },
         {
           "command": "overseer.clickSession",
+          "when": "false"
+        },
+        {
+          "command": "overseer.compactSession",
+          "when": "false"
+        },
+        {
+          "command": "overseer.switchModel",
+          "when": "false"
+        },
+        {
+          "command": "overseer.clearSession",
+          "when": "false"
+        },
+        {
+          "command": "overseer.costSession",
           "when": "false"
         }
       ]

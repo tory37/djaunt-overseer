@@ -37,6 +37,7 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - **Rename** (F2 or double-click) renames the row. When the session is idle in this window, it also sends `/rename` and renames the tab.
 - **Kill and Remove** (right-click) closes the terminal, ends the process, and unpins it. The transcript stays, so All Sessions can still resume it.
 - **Remove from Sidebar** only unpins.
+- **Compact**, **Switch Model…**, **Clear Context**, and **Show Cost** (right-click) send `/compact`, `/model`, `/clear`, and `/cost`. They show only on idle sessions running in this window.
 
 ### Guard
 - Live status comes from `claude agents --json`: working, running here, running in another window, or suspended.
@@ -45,8 +46,8 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 ## Install
 
 ```bash
-curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.2.vsix
-code --install-extension djaunt-overseer-0.0.2.vsix
+curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.3.vsix
+code --install-extension djaunt-overseer-0.0.3.vsix
 ```
 
 If `code` isn't on your PATH, use `"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"`.
@@ -71,7 +72,7 @@ Then run **Developer: Reload Window**. Cmd+R only reloads in the F5 development 
 npm install
 npm test
 npm run package
-code --install-extension djaunt-overseer-0.0.2.vsix --force
+code --install-extension djaunt-overseer-0.0.3.vsix --force
 ```
 
 Not affiliated with Anthropic.

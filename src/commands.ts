@@ -36,6 +36,14 @@ const SUSPEND_ANYWAY_CHOICE = "Suspend Anyway";
 const DOUBLE_CLICK_WINDOW_MS = 400;
 const RECENT_DIRECTORY_LIMIT = 12;
 
+// Claude resolves each alias to the latest model in that family.
+const MODEL_ALIASES: vscode.QuickPickItem[] = [
+  { label: "opus", description: "Most capable" },
+  { label: "sonnet", description: "Balanced" },
+  { label: "haiku", description: "Fastest" },
+  { label: "fable", description: "Latest Fable" },
+];
+
 interface DirectoryPickItem extends vscode.QuickPickItem {
   directory: string | undefined;
 }
@@ -163,6 +171,23 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     sendSlashCommand(terminal, `/rename ${newName.replace(/[\r\n]+/g, " ")}`);
     terminal.show();
     await vscode.commands.executeCommand("workbench.action.terminal.renameWithArg", { name: newName });
+  };
+
+  // Busy sessions are skipped because Claude drops input typed while it works.
+  const sendToIdleSessions = (sessionNodes: SessionNode[], slashCommand: string): void => {
+    const idleTerminals = sessionNodes
+      .filter((node) => liveMonitor.get(node.pinned.sessionId)?.status !== "busy")
+      .map((node) => findSessionTerminal(node.pinned.sessionId))
+      .filter(isDefined);
+    idleTerminals.forEach((terminal) => sendSlashCommand(terminal, slashCommand));
+    if (idleTerminals.length === 1) {
+      idleTerminals[0].show();
+    }
+  };
+
+  const pickModel = async (): Promise<string | undefined> => {
+    const pickedModel = await vscode.window.showQuickPick(MODEL_ALIASES, { placeHolder: "Switch the session's model" });
+    return pickedModel?.label;
   };
 
   const findPinnedSession = (sessionId: string): PinnedSession | undefined => {
@@ -325,6 +350,22 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     }),
     vscode.commands.registerCommand("overseer.suspendSession", async (clickedNode?: TreeNode) => {
       await suspendSessions(selectedSessionNodes(clickedNode).map((node) => node.pinned));
+    }),
+    vscode.commands.registerCommand("overseer.compactSession", (clickedNode?: TreeNode) => {
+      sendToIdleSessions(selectedSessionNodes(clickedNode), "/compact");
+    }),
+    vscode.commands.registerCommand("overseer.clearSession", (clickedNode?: TreeNode) => {
+      sendToIdleSessions(selectedSessionNodes(clickedNode), "/clear");
+    }),
+    vscode.commands.registerCommand("overseer.costSession", (clickedNode?: TreeNode) => {
+      sendToIdleSessions(selectedSessionNodes(clickedNode), "/cost");
+    }),
+    vscode.commands.registerCommand("overseer.switchModel", async (clickedNode?: TreeNode) => {
+      const sessionNodes = selectedSessionNodes(clickedNode);
+      const modelAlias = await pickModel();
+      if (modelAlias !== undefined) {
+        sendToIdleSessions(sessionNodes, `/model ${modelAlias}`);
+      }
     }),
     vscode.commands.registerCommand("overseer.suspendGroup", async (clickedNode?: TreeNode) => {
       const groupNode = clickedNode ?? treeView.selection[0];

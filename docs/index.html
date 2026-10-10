@@ -78,7 +78,7 @@
         const { useState, useEffect, useRef } = React;
 
         const REPO_URL = 'https://github.com/tory37/djaunt-overseer';
-        const VSIX_NAME = 'djaunt-overseer-0.0.2.vsix';
+        const VSIX_NAME = 'djaunt-overseer-0.0.3.vsix';
         const VSIX_URL = `${REPO_URL}/releases/latest/download/${VSIX_NAME}`;
 
         const Icon = ({ name, className = 'w-4 h-4' }) => {
@@ -452,6 +452,8 @@
                     <span className="truncate">Rate limiter refactor</span>
                 </div>
                 <div className="mx-3 my-1 border border-line bg-raised shadow-float">
+                    <div className="flex items-center gap-2 h-6 px-2 text-muted"><Icon name="Minimize2" className="w-4 h-4" />Compact</div>
+                    <div className="flex items-center gap-2 h-6 px-2 text-muted"><Icon name="Cpu" className="w-4 h-4" />Switch Model…</div>
                     <div className="flex items-center gap-2 h-6 px-2 text-muted"><Icon name="Trash2" className="w-4 h-4" />Kill and Remove</div>
                 </div>
             </div>
@@ -465,7 +467,7 @@
             { span: 'md:col-span-2', eyebrow: 'Live status', title: 'See what is running', body: 'Status comes from claude agents --json and updates on every busy or idle flip.', Visual: StatusVisual },
             { span: 'md:col-span-2', eyebrow: 'Guard', title: 'No double resumes', body: 'Two processes on one transcript corrupt it. Overseer flags duplicates and offers a fork instead of a second resume.', Visual: DuplicateVisual },
             { span: 'md:col-span-2', eyebrow: 'Repos touched', title: 'Find the fix from either side', body: 'A session that starts in one repo and edits another shows +N repos. repo:<name> in All Sessions finds it from the repo it edited.', Visual: ReposVisual },
-            { span: 'md:col-span-2', eyebrow: 'Organize', title: 'Your order, your groups', body: 'Each group has + for a new session and a search to pull in an existing one. Drag groups and sessions to reorder. Kill and Remove ends one in a single click.', Visual: OrganizeVisual },
+            { span: 'md:col-span-2', eyebrow: 'Organize', title: 'Your order, your groups', body: 'Each group has + for a new session and a search to pull in an existing one. Drag groups and sessions to reorder. Right-click to compact, switch model, or kill one.', Visual: OrganizeVisual },
         ];
 
         const HOW_IT_WORKS = [
