@@ -78,7 +78,7 @@
         const { useState, useEffect, useRef } = React;
 
         const REPO_URL = 'https://github.com/tory37/djaunt-overseer';
-        const VSIX_NAME = 'djaunt-overseer-0.0.1.vsix';
+        const VSIX_NAME = 'djaunt-overseer-0.0.2.vsix';
         const VSIX_URL = `${REPO_URL}/releases/latest/download/${VSIX_NAME}`;
 
         const Icon = ({ name, className = 'w-4 h-4' }) => {
@@ -264,11 +264,15 @@
                                     const groupSessions = sessions.filter((session) => session.group === group.name);
                                     return (
                                         <div key={group.name}>
-                                            <div className="flex items-center gap-1 h-6 px-2 text-bone">
+                                            <div className="group/row flex items-center gap-1 h-6 px-2 text-bone hover:bg-raised">
                                                 <Icon name="ChevronDown" className="w-4 h-4 text-muted" />
                                                 <Icon name={group.icon} className="w-4 h-4 text-muted" />
                                                 <span className="font-medium">{group.name}</span>
                                                 <span className="text-muted ml-1">{groupSessions.length}</span>
+                                                <span className="ml-auto flex items-center gap-1 text-muted opacity-0 group-hover/row:opacity-100 transition-opacity duration-200 ease-dj" aria-hidden="true">
+                                                    <Icon name="Plus" className="w-4 h-4" />
+                                                    <Icon name="Search" className="w-4 h-4" />
+                                                </span>
                                             </div>
                                             {groupSessions.map((session) => (
                                                 <SessionRow
@@ -433,14 +437,35 @@
             </div>
         );
 
+        const OrganizeVisual = () => (
+            <div className="font-mono text-xs border border-line bg-surface py-1">
+                <div className="flex items-center gap-2 h-6 pl-3 pr-2 bg-raised text-bone">
+                    <Icon name="Folder" className="w-4 h-4 text-muted" />
+                    <span className="truncate">Waiting on review</span>
+                    <span className="ml-auto flex items-center gap-1 text-accent">
+                        <Icon name="Plus" className="w-4 h-4" />
+                        <Icon name="Search" className="w-4 h-4" />
+                    </span>
+                </div>
+                <div className="flex items-center gap-2 h-6 pl-8 text-bone">
+                    <Icon name="Pause" className="w-4 h-4 text-muted" />
+                    <span className="truncate">Rate limiter refactor</span>
+                </div>
+                <div className="mx-3 my-1 border border-line bg-raised shadow-float">
+                    <div className="flex items-center gap-2 h-6 px-2 text-muted"><Icon name="Trash2" className="w-4 h-4" />Kill and Remove</div>
+                </div>
+            </div>
+        );
+
         const FEATURES = [
             { span: 'md:col-span-3', eyebrow: 'Cross-repo', title: 'Resume from any window', body: 'claude --resume only lists sessions from the current directory. All Sessions searches every repo and resumes in the directory the session lives in.', Visual: QuickPickVisual },
             { span: 'md:col-span-3', eyebrow: 'Suspend', title: 'Close it. Keep it.', body: 'Waiting two days on review? Suspend sends /exit, so the process and its memory go away. Resume brings back the same session with its history.', Visual: SuspendVisual },
             { span: 'md:col-span-2', eyebrow: 'Grouping', title: 'Filed by ticket', body: 'Ticket keys in the title, branch, or first prompt group sessions on their own. Drag to override.', Visual: GroupVisual },
             { span: 'md:col-span-2', eyebrow: 'Rename', title: 'Rename once', body: 'Double-click or F2 renames the row and sends /rename, so the tree, tab, and Claude agree.', Visual: RenameVisual },
             { span: 'md:col-span-2', eyebrow: 'Live status', title: 'See what is running', body: 'Status comes from claude agents --json and updates on every busy or idle flip.', Visual: StatusVisual },
-            { span: 'md:col-span-3', eyebrow: 'Guard', title: 'No double resumes', body: 'Two processes on one transcript corrupt it. Overseer flags duplicates and offers a fork instead of a second resume.', Visual: DuplicateVisual },
-            { span: 'md:col-span-3', eyebrow: 'Repos touched', title: 'Find the fix from either side', body: 'A session that starts in one repo and edits another shows +N repos. repo:<name> in All Sessions finds it from the repo it edited.', Visual: ReposVisual },
+            { span: 'md:col-span-2', eyebrow: 'Guard', title: 'No double resumes', body: 'Two processes on one transcript corrupt it. Overseer flags duplicates and offers a fork instead of a second resume.', Visual: DuplicateVisual },
+            { span: 'md:col-span-2', eyebrow: 'Repos touched', title: 'Find the fix from either side', body: 'A session that starts in one repo and edits another shows +N repos. repo:<name> in All Sessions finds it from the repo it edited.', Visual: ReposVisual },
+            { span: 'md:col-span-2', eyebrow: 'Organize', title: 'Your order, your groups', body: 'Each group has + for a new session and a search to pull in an existing one. Drag groups and sessions to reorder. Kill and Remove ends one in a single click.', Visual: OrganizeVisual },
         ];
 
         const HOW_IT_WORKS = [
@@ -597,7 +622,7 @@
                             {[
                                 ['VS Code', '1.100 or newer'],
                                 ['Claude Code', 'claude on your PATH'],
-                                ['Platform', 'macOS, Linux. Windows untested.'],
+                                ['Platform', 'Tested on macOS. Linux and Windows untested.'],
                             ].map(([requirement, value]) => (
                                 <div key={requirement} className="bg-bg p-4 space-y-1">
                                     <dt className="uppercase tracking-label text-muted">{requirement}</dt>

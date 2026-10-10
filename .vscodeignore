@@ -8,3 +8,4 @@ tsconfig.json
 .agents/**
 docs/**
 DESIGN.md
+CLAUDE.md
