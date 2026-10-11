@@ -188,6 +188,11 @@
         "command": "overseer.toggleArtifactLinks",
         "title": "Toggle Artifact Links",
         "category": "Overseer"
+      },
+      {
+        "command": "overseer.toggleLinkBrowser",
+        "title": "Toggle Link Browser (External / VS Code)",
+        "category": "Overseer"
       }
     ],
     "menus": {
@@ -323,6 +328,11 @@
           "command": "overseer.refreshLinks",
           "when": "view == overseer.sessions && viewItem =~ /^session\\./",
           "group": "3_links@1"
+        },
+        {
+          "command": "overseer.summarizeSession",
+          "when": "view == overseer.sessions && viewItem =~ /^session\\./",
+          "group": "3_links@2"
         }
       ],
       "commandPalette": [
@@ -401,6 +411,10 @@
         {
           "command": "overseer.refreshLinks",
           "when": "false"
+        },
+        {
+          "command": "overseer.summarizeSession",
+          "when": "false"
         }
       ]
     },
@@ -446,6 +460,13 @@
           "type": "boolean",
           "default": true,
           "description": "Show live PR state through gh and Jira status through acli. Checked every five minutes for expanded sessions."
+        },
+        "overseer.links.openIn": {
+          "type": "string",
+          "enum": ["external", "vscode"],
+          "enumDescriptions": ["Your default browser.", "The browser built into VS Code."],
+          "default": "external",
+          "description": "Where clicked links open."
         }
       }
     },

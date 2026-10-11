@@ -55,6 +55,14 @@ const LINK_SOURCE_TOGGLES: LinkSourceToggle[] = [
   { command: "overseer.toggleArtifactLinks", settingKey: "artifacts.enabled", sourceName: "Artifact" },
 ];
 
+// The integrated browser arrived in newer VS Code; Simple Browser covers older builds.
+const VSCODE_BROWSER_COMMANDS = ["workbench.action.browser.open", "simpleBrowser.show"];
+
+const LINK_BROWSER_NAMES: Record<string, string> = {
+  external: "your default browser",
+  vscode: "the VS Code browser",
+};
+
 // Claude resolves each alias to the latest model in that family.
 const MODEL_ALIASES: vscode.QuickPickItem[] = [
   { label: "opus", description: "Most capable" },
@@ -393,7 +401,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         void vscode.window.showInformationMessage("Set overseer.links.jira.baseUrl to open Jira tickets.");
         return;
       }
-      await vscode.env.openExternal(vscode.Uri.parse(url));
+      await openUrl(url);
     }),
     vscode.commands.registerCommand("overseer.copyLink", async (clicked?: ResolvedLink | LinkNode) => {
       const link = clickedLink(clicked);
@@ -419,6 +427,12 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         void vscode.window.showInformationMessage(`${toggle.sourceName} links ${isEnabled ? "on" : "off"}.`);
       }),
     ),
+    vscode.commands.registerCommand("overseer.toggleLinkBrowser", async () => {
+      const linksConfig = vscode.workspace.getConfiguration("overseer.links");
+      const nextTarget = linksConfig.get<string>("openIn", "external") === "external" ? "vscode" : "external";
+      await linksConfig.update("openIn", nextTarget, vscode.ConfigurationTarget.Global);
+      void vscode.window.showInformationMessage(`Links open in ${LINK_BROWSER_NAMES[nextTarget]}.`);
+    }),
     vscode.commands.registerCommand("overseer.suspendGroup", async (clickedNode?: TreeNode) => {
       const groupNode = clickedNode ?? treeView.selection[0];
       if (groupNode?.kind === "group") {
@@ -426,6 +440,19 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       }
     }),
   ];
+}
+
+async function openUrl(url: string): Promise<void> {
+  const opensInVscode = vscode.workspace.getConfiguration("overseer.links").get<string>("openIn") === "vscode";
+  if (opensInVscode) {
+    const availableCommands = new Set(await vscode.commands.getCommands(true));
+    const browserCommand = VSCODE_BROWSER_COMMANDS.find((command) => availableCommands.has(command));
+    if (browserCommand !== undefined) {
+      await vscode.commands.executeCommand(browserCommand, url);
+      return;
+    }
+  }
+  await vscode.env.openExternal(vscode.Uri.parse(url));
 }
 
 function clickedLink(clicked: ResolvedLink | LinkNode | undefined): ResolvedLink | undefined {
