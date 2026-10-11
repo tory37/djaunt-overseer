@@ -3,6 +3,8 @@ import * as vscode from "vscode";
 import { formatAge } from "./format";
 import { buildGroups, PinnedSession, pinnedSessionTitle, SessionGroup } from "./grouping";
 import { displayTitle, SessionMeta } from "./indexer";
+import { ResolvedLink } from "./linkJudge";
+import { linkCountBadge, linkDisplayId, linkUrl } from "./linkView";
 import { LiveSession } from "./liveParse";
 import { LiveSessionMonitor } from "./liveSessions";
 import { tildePath } from "./paths";
@@ -10,14 +12,17 @@ import { GroupRef, Registry } from "./registry";
 import { moveBeside } from "./reorder";
 import { otherReposLabel } from "./repoFilter";
 import { SessionIndex } from "./sessionIndex";
+import { readLinkSettings, SessionLinkService } from "./sessionLinks";
 import { findSessionTerminal } from "./terminals";
 
 export type TreeNode =
   | { kind: "group"; group: SessionGroup }
-  | { kind: "session"; pinned: PinnedSession; groupRef: GroupRef };
+  | { kind: "session"; pinned: PinnedSession; groupRef: GroupRef }
+  | { kind: "link"; link: ResolvedLink; sessionId: string; groupRef: GroupRef };
 
 type SessionNode = Extract<TreeNode, { kind: "session" }>;
 type GroupNode = Extract<TreeNode, { kind: "group" }>;
+type LinkNode = Extract<TreeNode, { kind: "link" }>;
 
 interface DraggedSession {
   sessionId: string;
@@ -43,6 +48,7 @@ export class SessionTreeProvider
     private readonly sessionIndex: SessionIndex,
     private readonly liveMonitor: LiveSessionMonitor,
     private readonly registry: Registry,
+    private readonly linkService: SessionLinkService,
   ) {}
 
   refresh(): void {
@@ -60,13 +66,28 @@ export class SessionTreeProvider
         groupRef: parentNode.group.ref,
       }));
     }
+    if (parentNode.kind === "session" && parentNode.pinned.meta !== undefined) {
+      this.linkService.noteExpanded(parentNode.pinned.meta);
+      const links = this.linkService.linksFor(parentNode.pinned.meta) ?? [];
+      return links.map((link) => ({
+        kind: "link",
+        link,
+        sessionId: parentNode.pinned.sessionId,
+        groupRef: parentNode.groupRef,
+      }));
+    }
     return [];
   }
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
-    return node.kind === "group"
-      ? groupTreeItem(node.group)
-      : sessionTreeItem(node.pinned, this.liveMonitor.get(node.pinned.sessionId));
+    if (node.kind === "group") {
+      return groupTreeItem(node.group);
+    }
+    if (node.kind === "link") {
+      return linkTreeItem(node.link, node.sessionId);
+    }
+    const links = node.pinned.meta === undefined ? [] : this.linkService.linksFor(node.pinned.meta);
+    return sessionTreeItem(node.pinned, this.liveMonitor.get(node.pinned.sessionId), links);
   }
 
   handleDrag(sourceNodes: readonly TreeNode[], dataTransfer: vscode.DataTransfer): void {
@@ -96,7 +117,7 @@ export class SessionTreeProvider
     if (targetNode === undefined) {
       return;
     }
-    const targetGroupRef = targetNode.kind === "group" ? targetNode.group.ref : targetNode.groupRef;
+    const targetGroupRef = nodeGroupRef(targetNode);
     const draggedSessionIds = draggedSessions.map((dragged) => dragged.sessionId);
     const targetGroup = this.currentGroups().find((group) => group.ref === targetGroupRef);
     const targetGroupSessionIds = targetGroup?.sessions.map((pinned) => pinned.sessionId) ?? [];
@@ -110,7 +131,7 @@ export class SessionTreeProvider
     const reorderedGroupSessionIds =
       targetNode.kind === "group"
         ? [...draggedSessionIds, ...targetGroupSessionIds.filter((sessionId) => !draggedSessionIds.includes(sessionId))]
-        : moveBeside(targetGroupSessionIds, draggedSessionIds, targetNode.pinned.sessionId);
+        : moveBeside(targetGroupSessionIds, draggedSessionIds, nodeSessionId(targetNode));
     const otherOrderedSessionIds = this.registry
       .sessionOrder()
       .filter((sessionId) => !reorderedGroupSessionIds.includes(sessionId));
@@ -118,7 +139,7 @@ export class SessionTreeProvider
   }
 
   private async dropGroups(draggedGroupRefs: GroupRef[], targetNode: TreeNode | undefined): Promise<void> {
-    const targetGroupRef = targetNode?.kind === "session" ? targetNode.groupRef : targetNode?.group.ref;
+    const targetGroupRef = targetNode === undefined ? undefined : nodeGroupRef(targetNode);
     const displayedGroupRefs = this.currentGroups().map((group) => group.ref);
     await this.registry.setGroupOrder(moveBeside(displayedGroupRefs, draggedGroupRefs, targetGroupRef));
   }
@@ -127,8 +148,9 @@ export class SessionTreeProvider
     const sessionsById = new Map<string, SessionMeta>(
       this.sessionIndex.currentSessions.map((meta) => [meta.sessionId, meta]),
     );
+    const pinnedSessionIds = this.registry.pinnedSessionIds();
     return buildGroups({
-      pinnedSessionIds: this.registry.pinnedSessionIds(),
+      pinnedSessionIds,
       sessionsById,
       userGroups: this.registry.userGroups(),
       assignments: this.registry.assignments(),
@@ -136,12 +158,21 @@ export class SessionTreeProvider
       pendingSessions: this.registry.pendingSessions(),
       groupOrder: this.registry.groupOrder(),
       sessionOrder: this.registry.sessionOrder(),
+      linkedTicketKeys: this.linkService.ownedTicketKeys(pinnedSessionIds),
     });
   }
 
   dispose(): void {
     this.treeChangeEmitter.dispose();
   }
+}
+
+function nodeGroupRef(node: TreeNode): GroupRef {
+  return node.kind === "group" ? node.group.ref : node.groupRef;
+}
+
+function nodeSessionId(node: SessionNode | LinkNode): string {
+  return node.kind === "session" ? node.pinned.sessionId : node.sessionId;
 }
 
 function groupTreeItem(group: SessionGroup): vscode.TreeItem {
@@ -177,11 +208,17 @@ const SESSION_STATE_LABELS: Record<SessionState, string> = {
   suspended: "Suspended",
 };
 
-function sessionTreeItem(pinned: PinnedSession, liveSession: LiveSession | undefined): vscode.TreeItem {
+function sessionTreeItem(
+  pinned: PinnedSession,
+  liveSession: LiveSession | undefined,
+  links: ResolvedLink[] | undefined,
+): vscode.TreeItem {
   const state = sessionState(pinned.sessionId, liveSession);
-  const treeItem = new vscode.TreeItem(pinnedSessionTitle(pinned), vscode.TreeItemCollapsibleState.None);
+  const treeItem = new vscode.TreeItem(pinnedSessionTitle(pinned), sessionCollapsibleState(links));
   treeItem.id = `session:${pinned.sessionId}`;
-  treeItem.description = sessionDescription(pinned);
+  treeItem.description = [linkCountBadge(links ?? []), sessionDescription(pinned)]
+    .filter((part) => part !== "")
+    .join(" · ");
   treeItem.tooltip = sessionTooltip(pinned, SESSION_STATE_LABELS[state]);
   treeItem.iconPath = SESSION_STATE_ICONS[state];
   treeItem.contextValue = `session.${state}`;
@@ -192,6 +229,58 @@ function sessionTreeItem(pinned: PinnedSession, liveSession: LiveSession | undef
   }
   treeItem.command = { command: "overseer.clickSession", title: "Open", arguments: [pinned.sessionId] };
   return treeItem;
+}
+
+// Unscanned sessions stay expandable so a click can reveal links once the scan lands.
+function sessionCollapsibleState(links: ResolvedLink[] | undefined): vscode.TreeItemCollapsibleState {
+  const hasNoLinks = links !== undefined && links.length === 0;
+  if (hasNoLinks || readLinkSettings().enabledKinds.size === 0) {
+    return vscode.TreeItemCollapsibleState.None;
+  }
+  return vscode.TreeItemCollapsibleState.Collapsed;
+}
+
+const LINK_KIND_ICONS: Record<ResolvedLink["kind"], string> = {
+  pr: "git-pull-request",
+  ticket: "issues",
+  artifact: "preview",
+};
+
+const LINK_KIND_NAMES: Record<ResolvedLink["kind"], string> = {
+  pr: "Pull request",
+  ticket: "Jira ticket",
+  artifact: "Artifact",
+};
+
+function linkTreeItem(link: ResolvedLink, sessionId: string): vscode.TreeItem {
+  const displayId = linkDisplayId(link);
+  const treeItem = new vscode.TreeItem(link.label ?? displayId, vscode.TreeItemCollapsibleState.None);
+  const isDimmed = link.role === "irrelevant" || !link.stillRelevant;
+  treeItem.id = `link:${sessionId}:${link.kind}:${link.id}`;
+  treeItem.description = [link.label === undefined ? "" : displayId, link.role === "owned" ? "" : link.role]
+    .filter((part) => part !== "")
+    .join(" · ");
+  treeItem.iconPath = new vscode.ThemeIcon(
+    LINK_KIND_ICONS[link.kind],
+    isDimmed ? new vscode.ThemeColor("disabledForeground") : undefined,
+  );
+  treeItem.contextValue = `link.${link.kind}`;
+  treeItem.tooltip = linkTooltip(link);
+  treeItem.command = { command: "overseer.openLink", title: "Open Link", arguments: [link] };
+  return treeItem;
+}
+
+function linkTooltip(link: ResolvedLink): vscode.MarkdownString {
+  const tooltip = new vscode.MarkdownString();
+  tooltip.appendMarkdown(`**${escapeMarkdown(link.label ?? linkDisplayId(link))}**\n\n`);
+  const roleSource = link.judged ? "judged" : "from transcript signals";
+  tooltip.appendMarkdown(`${LINK_KIND_NAMES[link.kind]} · ${link.role} (${roleSource})`);
+  if (!link.stillRelevant) {
+    tooltip.appendMarkdown(" · no longer active");
+  }
+  const url = linkUrl(link, readLinkSettings().jiraBaseUrl);
+  tooltip.appendMarkdown(url === undefined ? "\n\nSet `overseer.links.jira.baseUrl` to open tickets." : `\n\n${url}`);
+  return tooltip;
 }
 
 function sessionDescription(pinned: PinnedSession): string {

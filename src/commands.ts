@@ -9,6 +9,9 @@ import { LiveSessionMonitor } from "./liveSessions";
 import { pickSession } from "./quickPick";
 import { Registry, userGroupRef } from "./registry";
 import { SessionIndex } from "./sessionIndex";
+import { readLinkSettings, SessionLinkService } from "./sessionLinks";
+import { ResolvedLink } from "./linkJudge";
+import { linkUrl } from "./linkView";
 import {
   attachBackgroundSession,
   findSessionTerminal,
@@ -23,18 +26,32 @@ export interface CommandDependencies {
   sessionIndex: SessionIndex;
   liveMonitor: LiveSessionMonitor;
   registry: Registry;
+  linkService: SessionLinkService;
   treeView: vscode.TreeView<TreeNode>;
   log: vscode.OutputChannel;
 }
 
 type SessionNode = Extract<TreeNode, { kind: "session" }>;
 type GroupNode = Extract<TreeNode, { kind: "group" }>;
+type LinkNode = Extract<TreeNode, { kind: "link" }>;
 
 const FORK_CHOICE = "Fork a Copy Here";
 const ATTACH_CHOICE = "Attach Here";
 const SUSPEND_ANYWAY_CHOICE = "Suspend Anyway";
 const DOUBLE_CLICK_WINDOW_MS = 400;
 const RECENT_DIRECTORY_LIMIT = 12;
+
+interface LinkSourceToggle {
+  command: string;
+  settingKey: string;
+  sourceName: string;
+}
+
+const LINK_SOURCE_TOGGLES: LinkSourceToggle[] = [
+  { command: "overseer.toggleGithubLinks", settingKey: "github.enabled", sourceName: "GitHub PR" },
+  { command: "overseer.toggleJiraLinks", settingKey: "jira.enabled", sourceName: "Jira ticket" },
+  { command: "overseer.toggleArtifactLinks", settingKey: "artifacts.enabled", sourceName: "Artifact" },
+];
 
 // Claude resolves each alias to the latest model in that family.
 const MODEL_ALIASES: vscode.QuickPickItem[] = [
@@ -49,7 +66,7 @@ interface DirectoryPickItem extends vscode.QuickPickItem {
 }
 
 export function registerCommands(dependencies: CommandDependencies): vscode.Disposable[] {
-  const { sessionIndex, liveMonitor, registry, treeView, log } = dependencies;
+  const { sessionIndex, liveMonitor, registry, linkService, treeView, log } = dependencies;
 
   const selectedSessionNodes = (clickedNode?: TreeNode): SessionNode[] => {
     const candidateNodes = clickedNode && !treeView.selection.includes(clickedNode) ? [clickedNode] : treeView.selection;
@@ -367,6 +384,38 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         sendToIdleSessions(sessionNodes, `/model ${modelAlias}`);
       }
     }),
+    vscode.commands.registerCommand("overseer.openLink", async (clicked?: ResolvedLink | LinkNode) => {
+      const link = clickedLink(clicked);
+      const url = link === undefined ? undefined : linkUrl(link, readLinkSettings().jiraBaseUrl);
+      if (url === undefined) {
+        void vscode.window.showInformationMessage("Set overseer.links.jira.baseUrl to open Jira tickets.");
+        return;
+      }
+      await vscode.env.openExternal(vscode.Uri.parse(url));
+    }),
+    vscode.commands.registerCommand("overseer.copyLink", async (clicked?: ResolvedLink | LinkNode) => {
+      const link = clickedLink(clicked);
+      if (link !== undefined) {
+        await vscode.env.clipboard.writeText(linkUrl(link, readLinkSettings().jiraBaseUrl) ?? link.id);
+      }
+    }),
+    vscode.commands.registerCommand("overseer.refreshLinks", async (clickedNode?: TreeNode) => {
+      const sessionMetas = selectedSessionNodes(clickedNode)
+        .map((node) => node.pinned.meta)
+        .filter(isDefined);
+      await vscode.window.withProgress(
+        { location: { viewId: "overseer.sessions" }, title: "Refreshing links" },
+        () => Promise.all(sessionMetas.map((meta) => linkService.refreshSession(meta))),
+      );
+    }),
+    ...LINK_SOURCE_TOGGLES.map((toggle) =>
+      vscode.commands.registerCommand(toggle.command, async () => {
+        const linksConfig = vscode.workspace.getConfiguration("overseer.links");
+        const isEnabled = !linksConfig.get<boolean>(toggle.settingKey, true);
+        await linksConfig.update(toggle.settingKey, isEnabled, vscode.ConfigurationTarget.Global);
+        void vscode.window.showInformationMessage(`${toggle.sourceName} links ${isEnabled ? "on" : "off"}.`);
+      }),
+    ),
     vscode.commands.registerCommand("overseer.suspendGroup", async (clickedNode?: TreeNode) => {
       const groupNode = clickedNode ?? treeView.selection[0];
       if (groupNode?.kind === "group") {
@@ -374,6 +423,13 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       }
     }),
   ];
+}
+
+function clickedLink(clicked: ResolvedLink | LinkNode | undefined): ResolvedLink | undefined {
+  if (clicked === undefined) {
+    return undefined;
+  }
+  return "link" in clicked ? clicked.link : clicked;
 }
 
 function pinnedSessionDirectory(pinned: PinnedSession): string | undefined {

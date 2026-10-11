@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { LiveSession, parseAgentsJson } from "./liveParse";
+import { LiveSession, LiveStatus, parseAgentsJson } from "./liveParse";
 
 const POLL_INTERVAL_MS = 15_000;
 const WATCH_DEBOUNCE_MS = 300;
@@ -29,6 +29,10 @@ export class LiveSessionMonitor implements vscode.Disposable {
 
   get(sessionId: string): LiveSession | undefined {
     return this.liveSessions.get(sessionId);
+  }
+
+  statuses(): Map<string, LiveStatus> {
+    return new Map([...this.liveSessions].map(([sessionId, liveSession]) => [sessionId, liveSession.status]));
   }
 
   refresh(): Promise<Map<string, LiveSession>> {
@@ -78,7 +82,7 @@ export class LiveSessionMonitor implements vscode.Disposable {
 }
 
 // VS Code's own PATH can miss version-manager installs like nvm, so ask the user's login shell.
-async function resolveClaudeBinary(): Promise<string> {
+export async function resolveClaudeBinary(): Promise<string> {
   try {
     await execFileText("claude", ["--version"]);
     return "claude";

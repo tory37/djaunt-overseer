@@ -156,6 +156,38 @@
         "command": "overseer.costSession",
         "title": "Show Cost",
         "category": "Overseer"
+      },
+      {
+        "command": "overseer.openLink",
+        "title": "Open Link",
+        "category": "Overseer",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "overseer.copyLink",
+        "title": "Copy Link",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.refreshLinks",
+        "title": "Refresh Links",
+        "category": "Overseer",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "overseer.toggleGithubLinks",
+        "title": "Toggle GitHub PR Links",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.toggleJiraLinks",
+        "title": "Toggle Jira Ticket Links",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.toggleArtifactLinks",
+        "title": "Toggle Artifact Links",
+        "category": "Overseer"
       }
     ],
     "menus": {
@@ -271,6 +303,26 @@
           "command": "overseer.costSession",
           "when": "view == overseer.sessions && viewItem == session.running",
           "group": "2_claude@4"
+        },
+        {
+          "command": "overseer.openLink",
+          "when": "view == overseer.sessions && viewItem =~ /^link\\./",
+          "group": "inline@1"
+        },
+        {
+          "command": "overseer.openLink",
+          "when": "view == overseer.sessions && viewItem =~ /^link\\./",
+          "group": "1_link@1"
+        },
+        {
+          "command": "overseer.copyLink",
+          "when": "view == overseer.sessions && viewItem =~ /^link\\./",
+          "group": "1_link@2"
+        },
+        {
+          "command": "overseer.refreshLinks",
+          "when": "view == overseer.sessions && viewItem =~ /^session\\./",
+          "group": "3_links@1"
         }
       ],
       "commandPalette": [
@@ -337,6 +389,18 @@
         {
           "command": "overseer.costSession",
           "when": "false"
+        },
+        {
+          "command": "overseer.openLink",
+          "when": "false"
+        },
+        {
+          "command": "overseer.copyLink",
+          "when": "false"
+        },
+        {
+          "command": "overseer.refreshLinks",
+          "when": "false"
         }
       ]
     },
@@ -347,6 +411,36 @@
           "type": "string",
           "default": "",
           "description": "Claude config directory. Empty means ~/.claude."
+        },
+        "overseer.links.github.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show GitHub pull requests under each session."
+        },
+        "overseer.links.jira.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Jira tickets under each session."
+        },
+        "overseer.links.artifacts.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show claude.ai artifacts under each session."
+        },
+        "overseer.links.jira.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Jira site for tickets whose URL the transcript doesn't show, e.g. https://acme.atlassian.net."
+        },
+        "overseer.links.judgeModel": {
+          "type": "string",
+          "default": "haiku",
+          "description": "Model that decides which links matter to a session. Runs headless through the claude CLI."
+        },
+        "overseer.links.showIrrelevant": {
+          "type": "boolean",
+          "default": false,
+          "description": "Also show links the judge marked irrelevant, dimmed."
         }
       }
     },

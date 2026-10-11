@@ -4,6 +4,7 @@ import { LiveSessionMonitor } from "./liveSessions";
 import { defaultClaudeHome } from "./paths";
 import { Registry } from "./registry";
 import { SessionIndex } from "./sessionIndex";
+import { SessionLinkService } from "./sessionLinks";
 import { adoptTerminalsByPid } from "./terminals";
 import { SessionTreeProvider } from "./tree";
 
@@ -16,7 +17,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const sessionIndex = new SessionIndex(claudeHome, context.globalStorageUri.fsPath, log);
   const liveMonitor = new LiveSessionMonitor(claudeHome, log);
   const registry = new Registry(context.globalState);
-  const treeProvider = new SessionTreeProvider(sessionIndex, liveMonitor, registry);
+  const findIndexedSession = (sessionId: string) =>
+    sessionIndex.currentSessions.find((session) => session.sessionId === sessionId);
+  const linkService = new SessionLinkService(context.globalStorageUri.fsPath, liveMonitor, findIndexedSession, log);
+  const treeProvider = new SessionTreeProvider(sessionIndex, liveMonitor, registry, linkService);
   const treeView = vscode.window.createTreeView("overseer.sessions", {
     treeDataProvider: treeProvider,
     dragAndDropController: treeProvider,
@@ -37,10 +41,12 @@ export function activate(context: vscode.ExtensionContext): void {
     log,
     sessionIndex,
     liveMonitor,
+    linkService,
     treeProvider,
     treeView,
     { dispose: () => clearInterval(indexRefreshTimer) },
     sessionIndex.onDidChange(refreshTree),
+    linkService.onDidChange(refreshTree),
     liveMonitor.onDidChange(() => {
       refreshTree();
       void adoptRevivedTerminals();
@@ -59,7 +65,7 @@ export function activate(context: vscode.ExtensionContext): void {
         void liveMonitor.refresh();
       }
     }),
-    ...registerCommands({ sessionIndex, liveMonitor, registry, treeView, log }),
+    ...registerCommands({ sessionIndex, liveMonitor, registry, linkService, treeView, log }),
   );
 
   void sessionIndex.refresh();

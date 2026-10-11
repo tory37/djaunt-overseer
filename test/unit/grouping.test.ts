@@ -149,4 +149,19 @@ describe("buildGroups", () => {
 
     expect(summarize(input).map(([label]) => label)).toEqual(["CR-9", "PROJ-1"]);
   });
+
+  it("files a keyless session under its linked owned ticket, but a title key still wins", () => {
+    const sessions = [
+      sessionMeta("a", { customTitle: "random chat" }),
+      sessionMeta("b", { customTitle: "PROJ-1 triage" }),
+    ];
+    const input = groupingInput(sessions, { linkedTicketKeys: { a: "PROJ-7", b: "PROJ-7" } });
+
+    expect(summarize(input)).toEqual(
+      expect.arrayContaining([
+        ["PROJ-1", ["b"]],
+        ["PROJ-7", ["a"]],
+      ]),
+    );
+  });
 });

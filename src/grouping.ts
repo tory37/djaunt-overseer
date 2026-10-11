@@ -40,14 +40,16 @@ export interface GroupingInput {
   pendingSessions: Record<string, PendingSession>;
   groupOrder: GroupRef[];
   sessionOrder: string[];
+  linkedTicketKeys?: Record<string, string>;
 }
 
-export function autoGroupRefFor(meta: SessionMeta | undefined, label?: string): GroupRef {
+export function autoGroupRefFor(meta: SessionMeta | undefined, label?: string, linkedTicketKey?: string): GroupRef {
   const ticketKey =
     extractTicketKey({ title: label }) ??
     (meta === undefined
       ? undefined
-      : extractTicketKey({ title: displayTitle(meta), gitBranch: meta.gitBranch, firstPrompt: meta.firstPrompt }));
+      : extractTicketKey({ title: displayTitle(meta), gitBranch: meta.gitBranch, firstPrompt: meta.firstPrompt })) ??
+    linkedTicketKey;
   return ticketKey === undefined ? UNGROUPED_REF : autoGroupRef(ticketKey);
 }
 
@@ -62,7 +64,8 @@ export function buildGroups(input: GroupingInput): SessionGroup[] {
       label: input.labels[sessionId],
       pending: input.pendingSessions[sessionId],
     };
-    const groupRef = resolveGroupRef(input.assignments[sessionId], pinnedSession, userGroupRefs);
+    const linkedTicketKey = input.linkedTicketKeys?.[sessionId];
+    const groupRef = resolveGroupRef(input.assignments[sessionId], pinnedSession, userGroupRefs, linkedTicketKey);
     const groupSessions = sessionsByRef.get(groupRef) ?? [];
     groupSessions.push(pinnedSession);
     sessionsByRef.set(groupRef, groupSessions);
@@ -101,12 +104,13 @@ function resolveGroupRef(
   assignedRef: GroupRef | undefined,
   pinnedSession: PinnedSession,
   userGroupRefs: Set<GroupRef>,
+  linkedTicketKey: string | undefined,
 ): GroupRef {
   const isStaleUserGroup = assignedRef?.startsWith("user:") && !userGroupRefs.has(assignedRef);
   if (assignedRef !== undefined && !isStaleUserGroup) {
     return assignedRef;
   }
-  return autoGroupRefFor(pinnedSession.meta, pinnedSession.label);
+  return autoGroupRefFor(pinnedSession.meta, pinnedSession.label, linkedTicketKey);
 }
 
 function byMostRecentActivity(left: PinnedSession, right: PinnedSession): number {
