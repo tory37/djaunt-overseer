@@ -64,6 +64,23 @@ describe("visibleLinks", () => {
     ]);
     expect(visibleLinks([pinnedNoise], settings({ enabledKinds: new Set(["pr"]) }))).toEqual([]);
   });
+
+  it("sorts by the saved order within each mark and puts unsaved links first", () => {
+    const pinnedTicket = { ...OWNED_TICKET, mark: "pinned" as const };
+    const links = [OWNED_PR, TOUCHED_TICKET, pinnedTicket];
+    const savedOrder = ["ticket:PROJ-5", "ticket:PROJ-9"];
+
+    expect(visibleLinks(links, settings(), savedOrder).map((link) => link.id)).toEqual([
+      "PROJ-9",
+      "acme/web-app/pull/2384",
+      "PROJ-5",
+    ]);
+    expect(visibleLinks(links, settings(), [...savedOrder, "pr:acme/web-app/pull/2384"]).map((link) => link.id)).toEqual([
+      "PROJ-9",
+      "PROJ-5",
+      "acme/web-app/pull/2384",
+    ]);
+  });
 });
 
 describe("markLinks", () => {

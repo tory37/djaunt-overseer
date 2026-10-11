@@ -27,9 +27,10 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - Each group row has **+** (new session in that group) and **search** (pull an existing session into that group).
 
 ### Reorder
-- Drag a group onto another group, or a session onto another session.
+- Drag a group onto another group, a session onto another session, or a link onto another link in the same session. Drop a link on its session row to move it to the top.
 - Dragging down puts the item after the target. Dragging up puts it before. VS Code trees can't show an insertion line.
 - The order syncs across windows.
+- Pinned links stay above the rest, and removed links stay at the bottom. Your link order applies within each of those.
 
 ### Run
 - **New Session** (+) asks for a folder and an optional name, then runs `claude --session-id <id> -n <name>` in an editor terminal.

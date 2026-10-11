@@ -3,6 +3,7 @@ import { linkKey, ResolvedLink } from "./linkJudge";
 import { LinkStatus } from "./linkStatus";
 import { LiveStatus } from "./liveParse";
 import { LinkMark, LinkMarks } from "./registry";
+import { sortBySavedOrder } from "./reorder";
 
 export interface LinkViewSettings {
   enabledKinds: Set<LinkKind>;
@@ -22,7 +23,8 @@ export function markLinks(resolvedLinks: ResolvedLink[], linkMarks: LinkMarks): 
 }
 
 // Pinned links show even when the judge called them irrelevant; removed links show only on request.
-export function visibleLinks(markedLinks: MarkedLink[], settings: LinkViewSettings): MarkedLink[] {
+// The user's saved order sorts links within each mark, so a dragged link never jumps above a pinned one.
+export function visibleLinks(markedLinks: MarkedLink[], settings: LinkViewSettings, savedOrder: string[] = []): MarkedLink[] {
   const shownLinks = markedLinks.filter((link) => {
     if (!settings.enabledKinds.has(link.kind)) {
       return false;
@@ -35,7 +37,9 @@ export function visibleLinks(markedLinks: MarkedLink[], settings: LinkViewSettin
     }
     return settings.showIrrelevant || link.role !== "irrelevant";
   });
-  return shownLinks.sort((left, right) => MARK_SORT_RANK[left.mark ?? "none"] - MARK_SORT_RANK[right.mark ?? "none"]);
+  const markRank = (link: MarkedLink): number => MARK_SORT_RANK[link.mark ?? "none"];
+  const orderedLinks = sortBySavedOrder(shownLinks, savedOrder, linkKey);
+  return orderedLinks.sort((left, right) => markRank(left) - markRank(right));
 }
 
 export function linkUrl(link: ResolvedLink, jiraBaseUrl: string): string | undefined {

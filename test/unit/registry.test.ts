@@ -25,6 +25,36 @@ describe("Registry", () => {
     expect(registry.linkMarks("b")).toEqual({});
   });
 
+  it("keeps link order per session", async () => {
+    const registry = new Registry(memoryStore());
+
+    await registry.setLinkOrder("a", ["ticket:PROJ-5", "pr:acme/web/pull/1"]);
+    await registry.setLinkOrder("b", ["pr:acme/web/pull/1"]);
+
+    expect(registry.linkOrder("a")).toEqual(["ticket:PROJ-5", "pr:acme/web/pull/1"]);
+    expect(registry.linkOrder("b")).toEqual(["pr:acme/web/pull/1"]);
+    expect(registry.linkOrder("c")).toEqual([]);
+  });
+
+  it("remembers expanded sessions and collapsed groups, and forgets an unpinned session", async () => {
+    const registry = new Registry(memoryStore());
+    let changeCount = 0;
+    registry.onDidChange(() => changeCount++);
+
+    await registry.setSessionExpanded("a", true);
+    await registry.setSessionExpanded("b", true);
+    await registry.setSessionExpanded("b", false);
+    await registry.setGroupCollapsed("user:g1", true);
+
+    expect(registry.isSessionExpanded("a")).toBe(true);
+    expect(registry.isSessionExpanded("b")).toBe(false);
+    expect(registry.isGroupCollapsed("user:g1")).toBe(true);
+    expect(changeCount).toBe(0);
+    await registry.pin("a");
+    await registry.unpin("a");
+    expect(registry.isSessionExpanded("a")).toBe(false);
+  });
+
   it("pins once and unpins", async () => {
     const registry = new Registry(memoryStore());
 

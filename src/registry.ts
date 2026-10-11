@@ -27,6 +27,9 @@ const PENDING_KEY = "overseer.pendingSessions";
 const GROUP_ORDER_KEY = "overseer.groupOrder";
 const SESSION_ORDER_KEY = "overseer.sessionOrder";
 const LINK_MARKS_KEY = "overseer.linkMarks";
+const LINK_ORDER_KEY = "overseer.linkOrder";
+const EXPANDED_SESSIONS_KEY = "overseer.expandedSessionIds";
+const COLLAPSED_GROUPS_KEY = "overseer.collapsedGroupRefs";
 
 export type LinkMark = "pinned" | "removed";
 export type LinkMarks = Record<string, LinkMark>;
@@ -63,6 +66,7 @@ export class Registry {
   async unpin(sessionId: string): Promise<void> {
     await this.write(PINNED_KEY, this.pinnedSessionIds().filter((pinnedId) => pinnedId !== sessionId));
     await this.write(SESSION_ORDER_KEY, this.sessionOrder().filter((orderedId) => orderedId !== sessionId));
+    await this.setSessionExpanded(sessionId, false);
     const { [sessionId]: _removedPending, ...remainingPending } = this.pendingSessions();
     await this.write(PENDING_KEY, remainingPending);
   }
@@ -165,12 +169,43 @@ export class Registry {
     await this.write(LINK_MARKS_KEY, hasMarks ? { ...otherSessionMarks, [sessionId]: sessionMarks } : otherSessionMarks);
   }
 
+  linkOrder(sessionId: string): string[] {
+    return this.allLinkOrders()[sessionId] ?? [];
+  }
+
+  async setLinkOrder(sessionId: string, linkKeys: string[]): Promise<void> {
+    await this.write(LINK_ORDER_KEY, { ...this.allLinkOrders(), [sessionId]: linkKeys });
+  }
+
+  isSessionExpanded(sessionId: string): boolean {
+    return (this.store.get<string[]>(EXPANDED_SESSIONS_KEY) ?? []).includes(sessionId);
+  }
+
+  // The tree already shows the new state, so these writes skip the change listeners and the refresh they cause.
+  async setSessionExpanded(sessionId: string, isExpanded: boolean): Promise<void> {
+    const otherSessionIds = (this.store.get<string[]>(EXPANDED_SESSIONS_KEY) ?? []).filter((id) => id !== sessionId);
+    await this.store.update(EXPANDED_SESSIONS_KEY, isExpanded ? [...otherSessionIds, sessionId] : otherSessionIds);
+  }
+
+  isGroupCollapsed(groupRef: GroupRef): boolean {
+    return (this.store.get<GroupRef[]>(COLLAPSED_GROUPS_KEY) ?? []).includes(groupRef);
+  }
+
+  async setGroupCollapsed(groupRef: GroupRef, isCollapsed: boolean): Promise<void> {
+    const otherGroupRefs = (this.store.get<GroupRef[]>(COLLAPSED_GROUPS_KEY) ?? []).filter((ref) => ref !== groupRef);
+    await this.store.update(COLLAPSED_GROUPS_KEY, isCollapsed ? [...otherGroupRefs, groupRef] : otherGroupRefs);
+  }
+
   notifyExternalChange(): void {
     this.changeListeners.forEach((listener) => listener());
   }
 
   private allLinkMarks(): Record<string, LinkMarks> {
     return this.store.get<Record<string, LinkMarks>>(LINK_MARKS_KEY) ?? {};
+  }
+
+  private allLinkOrders(): Record<string, string[]> {
+    return this.store.get<Record<string, string[]>>(LINK_ORDER_KEY) ?? {};
   }
 
   private async write(key: string, value: unknown): Promise<void> {

@@ -90,6 +90,7 @@ export class SessionLinkService implements vscode.Disposable {
     private readonly liveMonitor: LiveSessionMonitor,
     private readonly findSessionMeta: (sessionId: string) => SessionMeta | undefined,
     private readonly readLinkMarks: (sessionId: string) => LinkMarks,
+    private readonly readLinkOrder: (sessionId: string) => string[],
     private readonly log: vscode.OutputChannel,
   ) {
     this.cachesLoaded = this.loadCaches();
@@ -113,7 +114,8 @@ export class SessionLinkService implements vscode.Disposable {
       return undefined;
     }
     const resolvedLinks = resolveLinks(this.candidatesFor(scanEntry), this.judgeEntries[meta.sessionId]);
-    return visibleLinks(markLinks(resolvedLinks, this.readLinkMarks(meta.sessionId)), readLinkSettings());
+    const markedLinks = markLinks(resolvedLinks, this.readLinkMarks(meta.sessionId));
+    return visibleLinks(markedLinks, readLinkSettings(), this.readLinkOrder(meta.sessionId));
   }
 
   ownedTicketKeys(sessionIds: string[]): Record<string, string> {

@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { formatAge } from "./format";
 import { buildGroups, PinnedSession, pinnedSessionTitle, SessionGroup } from "./grouping";
 import { displayTitle, SessionMeta } from "./indexer";
+import { linkKey } from "./linkJudge";
 import { LinkStatus } from "./linkStatus";
 import { LinkStatusService } from "./linkStatusService";
 import { linkCountBadge, linkDisplayId, linkIconName, linkUrl, MarkedLink } from "./linkView";
@@ -32,9 +33,15 @@ interface DraggedSession {
   groupRef: GroupRef;
 }
 
+interface DraggedLink {
+  sessionId: string;
+  linkKey: string;
+}
+
 interface DragPayload {
   draggedSessions: DraggedSession[];
   draggedGroupRefs: GroupRef[];
+  draggedLinks: DraggedLink[];
 }
 
 const TREE_DRAG_MIME = "application/vnd.code.tree.overseer.sessions";
@@ -87,7 +94,7 @@ export class SessionTreeProvider
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
     if (node.kind === "group") {
-      return groupTreeItem(node.group);
+      return groupTreeItem(node.group, this.registry.isGroupCollapsed(node.group.ref));
     }
     if (node.kind === "link") {
       return linkTreeItem(this.extensionUri, node.link, node.sessionId, this.linkStatusService.statusFor(node.link));
@@ -98,7 +105,8 @@ export class SessionTreeProvider
       summary: meta && pickHoverSummary(meta.recap, this.summaryService.summaryFor(meta.sessionId), meta.sizeBytes),
       isSummarizing: this.summaryService.isSummarizing(node.pinned.sessionId),
     };
-    return sessionTreeItem(node.pinned, this.liveMonitor.get(node.pinned.sessionId), links, summaryState);
+    const isExpanded = this.registry.isSessionExpanded(node.pinned.sessionId);
+    return sessionTreeItem(node.pinned, this.liveMonitor.get(node.pinned.sessionId), links, summaryState, isExpanded);
   }
 
   handleDrag(sourceNodes: readonly TreeNode[], dataTransfer: vscode.DataTransfer): void {
@@ -108,7 +116,10 @@ export class SessionTreeProvider
     const draggedGroupRefs = sourceNodes
       .filter((node): node is GroupNode => node.kind === "group")
       .map((node) => node.group.ref);
-    const payload: DragPayload = { draggedSessions, draggedGroupRefs };
+    const draggedLinks = sourceNodes
+      .filter((node): node is LinkNode => node.kind === "link")
+      .map((node) => ({ sessionId: node.sessionId, linkKey: linkKey(node.link) }));
+    const payload: DragPayload = { draggedSessions, draggedGroupRefs, draggedLinks };
     dataTransfer.set(TREE_DRAG_MIME, new vscode.DataTransferItem(payload));
   }
 
@@ -121,7 +132,33 @@ export class SessionTreeProvider
       await this.dropSessions(payload.draggedSessions, targetNode);
     } else if (payload.draggedGroupRefs.length > 0) {
       await this.dropGroups(payload.draggedGroupRefs, targetNode);
+    } else if (payload.draggedLinks.length > 0) {
+      await this.dropLinks(payload.draggedLinks, targetNode);
     }
+  }
+
+  // Links reorder only within their own session; a drop on the session row moves them to the top.
+  private async dropLinks(draggedLinks: DraggedLink[], targetNode: TreeNode | undefined): Promise<void> {
+    if (targetNode === undefined || targetNode.kind === "group") {
+      return;
+    }
+    const targetSessionId = nodeSessionId(targetNode);
+    const meta = this.sessionIndex.currentSessions.find((session) => session.sessionId === targetSessionId);
+    if (meta === undefined) {
+      return;
+    }
+    const draggedLinkKeys = draggedLinks
+      .filter((dragged) => dragged.sessionId === targetSessionId)
+      .map((dragged) => dragged.linkKey);
+    if (draggedLinkKeys.length === 0) {
+      return;
+    }
+    const displayedLinkKeys = (this.linkService.linksFor(meta) ?? []).map(linkKey);
+    const reorderedLinkKeys =
+      targetNode.kind === "session"
+        ? [...draggedLinkKeys, ...displayedLinkKeys.filter((key) => !draggedLinkKeys.includes(key))]
+        : moveBeside(displayedLinkKeys, draggedLinkKeys, linkKey(targetNode.link));
+    await this.registry.setLinkOrder(targetSessionId, reorderedLinkKeys);
   }
 
   private async dropSessions(draggedSessions: DraggedSession[], targetNode: TreeNode | undefined): Promise<void> {
@@ -186,8 +223,11 @@ function nodeSessionId(node: SessionNode | LinkNode): string {
   return node.kind === "session" ? node.pinned.sessionId : node.sessionId;
 }
 
-function groupTreeItem(group: SessionGroup): vscode.TreeItem {
-  const treeItem = new vscode.TreeItem(group.label, vscode.TreeItemCollapsibleState.Expanded);
+function groupTreeItem(group: SessionGroup, isCollapsed: boolean): vscode.TreeItem {
+  const collapsibleState = isCollapsed
+    ? vscode.TreeItemCollapsibleState.Collapsed
+    : vscode.TreeItemCollapsibleState.Expanded;
+  const treeItem = new vscode.TreeItem(group.label, collapsibleState);
   treeItem.id = `group:${group.ref}`;
   treeItem.description = String(group.sessions.length);
   treeItem.iconPath = new vscode.ThemeIcon(group.kind === "auto" ? "tag" : "folder");
@@ -234,9 +274,10 @@ function sessionTreeItem(
   liveSession: LiveSession | undefined,
   links: MarkedLink[] | undefined,
   summaryState: SummaryState,
+  isExpanded: boolean,
 ): vscode.TreeItem {
   const state = sessionState(pinned.sessionId, liveSession);
-  const treeItem = new vscode.TreeItem(pinnedSessionTitle(pinned), sessionCollapsibleState(links));
+  const treeItem = new vscode.TreeItem(pinnedSessionTitle(pinned), sessionCollapsibleState(links, isExpanded));
   treeItem.id = `session:${pinned.sessionId}`;
   treeItem.description = [linkCountBadge(links ?? []), sessionDescription(pinned)]
     .filter((part) => part !== "")
@@ -254,12 +295,12 @@ function sessionTreeItem(
 }
 
 // Unscanned sessions stay expandable so a click can reveal links once the scan lands.
-function sessionCollapsibleState(links: MarkedLink[] | undefined): vscode.TreeItemCollapsibleState {
+function sessionCollapsibleState(links: MarkedLink[] | undefined, isExpanded: boolean): vscode.TreeItemCollapsibleState {
   const hasNoLinks = links !== undefined && links.length === 0;
   if (hasNoLinks || readLinkSettings().enabledKinds.size === 0) {
     return vscode.TreeItemCollapsibleState.None;
   }
-  return vscode.TreeItemCollapsibleState.Collapsed;
+  return isExpanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
 }
 
 const LINK_KIND_NAMES: Record<MarkedLink["kind"], string> = {

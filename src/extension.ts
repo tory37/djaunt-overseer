@@ -8,7 +8,7 @@ import { LinkStatusService } from "./linkStatusService";
 import { SessionLinkService } from "./sessionLinks";
 import { SessionSummaryService } from "./sessionSummaries";
 import { adoptTerminalsByPid } from "./terminals";
-import { SessionTreeProvider } from "./tree";
+import { SessionTreeProvider, TreeNode } from "./tree";
 
 const INDEX_REFRESH_INTERVAL_MS = 60_000;
 
@@ -26,6 +26,7 @@ export function activate(context: vscode.ExtensionContext): void {
     liveMonitor,
     findIndexedSession,
     (sessionId) => registry.linkMarks(sessionId),
+    (sessionId) => registry.linkOrder(sessionId),
     log,
   );
   const linkStatusService = new LinkStatusService(log);
@@ -45,6 +46,8 @@ export function activate(context: vscode.ExtensionContext): void {
     canSelectMany: true,
     showCollapseAll: true,
   });
+  treeView.onDidExpandElement(({ element }) => void saveExpansion(registry, element, true));
+  treeView.onDidCollapseElement(({ element }) => void saveExpansion(registry, element, false));
 
   const refreshTree = (): void => treeProvider.refresh();
   const adoptRevivedTerminals = async (): Promise<void> => {
@@ -104,3 +107,11 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {}
+
+async function saveExpansion(registry: Registry, node: TreeNode, isExpanded: boolean): Promise<void> {
+  if (node.kind === "session") {
+    await registry.setSessionExpanded(node.pinned.sessionId, isExpanded);
+  } else if (node.kind === "group") {
+    await registry.setGroupCollapsed(node.group.ref, !isExpanded);
+  }
+}
