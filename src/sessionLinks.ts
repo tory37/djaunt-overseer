@@ -17,12 +17,20 @@ import {
   JudgeSessionContext,
   judgeSessionLinks,
   needsJudging,
-  ResolvedLink,
   resolveLinks,
 } from "./linkJudge";
-import { ConcurrencyLimiter, LinkViewSettings, ownedTicketKey, sessionsThatWentIdle, visibleLinks } from "./linkView";
+import {
+  ConcurrencyLimiter,
+  LinkViewSettings,
+  MarkedLink,
+  markLinks,
+  ownedTicketKey,
+  sessionsThatWentIdle,
+  visibleLinks,
+} from "./linkView";
 import { LiveStatus } from "./liveParse";
 import { LiveSessionMonitor, resolveClaudeBinary } from "./liveSessions";
+import { LinkMarks } from "./registry";
 
 const LINKS_CONFIG_SECTION = "overseer.links";
 const IDLE_RESCAN_DELAY_MS = 60_000;
@@ -50,6 +58,7 @@ export function readLinkSettings(): LinkSettings {
   return {
     enabledKinds,
     showIrrelevant: linksConfig.get<boolean>("showIrrelevant", false),
+    showRemoved: linksConfig.get<boolean>("showRemoved", false),
     jiraBaseUrl: linksConfig.get<string>("jira.baseUrl", ""),
     judgeModel: linksConfig.get<string>("judgeModel", DEFAULT_JUDGE_MODEL) || DEFAULT_JUDGE_MODEL,
   };
@@ -80,6 +89,7 @@ export class SessionLinkService implements vscode.Disposable {
     private readonly storageDir: string,
     private readonly liveMonitor: LiveSessionMonitor,
     private readonly findSessionMeta: (sessionId: string) => SessionMeta | undefined,
+    private readonly readLinkMarks: (sessionId: string) => LinkMarks,
     private readonly log: vscode.OutputChannel,
   ) {
     this.cachesLoaded = this.loadCaches();
@@ -94,7 +104,7 @@ export class SessionLinkService implements vscode.Disposable {
   }
 
   // Returns undefined until the first scan of this transcript lands; the scan starts here.
-  linksFor(meta: SessionMeta): ResolvedLink[] | undefined {
+  linksFor(meta: SessionMeta): MarkedLink[] | undefined {
     if (!this.scannedThisWindow.has(meta.transcriptFile)) {
       void this.scan(meta);
     }
@@ -103,7 +113,7 @@ export class SessionLinkService implements vscode.Disposable {
       return undefined;
     }
     const resolvedLinks = resolveLinks(this.candidatesFor(scanEntry), this.judgeEntries[meta.sessionId]);
-    return visibleLinks(resolvedLinks, readLinkSettings());
+    return visibleLinks(markLinks(resolvedLinks, this.readLinkMarks(meta.sessionId)), readLinkSettings());
   }
 
   ownedTicketKeys(sessionIds: string[]): Record<string, string> {
@@ -114,7 +124,8 @@ export class SessionLinkService implements vscode.Disposable {
       if (scanEntry === undefined) {
         continue;
       }
-      const ticketKey = ownedTicketKey(resolveLinks(this.candidatesFor(scanEntry), this.judgeEntries[sessionId]));
+      const resolvedLinks = resolveLinks(this.candidatesFor(scanEntry), this.judgeEntries[sessionId]);
+      const ticketKey = ownedTicketKey(markLinks(resolvedLinks, this.readLinkMarks(sessionId)));
       if (ticketKey !== undefined) {
         ticketKeys[sessionId] = ticketKey;
       }

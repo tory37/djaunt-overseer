@@ -12,6 +12,19 @@ function memoryStore(): KeyValueStore {
 }
 
 describe("Registry", () => {
+  it("keeps link marks per session and drops cleared ones", async () => {
+    const registry = new Registry(memoryStore());
+
+    await registry.setLinkMark("a", ["pr:acme/web/pull/1", "ticket:PROJ-5"], "pinned");
+    await registry.setLinkMark("b", ["ticket:PROJ-5"], "removed");
+    await registry.setLinkMark("a", ["pr:acme/web/pull/1"], undefined);
+
+    expect(registry.linkMarks("a")).toEqual({ "ticket:PROJ-5": "pinned" });
+    expect(registry.linkMarks("b")).toEqual({ "ticket:PROJ-5": "removed" });
+    await registry.setLinkMark("b", ["ticket:PROJ-5"], undefined);
+    expect(registry.linkMarks("b")).toEqual({});
+  });
+
   it("pins once and unpins", async () => {
     const registry = new Registry(memoryStore());
 

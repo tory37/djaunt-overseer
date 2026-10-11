@@ -26,6 +26,10 @@ const LABELS_KEY = "overseer.sessionLabels";
 const PENDING_KEY = "overseer.pendingSessions";
 const GROUP_ORDER_KEY = "overseer.groupOrder";
 const SESSION_ORDER_KEY = "overseer.sessionOrder";
+const LINK_MARKS_KEY = "overseer.linkMarks";
+
+export type LinkMark = "pinned" | "removed";
+export type LinkMarks = Record<string, LinkMark>;
 
 export interface PendingSession {
   cwd: string;
@@ -142,8 +146,31 @@ export class Registry {
     await this.write(PENDING_KEY, { ...this.pendingSessions(), [sessionId]: pendingSession });
   }
 
+  // Marks are keyed by link, not by scan, so a rescan or a new judge verdict keeps them.
+  linkMarks(sessionId: string): LinkMarks {
+    return this.allLinkMarks()[sessionId] ?? {};
+  }
+
+  async setLinkMark(sessionId: string, linkKeys: string[], mark: LinkMark | undefined): Promise<void> {
+    const sessionMarks = { ...this.linkMarks(sessionId) };
+    for (const linkKey of linkKeys) {
+      if (mark === undefined) {
+        delete sessionMarks[linkKey];
+      } else {
+        sessionMarks[linkKey] = mark;
+      }
+    }
+    const { [sessionId]: _previousMarks, ...otherSessionMarks } = this.allLinkMarks();
+    const hasMarks = Object.keys(sessionMarks).length > 0;
+    await this.write(LINK_MARKS_KEY, hasMarks ? { ...otherSessionMarks, [sessionId]: sessionMarks } : otherSessionMarks);
+  }
+
   notifyExternalChange(): void {
     this.changeListeners.forEach((listener) => listener());
+  }
+
+  private allLinkMarks(): Record<string, LinkMarks> {
+    return this.store.get<Record<string, LinkMarks>>(LINK_MARKS_KEY) ?? {};
   }
 
   private async write(key: string, value: unknown): Promise<void> {

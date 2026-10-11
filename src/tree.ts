@@ -3,10 +3,9 @@ import * as vscode from "vscode";
 import { formatAge } from "./format";
 import { buildGroups, PinnedSession, pinnedSessionTitle, SessionGroup } from "./grouping";
 import { displayTitle, SessionMeta } from "./indexer";
-import { ResolvedLink } from "./linkJudge";
 import { LinkStatus } from "./linkStatus";
 import { LinkStatusService } from "./linkStatusService";
-import { linkCountBadge, linkDisplayId, linkIconName, linkUrl } from "./linkView";
+import { linkCountBadge, linkDisplayId, linkIconName, linkUrl, MarkedLink } from "./linkView";
 import { LiveSession } from "./liveParse";
 import { LiveSessionMonitor } from "./liveSessions";
 import { tildePath } from "./paths";
@@ -22,7 +21,7 @@ import { findSessionTerminal } from "./terminals";
 export type TreeNode =
   | { kind: "group"; group: SessionGroup }
   | { kind: "session"; pinned: PinnedSession; groupRef: GroupRef }
-  | { kind: "link"; link: ResolvedLink; sessionId: string; groupRef: GroupRef };
+  | { kind: "link"; link: MarkedLink; sessionId: string; groupRef: GroupRef };
 
 type SessionNode = Extract<TreeNode, { kind: "session" }>;
 type GroupNode = Extract<TreeNode, { kind: "group" }>;
@@ -233,7 +232,7 @@ const SUMMARY_SOURCE_LABELS: Record<HoverSummary["source"], string> = {
 function sessionTreeItem(
   pinned: PinnedSession,
   liveSession: LiveSession | undefined,
-  links: ResolvedLink[] | undefined,
+  links: MarkedLink[] | undefined,
   summaryState: SummaryState,
 ): vscode.TreeItem {
   const state = sessionState(pinned.sessionId, liveSession);
@@ -255,7 +254,7 @@ function sessionTreeItem(
 }
 
 // Unscanned sessions stay expandable so a click can reveal links once the scan lands.
-function sessionCollapsibleState(links: ResolvedLink[] | undefined): vscode.TreeItemCollapsibleState {
+function sessionCollapsibleState(links: MarkedLink[] | undefined): vscode.TreeItemCollapsibleState {
   const hasNoLinks = links !== undefined && links.length === 0;
   if (hasNoLinks || readLinkSettings().enabledKinds.size === 0) {
     return vscode.TreeItemCollapsibleState.None;
@@ -263,13 +262,13 @@ function sessionCollapsibleState(links: ResolvedLink[] | undefined): vscode.Tree
   return vscode.TreeItemCollapsibleState.Collapsed;
 }
 
-const LINK_KIND_NAMES: Record<ResolvedLink["kind"], string> = {
+const LINK_KIND_NAMES: Record<MarkedLink["kind"], string> = {
   pr: "Pull request",
   ticket: "Jira ticket",
   artifact: "Artifact",
 };
 
-function linkIconPath(extensionUri: vscode.Uri, link: ResolvedLink, status: LinkStatus | undefined) {
+function linkIconPath(extensionUri: vscode.Uri, link: MarkedLink, status: LinkStatus | undefined) {
   const iconName = linkIconName(link, status);
   return {
     light: vscode.Uri.joinPath(extensionUri, "media", "links", `${iconName}-light.svg`),
@@ -279,7 +278,7 @@ function linkIconPath(extensionUri: vscode.Uri, link: ResolvedLink, status: Link
 
 function linkTreeItem(
   extensionUri: vscode.Uri,
-  link: ResolvedLink,
+  link: MarkedLink,
   sessionId: string,
   status: LinkStatus | undefined,
 ): vscode.TreeItem {
@@ -287,6 +286,7 @@ function linkTreeItem(
   const treeItem = new vscode.TreeItem(link.label ?? displayId, vscode.TreeItemCollapsibleState.None);
   treeItem.id = `link:${sessionId}:${link.kind}:${link.id}`;
   treeItem.description = [
+    link.mark ?? "",
     status?.text ?? "",
     link.label === undefined ? "" : displayId,
     link.role === "owned" ? "" : link.role,
@@ -294,19 +294,22 @@ function linkTreeItem(
     .filter((part) => part !== "")
     .join(" · ");
   treeItem.iconPath = linkIconPath(extensionUri, link, status);
-  treeItem.contextValue = `link.${link.kind}`;
+  treeItem.contextValue = `link.${link.kind}.${link.mark ?? "unmarked"}`;
   treeItem.tooltip = linkTooltip(link, status);
   treeItem.command = { command: "overseer.openLink", title: "Open Link", arguments: [link] };
   return treeItem;
 }
 
-function linkTooltip(link: ResolvedLink, status: LinkStatus | undefined): vscode.MarkdownString {
+function linkTooltip(link: MarkedLink, status: LinkStatus | undefined): vscode.MarkdownString {
   const tooltip = new vscode.MarkdownString();
   tooltip.appendMarkdown(`**${escapeMarkdown(link.label ?? linkDisplayId(link))}**\n\n`);
   const roleSource = link.judged ? "judged" : "from transcript signals";
   tooltip.appendMarkdown(`${LINK_KIND_NAMES[link.kind]} · ${link.role} (${roleSource})`);
   if (!link.stillRelevant) {
     tooltip.appendMarkdown(" · no longer active");
+  }
+  if (link.mark !== undefined) {
+    tooltip.appendMarkdown(` · ${link.mark} by you`);
   }
   if (status !== undefined) {
     tooltip.appendMarkdown(`\n\nStatus: ${escapeMarkdown(status.text)}`);

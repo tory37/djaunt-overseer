@@ -1,18 +1,41 @@
 import { LinkKind } from "./linkCandidates";
-import { ResolvedLink } from "./linkJudge";
+import { linkKey, ResolvedLink } from "./linkJudge";
 import { LinkStatus } from "./linkStatus";
 import { LiveStatus } from "./liveParse";
+import { LinkMark, LinkMarks } from "./registry";
 
 export interface LinkViewSettings {
   enabledKinds: Set<LinkKind>;
   showIrrelevant: boolean;
+  showRemoved: boolean;
   jiraBaseUrl: string;
 }
 
-export function visibleLinks(resolvedLinks: ResolvedLink[], settings: LinkViewSettings): ResolvedLink[] {
-  return resolvedLinks.filter(
-    (link) => settings.enabledKinds.has(link.kind) && (settings.showIrrelevant || link.role !== "irrelevant"),
-  );
+export interface MarkedLink extends ResolvedLink {
+  mark: LinkMark | undefined;
+}
+
+const MARK_SORT_RANK: Record<LinkMark | "none", number> = { pinned: 0, none: 1, removed: 2 };
+
+export function markLinks(resolvedLinks: ResolvedLink[], linkMarks: LinkMarks): MarkedLink[] {
+  return resolvedLinks.map((link) => ({ ...link, mark: linkMarks[linkKey(link)] }));
+}
+
+// Pinned links show even when the judge called them irrelevant; removed links show only on request.
+export function visibleLinks(markedLinks: MarkedLink[], settings: LinkViewSettings): MarkedLink[] {
+  const shownLinks = markedLinks.filter((link) => {
+    if (!settings.enabledKinds.has(link.kind)) {
+      return false;
+    }
+    if (link.mark === "pinned") {
+      return true;
+    }
+    if (link.mark === "removed") {
+      return settings.showRemoved;
+    }
+    return settings.showIrrelevant || link.role !== "irrelevant";
+  });
+  return shownLinks.sort((left, right) => MARK_SORT_RANK[left.mark ?? "none"] - MARK_SORT_RANK[right.mark ?? "none"]);
 }
 
 export function linkUrl(link: ResolvedLink, jiraBaseUrl: string): string | undefined {
@@ -35,8 +58,8 @@ export function linkDisplayId(link: ResolvedLink): string {
 }
 
 // Names a file in media/links, without the theme suffix.
-export function linkIconName(link: ResolvedLink, status: LinkStatus | undefined): string {
-  const isDimmed = link.role === "irrelevant" || !link.stillRelevant;
+export function linkIconName(link: MarkedLink, status: LinkStatus | undefined): string {
+  const isDimmed = link.mark === "removed" || (link.mark !== "pinned" && (link.role === "irrelevant" || !link.stillRelevant));
   if (isDimmed) {
     return `${link.kind}-dim`;
   }
@@ -46,16 +69,26 @@ export function linkIconName(link: ResolvedLink, status: LinkStatus | undefined)
   return `${link.kind}-${status.tone}`;
 }
 
-export function linkCountBadge(links: ResolvedLink[]): string {
-  const relevantCount = links.filter((link) => link.role !== "irrelevant").length;
+export function linkCountBadge(links: MarkedLink[]): string {
+  const relevantCount = links.filter(isCountedLink).length;
   if (relevantCount === 0) {
     return "";
   }
   return relevantCount === 1 ? "1 link" : `${relevantCount} links`;
 }
 
-export function ownedTicketKey(links: ResolvedLink[]): string | undefined {
-  return links.find((link) => link.kind === "ticket" && link.role === "owned")?.id;
+function isCountedLink(link: MarkedLink): boolean {
+  if (link.mark !== undefined) {
+    return link.mark === "pinned";
+  }
+  return link.role !== "irrelevant";
+}
+
+// A pinned ticket beats the judge's pick, and a removed one never names the group.
+export function ownedTicketKey(links: MarkedLink[]): string | undefined {
+  const tickets = links.filter((link) => link.kind === "ticket" && link.mark !== "removed");
+  const pinnedTicket = tickets.find((link) => link.mark === "pinned");
+  return (pinnedTicket ?? tickets.find((link) => link.role === "owned"))?.id;
 }
 
 export function sessionsThatWentIdle(

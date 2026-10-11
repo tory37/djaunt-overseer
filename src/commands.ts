@@ -7,10 +7,10 @@ import { displayTitle, SessionMeta } from "./indexer";
 import { tildePath } from "./paths";
 import { LiveSessionMonitor } from "./liveSessions";
 import { pickSession } from "./quickPick";
-import { Registry, userGroupRef } from "./registry";
+import { LinkMark, Registry, userGroupRef } from "./registry";
 import { SessionIndex } from "./sessionIndex";
 import { readLinkSettings, SessionLinkService } from "./sessionLinks";
-import { ResolvedLink } from "./linkJudge";
+import { linkKey, ResolvedLink } from "./linkJudge";
 import { linkUrl } from "./linkView";
 import { LinkStatusService } from "./linkStatusService";
 import { SessionSummaryService } from "./sessionSummaries";
@@ -60,6 +60,18 @@ const LINK_SOURCE_TOGGLES: LinkSourceToggle[] = [
 // The integrated browser arrived in newer VS Code; Simple Browser covers older builds.
 const VSCODE_BROWSER_COMMANDS = ["workbench.action.browser.open", "simpleBrowser.show"];
 
+interface LinkMarkCommand {
+  command: string;
+  mark: LinkMark | undefined;
+}
+
+const LINK_MARK_COMMANDS: LinkMarkCommand[] = [
+  { command: "overseer.pinLink", mark: "pinned" },
+  { command: "overseer.removeLink", mark: "removed" },
+  { command: "overseer.unpinLink", mark: undefined },
+  { command: "overseer.restoreLink", mark: undefined },
+];
+
 const LINK_BROWSER_NAMES: Record<string, string> = {
   external: "your default browser",
   vscode: "the VS Code browser",
@@ -84,6 +96,11 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
   const selectedSessionNodes = (clickedNode?: TreeNode): SessionNode[] => {
     const candidateNodes = clickedNode && !treeView.selection.includes(clickedNode) ? [clickedNode] : treeView.selection;
     return candidateNodes.filter((node): node is SessionNode => node.kind === "session");
+  };
+
+  const selectedLinkNodes = (clickedNode?: TreeNode): LinkNode[] => {
+    const candidateNodes = clickedNode && !treeView.selection.includes(clickedNode) ? [clickedNode] : treeView.selection;
+    return candidateNodes.filter((node): node is LinkNode => node.kind === "link");
   };
 
   const findSessionMeta = async (sessionId: string): Promise<SessionMeta | undefined> => {
@@ -430,6 +447,24 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         void vscode.window.showInformationMessage(`${toggle.sourceName} links ${isEnabled ? "on" : "off"}.`);
       }),
     ),
+    ...LINK_MARK_COMMANDS.map((markCommand) =>
+      vscode.commands.registerCommand(markCommand.command, async (clickedNode?: TreeNode) => {
+        const linkKeysBySession = new Map<string, string[]>();
+        for (const linkNode of selectedLinkNodes(clickedNode)) {
+          const sessionLinkKeys = linkKeysBySession.get(linkNode.sessionId) ?? [];
+          linkKeysBySession.set(linkNode.sessionId, [...sessionLinkKeys, linkKey(linkNode.link)]);
+        }
+        for (const [sessionId, linkKeys] of linkKeysBySession) {
+          await registry.setLinkMark(sessionId, linkKeys, markCommand.mark);
+        }
+      }),
+    ),
+    vscode.commands.registerCommand("overseer.toggleRemovedLinks", async () => {
+      const linksConfig = vscode.workspace.getConfiguration("overseer.links");
+      const isShown = !linksConfig.get<boolean>("showRemoved", false);
+      await linksConfig.update("showRemoved", isShown, vscode.ConfigurationTarget.Global);
+      void vscode.window.showInformationMessage(`Removed links ${isShown ? "shown" : "hidden"}.`);
+    }),
     vscode.commands.registerCommand("overseer.toggleLinkBrowser", async () => {
       const linksConfig = vscode.workspace.getConfiguration("overseer.links");
       const nextTarget = linksConfig.get<string>("openIn", "external") === "external" ? "vscode" : "external";

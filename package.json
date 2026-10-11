@@ -196,6 +196,35 @@
         "category": "Overseer"
       },
       {
+        "command": "overseer.pinLink",
+        "title": "Pin Link",
+        "category": "Overseer",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "overseer.unpinLink",
+        "title": "Unpin Link",
+        "category": "Overseer",
+        "icon": "$(pinned)"
+      },
+      {
+        "command": "overseer.removeLink",
+        "title": "Remove Link",
+        "category": "Overseer",
+        "icon": "$(close)"
+      },
+      {
+        "command": "overseer.restoreLink",
+        "title": "Restore Link",
+        "category": "Overseer",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "overseer.toggleRemovedLinks",
+        "title": "Toggle Removed Links",
+        "category": "Overseer"
+      },
+      {
         "command": "overseer.toggleLinkBrowser",
         "title": "Toggle Link Browser (External / VS Code)",
         "category": "Overseer"
@@ -316,6 +345,46 @@
           "group": "2_claude@4"
         },
         {
+          "command": "overseer.pinLink",
+          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.unmarked$/",
+          "group": "inline@0"
+        },
+        {
+          "command": "overseer.unpinLink",
+          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.pinned$/",
+          "group": "inline@0"
+        },
+        {
+          "command": "overseer.removeLink",
+          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.(unmarked|pinned)$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "overseer.restoreLink",
+          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.removed$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "overseer.pinLink",
+          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.(unmarked|removed)$/",
+          "group": "2_mark@1"
+        },
+        {
+          "command": "overseer.unpinLink",
+          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.pinned$/",
+          "group": "2_mark@1"
+        },
+        {
+          "command": "overseer.removeLink",
+          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.(unmarked|pinned)$/",
+          "group": "2_mark@2"
+        },
+        {
+          "command": "overseer.restoreLink",
+          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.removed$/",
+          "group": "2_mark@2"
+        },
+        {
           "command": "overseer.openLink",
           "when": "view == overseer.sessions && viewItem =~ /^link\\./",
           "group": "inline@1"
@@ -342,6 +411,22 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "overseer.pinLink",
+          "when": "false"
+        },
+        {
+          "command": "overseer.unpinLink",
+          "when": "false"
+        },
+        {
+          "command": "overseer.removeLink",
+          "when": "false"
+        },
+        {
+          "command": "overseer.restoreLink",
+          "when": "false"
+        },
         {
           "command": "overseer.resumeSession",
           "when": "false"
@@ -461,6 +546,11 @@
           "type": "boolean",
           "default": false,
           "description": "Also show links the judge marked irrelevant, dimmed."
+        },
+        "overseer.links.showRemoved": {
+          "type": "boolean",
+          "default": false,
+          "description": "Also show links you removed, dimmed, so you can restore them."
         },
         "overseer.links.liveStatus": {
           "type": "boolean",

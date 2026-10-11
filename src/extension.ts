@@ -21,7 +21,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const registry = new Registry(context.globalState);
   const findIndexedSession = (sessionId: string) =>
     sessionIndex.currentSessions.find((session) => session.sessionId === sessionId);
-  const linkService = new SessionLinkService(context.globalStorageUri.fsPath, liveMonitor, findIndexedSession, log);
+  const linkService = new SessionLinkService(
+    context.globalStorageUri.fsPath,
+    liveMonitor,
+    findIndexedSession,
+    (sessionId) => registry.linkMarks(sessionId),
+    log,
+  );
   const linkStatusService = new LinkStatusService(log);
   const summaryService = new SessionSummaryService(context.globalStorageUri.fsPath, log);
   const treeProvider = new SessionTreeProvider(
