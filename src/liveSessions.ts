@@ -81,19 +81,38 @@ export class LiveSessionMonitor implements vscode.Disposable {
   }
 }
 
+export function resolveClaudeBinary(): Promise<string> {
+  return resolveCliBinary("claude");
+}
+
 // VS Code's own PATH can miss version-manager installs like nvm, so ask the user's login shell.
-export async function resolveClaudeBinary(): Promise<string> {
-  try {
-    await execFileText("claude", ["--version"]);
-    return "claude";
-  } catch {
-    const userShell = process.env.SHELL ?? FALLBACK_SHELL;
-    const resolvedPath = (await execFileText(userShell, ["-l", "-i", "-c", "command -v claude"])).trim().split("\n").pop();
-    if (!resolvedPath) {
-      throw new Error("claude not found on PATH or in the login shell");
-    }
-    return resolvedPath;
+export async function resolveCliBinary(binaryName: string): Promise<string> {
+  if (await isOnPath(binaryName)) {
+    return binaryName;
   }
+  const userShell = process.env.SHELL ?? FALLBACK_SHELL;
+  const resolvedPath = (await execFileText(userShell, ["-l", "-i", "-c", `command -v ${binaryName}`]))
+    .trim()
+    .split("\n")
+    .pop();
+  if (!resolvedPath) {
+    throw new Error(`${binaryName} not found on PATH or in the login shell`);
+  }
+  return resolvedPath;
+}
+
+async function isOnPath(binaryName: string): Promise<boolean> {
+  const pathDirectories = (process.env.PATH ?? "").split(path.delimiter).filter((directory) => directory !== "");
+  for (const directory of pathDirectories) {
+    const isExecutable = await fs.promises
+      .access(path.join(directory, binaryName), fs.constants.X_OK)
+      .then(() => true)
+      .catch(() => false);
+    if (isExecutable) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function execFileText(file: string, args: string[]): Promise<string> {

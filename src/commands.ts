@@ -12,6 +12,7 @@ import { SessionIndex } from "./sessionIndex";
 import { readLinkSettings, SessionLinkService } from "./sessionLinks";
 import { ResolvedLink } from "./linkJudge";
 import { linkUrl } from "./linkView";
+import { LinkStatusService } from "./linkStatusService";
 import {
   attachBackgroundSession,
   findSessionTerminal,
@@ -27,6 +28,7 @@ export interface CommandDependencies {
   liveMonitor: LiveSessionMonitor;
   registry: Registry;
   linkService: SessionLinkService;
+  linkStatusService: LinkStatusService;
   treeView: vscode.TreeView<TreeNode>;
   log: vscode.OutputChannel;
 }
@@ -66,7 +68,7 @@ interface DirectoryPickItem extends vscode.QuickPickItem {
 }
 
 export function registerCommands(dependencies: CommandDependencies): vscode.Disposable[] {
-  const { sessionIndex, liveMonitor, registry, linkService, treeView, log } = dependencies;
+  const { sessionIndex, liveMonitor, registry, linkService, linkStatusService, treeView, log } = dependencies;
 
   const selectedSessionNodes = (clickedNode?: TreeNode): SessionNode[] => {
     const candidateNodes = clickedNode && !treeView.selection.includes(clickedNode) ? [clickedNode] : treeView.selection;
@@ -403,6 +405,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       const sessionMetas = selectedSessionNodes(clickedNode)
         .map((node) => node.pinned.meta)
         .filter(isDefined);
+      linkStatusService.clear();
       await vscode.window.withProgress(
         { location: { viewId: "overseer.sessions" }, title: "Refreshing links" },
         () => Promise.all(sessionMetas.map((meta) => linkService.refreshSession(meta))),

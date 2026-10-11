@@ -35,6 +35,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `linkCache.ts` | Scan and verdict caches in globalStorage. |
 | `linkView.ts` | Pure: link filters, URLs, labels, busy-to-idle detection, concurrency limiter. |
 | `sessionLinks.ts` | Scans on first view and 60s after busy-to-idle. Judges on expand, at most 2 at once. |
+| `linkStatus.ts` / `linkStatusService.ts` | PR state via `gh`, ticket status via `acli`. Five-minute cache, at most 4 calls at once, on-screen links only. |
 | `quickPick.ts` / `repoFilter.ts` | All Sessions picker and the `repo:` filter. |
 
 ## Rules
@@ -45,7 +46,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 - Send slash commands only when the session is idle. Typed input is lost while Claude is busy.
 - Never resume a session that is live elsewhere. Two processes on one transcript corrupt it. Offer a fork.
 - Session names reach the shell. Quote with `quoteForShell` and strip newlines.
-- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `linkView`) and test it there. `vscode` can't be imported in unit tests.
+- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `linkView`, `linkStatus`) and test it there. `vscode` can't be imported in unit tests.
 - New commands need an entry in `contributes.commands`, a menu `when` clause, and `"when": "false"` under `commandPalette` if they need a tree node.
 
 ## Site

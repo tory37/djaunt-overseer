@@ -4,6 +4,7 @@ import { LiveSessionMonitor } from "./liveSessions";
 import { defaultClaudeHome } from "./paths";
 import { Registry } from "./registry";
 import { SessionIndex } from "./sessionIndex";
+import { LinkStatusService } from "./linkStatusService";
 import { SessionLinkService } from "./sessionLinks";
 import { adoptTerminalsByPid } from "./terminals";
 import { SessionTreeProvider } from "./tree";
@@ -20,7 +21,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const findIndexedSession = (sessionId: string) =>
     sessionIndex.currentSessions.find((session) => session.sessionId === sessionId);
   const linkService = new SessionLinkService(context.globalStorageUri.fsPath, liveMonitor, findIndexedSession, log);
-  const treeProvider = new SessionTreeProvider(sessionIndex, liveMonitor, registry, linkService);
+  const linkStatusService = new LinkStatusService(log);
+  const treeProvider = new SessionTreeProvider(sessionIndex, liveMonitor, registry, linkService, linkStatusService);
   const treeView = vscode.window.createTreeView("overseer.sessions", {
     treeDataProvider: treeProvider,
     dragAndDropController: treeProvider,
@@ -42,11 +44,13 @@ export function activate(context: vscode.ExtensionContext): void {
     sessionIndex,
     liveMonitor,
     linkService,
+    linkStatusService,
     treeProvider,
     treeView,
     { dispose: () => clearInterval(indexRefreshTimer) },
     sessionIndex.onDidChange(refreshTree),
     linkService.onDidChange(refreshTree),
+    linkStatusService.onDidChange(refreshTree),
     liveMonitor.onDidChange(() => {
       refreshTree();
       void adoptRevivedTerminals();
@@ -65,7 +69,7 @@ export function activate(context: vscode.ExtensionContext): void {
         void liveMonitor.refresh();
       }
     }),
-    ...registerCommands({ sessionIndex, liveMonitor, registry, linkService, treeView, log }),
+    ...registerCommands({ sessionIndex, liveMonitor, registry, linkService, linkStatusService, treeView, log }),
   );
 
   void sessionIndex.refresh();

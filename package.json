@@ -441,6 +441,11 @@
           "type": "boolean",
           "default": false,
           "description": "Also show links the judge marked irrelevant, dimmed."
+        },
+        "overseer.links.liveStatus": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show live PR state through gh and Jira status through acli. Checked every five minutes for expanded sessions."
         }
       }
     },
