@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Overseer — vertical tabs for Claude sessions</title>
-    <meta name="description" content="A VS Code extension that keeps every Claude CLI session in a sidebar tree, grouped by ticket. Suspend idle sessions, resume any of them from any repo in one click.">
+    <meta name="description" content="A VS Code extension that keeps every Claude CLI session in a sidebar tree, grouped by ticket. It shows the PRs and tickets each session worked on, and it can suspend idle sessions and resume any of them from any repo.">
     <meta property="og:title" content="Overseer — vertical tabs for Claude sessions">
-    <meta property="og:description" content="Group Claude CLI sessions by ticket, suspend the idle ones, resume any of them from any repo. Everything stays in the real terminal.">
+    <meta property="og:description" content="Group Claude CLI sessions by ticket, see the PRs and tickets each one worked on, and resume any of them from any repo. Sessions run in normal VS Code terminals.">
     <meta property="og:image" content="https://tory37.github.io/djaunt-overseer/assets/og.png">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" href="assets/favicon.svg">
@@ -16,17 +16,15 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
 
-    <!-- React & ReactDOM (UMD) — crossorigin is required or CORS silently breaks the mount -->
+    <!-- With crossorigin, errors from these scripts show their real message instead of "Script error." -->
     <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 
-    <!-- Babel standalone — required to transpile the type="text/babel" block below -->
+    <!-- Babel compiles the JSX in the text/babel script in the browser, so the site has no build step. -->
     <script src="https://unpkg.com/@babel/standalone@7.29.9/babel.min.js"></script>
 
-    <!-- Lucide icons — use instead of emojis for all iconography -->
     <script src="https://unpkg.com/lucide@1.49.0/dist/umd/lucide.min.js"></script>
 
     <script>
@@ -93,14 +91,28 @@
             return <span ref={iconHost} aria-hidden="true" className={`inline-flex shrink-0 ${className}`} />;
         };
 
-        const Eyebrow = ({ children }) => (
-            <p className="font-mono text-xs uppercase tracking-label text-accent">{children}</p>
+        // Same colors as scripts/link-icons.mjs writes for the extension's dark theme.
+        const LINK_COLORS = {
+            green: '#5FBF7A',
+            gray: '#9DA3AE',
+            purple: '#9F8AE6',
+            red: '#E0492E',
+            gold: '#F0C24B',
+            cyan: '#7FD8F0',
+            dim: '#6B6B6B',
+        };
+
+        const LinkIcon = ({ name, color }) => (
+            <span style={{ color: LINK_COLORS[color] }} className="inline-flex"><Icon name={name} className="w-4 h-4" /></span>
         );
 
-        // ---------- Live mock of the extension ----------
+        const DEMO_LINKS = [
+            { icon: 'GitPullRequest', color: 'green', label: 'web-app#412', detail: 'Fix login timeout · open' },
+            { icon: 'Ticket', color: 'gold', label: 'PROJ-2567', detail: 'In Progress' },
+        ];
 
         const INITIAL_SESSIONS = [
-            { id: '5f1c9a2e', title: 'PROJ-2567 login timeout', group: 'PROJ-2567', repo: 'web-app', branch: 'fix/proj-2567-login-timeout', extraRepos: ['api'], state: 'running' },
+            { id: '5f1c9a2e', title: 'PROJ-2567 login timeout', group: 'PROJ-2567', repo: 'web-app', branch: 'fix/proj-2567-login-timeout', extraRepos: ['api'], state: 'running', links: DEMO_LINKS },
             { id: 'a83d0b17', title: 'PROJ-2567 review notes', group: 'PROJ-2567', repo: 'web-app', branch: 'main', extraRepos: [], state: 'suspended' },
             { id: 'c27e4f90', title: 'OPS-4410 billing export', group: 'OPS-4410', repo: 'api', branch: 'ops-4410-export', extraRepos: ['infra', 'web-app'], state: 'working' },
             { id: '0d9b6c33', title: 'Rate limiter refactor', group: 'Waiting on review', repo: 'api', branch: 'feat/rate-limit', extraRepos: [], state: 'suspended' },
@@ -131,6 +143,22 @@
             return extraCount === 1 ? ' · +1 repo' : ` · +${extraCount} repos`;
         };
 
+        const linksLabel = (session) => {
+            const linkCount = session.links?.length ?? 0;
+            if (linkCount === 0) return '';
+            return linkCount === 1 ? ' · 1 link' : ` · ${linkCount} links`;
+        };
+
+        const LinkRow = ({ link }) => (
+            <div className="flex items-center gap-2 h-6 pl-14 pr-2 hover:bg-surface cursor-default">
+                <LinkIcon name={link.icon} color={link.color} />
+                <span className="flex-1 min-w-0 truncate text-xs">
+                    <span className="text-bone">{link.label}</span>
+                    <span className="text-muted ml-2">{link.detail}</span>
+                </span>
+            </div>
+        );
+
         const resumeTranscript = (session) => [
             { kind: 'prompt', text: `~/src/${session.repo} $ claude --resume ${session.id}-…` },
             { kind: 'muted', text: `resumed · ${session.title}` },
@@ -152,7 +180,7 @@
             };
             const description = session.state === 'duplicate'
                 ? `2 copies running · ${session.repo}`
-                : `${session.repo} · ${session.branch}${reposLabel(session)}`;
+                : `${session.repo} · ${session.branch}${reposLabel(session)}${linksLabel(session)}`;
             return (
                 <div
                     onClick={() => onSelect(session.id)}
@@ -275,14 +303,16 @@
                                                 </span>
                                             </div>
                                             {groupSessions.map((session) => (
-                                                <SessionRow
-                                                    key={session.id}
-                                                    session={session}
-                                                    isSelected={session.id === selectedId}
-                                                    onSelect={setSelectedId}
-                                                    onToggle={toggleSession}
-                                                    onRename={renameSession}
-                                                />
+                                                <div key={session.id}>
+                                                    <SessionRow
+                                                        session={session}
+                                                        isSelected={session.id === selectedId}
+                                                        onSelect={setSelectedId}
+                                                        onToggle={toggleSession}
+                                                        onRename={renameSession}
+                                                    />
+                                                    {(session.links ?? []).map((link) => <LinkRow key={link.label} link={link} />)}
+                                                </div>
                                             ))}
                                         </div>
                                     );
@@ -323,8 +353,6 @@
                 </div>
             );
         };
-
-        // ---------- Feature visuals ----------
 
         const QuickPickVisual = () => (
             <div className="border border-line bg-surface font-mono text-xs">
@@ -459,21 +487,104 @@
             </div>
         );
 
+        const LinksVisual = () => (
+            <div className="font-mono text-xs border border-line bg-surface py-1">
+                <div className="flex items-center gap-2 h-6 pl-3 pr-2 text-bone">
+                    <Icon name="SquareTerminal" className="w-4 h-4 text-success" />
+                    <span className="truncate">PROJ-2567 login timeout</span>
+                    <span className="text-muted truncate">3 links</span>
+                </div>
+                {[
+                    { icon: 'GitPullRequest', color: 'green', label: 'web-app#412', detail: 'owned' },
+                    { icon: 'Ticket', color: 'gold', label: 'PROJ-2567', detail: 'owned' },
+                    { icon: 'Sparkles', color: 'cyan', label: 'Timeout repro notes', detail: 'touched' },
+                ].map((link) => (
+                    <div key={link.label} className="flex items-center gap-2 h-6 pl-8 text-bone">
+                        <LinkIcon name={link.icon} color={link.color} />
+                        <span className="truncate">{link.label}</span>
+                        <span className="text-muted">{link.detail}</span>
+                    </div>
+                ))}
+                <div className="flex items-center gap-2 h-6 pl-8 text-muted">
+                    <LinkIcon name="GitPullRequest" color="dim" />
+                    <span className="truncate">api#388</span>
+                    <span>seen in passing, hidden by default</span>
+                </div>
+            </div>
+        );
+
+        const LinkStatusVisual = () => (
+            <div className="font-mono text-xs grid grid-cols-2 gap-x-4 gap-y-2">
+                {[
+                    { icon: 'GitPullRequest', color: 'green', label: 'PR open' },
+                    { icon: 'Ticket', color: 'gray', label: 'To Do' },
+                    { icon: 'GitPullRequestDraft', color: 'gray', label: 'PR draft' },
+                    { icon: 'Ticket', color: 'gold', label: 'In Progress' },
+                    { icon: 'GitMerge', color: 'purple', label: 'PR merged' },
+                    { icon: 'TicketCheck', color: 'green', label: 'Done' },
+                    { icon: 'GitPullRequestClosed', color: 'red', label: 'PR closed' },
+                ].map((entry) => (
+                    <div key={entry.label} className="flex items-center gap-3">
+                        <LinkIcon name={entry.icon} color={entry.color} />
+                        <span className="text-bone">{entry.label}</span>
+                    </div>
+                ))}
+            </div>
+        );
+
+        const PinVisual = () => (
+            <div className="font-mono text-xs border border-line bg-surface py-1">
+                <div className="flex items-center gap-2 h-6 pl-3 pr-2 bg-raised text-bone">
+                    <LinkIcon name="Ticket" color="gold" />
+                    <span className="truncate">PROJ-2580</span>
+                    <span className="text-muted truncate">pinned · In Progress</span>
+                    <span className="ml-auto flex items-center gap-1 text-accent"><Icon name="Pin" className="w-4 h-4" /></span>
+                </div>
+                <div className="flex items-center gap-2 h-6 pl-3 pr-2 text-bone">
+                    <LinkIcon name="GitPullRequest" color="green" />
+                    <span className="truncate">web-app#412</span>
+                    <span className="text-muted truncate">open</span>
+                </div>
+                <div className="flex items-center gap-2 h-6 pl-3 pr-2 text-muted">
+                    <LinkIcon name="GitPullRequest" color="dim" />
+                    <span className="truncate">web-app#397</span>
+                    <span className="truncate">removed</span>
+                    <span className="ml-auto flex items-center gap-1 text-accent"><Icon name="Undo2" className="w-4 h-4" /></span>
+                </div>
+            </div>
+        );
+
+        const HoverVisual = () => (
+            <div className="font-mono text-xs border border-line bg-raised p-3 space-y-2 shadow-float">
+                <p className="text-bone font-medium">Rate limiter refactor</p>
+                <p className="text-muted">Suspended · last active 2 days ago</p>
+                <p className="text-muted">~/src/api on feat/rate-limit</p>
+                <div className="border-t border-line" />
+                <p className="text-bone leading-relaxed">Moved the limiter to a token bucket in src/middleware/limit.ts. Tests pass. Waiting on review of api#391 before the config change.</p>
+                <p className="flex items-center gap-2 text-accent"><Icon name="Sparkles" className="w-4 h-4" />Summarize with Haiku</p>
+            </div>
+        );
+
         const FEATURES = [
-            { span: 'md:col-span-3', eyebrow: 'Cross-repo', title: 'Resume from any window', body: 'claude --resume only lists sessions from the current directory. All Sessions searches every repo and resumes in the directory the session lives in.', Visual: QuickPickVisual },
-            { span: 'md:col-span-3', eyebrow: 'Suspend', title: 'Close it. Keep it.', body: 'Waiting two days on review? Suspend sends /exit, so the process and its memory go away. Resume brings back the same session with its history.', Visual: SuspendVisual },
-            { span: 'md:col-span-2', eyebrow: 'Grouping', title: 'Filed by ticket', body: 'Ticket keys in the title, branch, or first prompt group sessions on their own. Drag to override.', Visual: GroupVisual },
-            { span: 'md:col-span-2', eyebrow: 'Rename', title: 'Rename once', body: 'Double-click or F2 renames the row and sends /rename, so the tree, tab, and Claude agree.', Visual: RenameVisual },
-            { span: 'md:col-span-2', eyebrow: 'Live status', title: 'See what is running', body: 'Status comes from claude agents --json and updates on every busy or idle flip.', Visual: StatusVisual },
-            { span: 'md:col-span-2', eyebrow: 'Guard', title: 'No double resumes', body: 'Two processes on one transcript corrupt it. Overseer flags duplicates and offers a fork instead of a second resume.', Visual: DuplicateVisual },
-            { span: 'md:col-span-2', eyebrow: 'Repos touched', title: 'Find the fix from either side', body: 'A session that starts in one repo and edits another shows +N repos. repo:<name> in All Sessions finds it from the repo it edited.', Visual: ReposVisual },
-            { span: 'md:col-span-2', eyebrow: 'Organize', title: 'Your order, your groups', body: 'Each group has + for a new session and a search to pull in an existing one. Drag groups and sessions to reorder. Right-click to compact, switch model, or kill one.', Visual: OrganizeVisual },
+            { title: 'Resume a session from any repo', body: 'claude --resume lists only the sessions that started in the current directory. All Sessions searches every repo and resumes each session in the directory it started in.', Visual: QuickPickVisual },
+            { title: 'Suspend a session and resume it later', body: 'When a session waits on a review for days, Suspend sends /exit so the process and its memory are freed. Resume starts the same session again with its full history.', Visual: SuspendVisual },
+            { title: 'See the PRs, tickets, and artifacts a session worked on', body: 'Overseer scans each transcript for pull requests, Jira tickets, and claude.ai artifacts. A short Haiku run decides which ones the session owns, which it only touched, and which it saw in passing. The passing ones stay hidden. Click a link to open it in your browser or in the VS Code browser.', Visual: LinksVisual },
+            { title: 'Check PR and ticket status from the tree', body: 'The link icons show PR state from gh and ticket status from acli. Overseer checks every five minutes, and only for the sessions you have expanded.', Visual: LinkStatusVisual },
+            { title: 'Pin or remove a link', body: 'A pinned link stays at the top, even when the judge thinks it does not matter. A removed link is hidden. Both survive a rescan. Toggle Removed Links shows the hidden ones again so you can restore them.', Visual: PinVisual },
+            { title: 'Read a summary when you hover over a session', body: 'The hover shows the folder, branch, first and last prompt, and a short summary. The summary is the recap Claude Code wrote when it has one. Summarize with Haiku writes a new one from the end of the transcript, and it runs only when you click it.', Visual: HoverVisual },
+            { title: 'Group sessions by ticket', body: 'Overseer reads the ticket key from the title, branch, or first prompt and puts the session in that ticket\'s group. Drag a session to put it somewhere else.', Visual: GroupVisual },
+            { title: 'Rename a session in one step', body: 'Double-click or F2 renames the row and sends /rename to the session, so the tree, the tab, and Claude all use the same name.', Visual: RenameVisual },
+            { title: 'See which sessions are running', body: 'Status comes from claude agents --json and updates each time a session goes busy or idle.', Visual: StatusVisual },
+            { title: 'Stop a session from running twice', body: 'Two processes writing to one transcript corrupt it. Overseer marks duplicates and offers to fork a copy instead of resuming a second time.', Visual: DuplicateVisual },
+            { title: 'Find a session from any repo it edited', body: 'A session that starts in one repo and edits another shows +N repos. Type repo:<name> in All Sessions to find it from the repo it edited.', Visual: ReposVisual },
+            { title: 'Arrange groups and send slash commands', body: 'Each group has a + button for a new session and a search button to add an existing one. Drag groups and sessions to reorder them. Right-click a session to compact it, switch its model, or kill it.', Visual: OrganizeVisual },
         ];
 
         const HOW_IT_WORKS = [
             { step: '01', title: 'Index', body: 'Reads ~/.claude/projects/*/*.jsonl and caches by size and mtime. 130 sessions, 700 MB: 1.6s cold, about 2ms after.' },
             { step: '02', title: 'Watch', body: 'claude agents --json for live status, plus a file watch on ~/.claude/sessions so busy and idle show up within a second.' },
             { step: '03', title: 'Launch', body: 'Each session is a terminal that execs claude directly. /exit closes the tab. A window reload reattaches terminals by pid.' },
+            { step: '04', title: 'Links', body: 'Scans a transcript for links when its session first shows, and again 60 seconds after it goes idle. When you expand a session, a headless claude -p run with Haiku reads an 8 KB digest of its links and sorts them. At most two runs at once, and each result is cached.' },
         ];
 
         const INSTALL_COMMANDS = `curl -LO ${VSIX_URL}\ncode --install-extension ${VSIX_NAME}`;
@@ -521,21 +632,19 @@
                     </nav>
                 </header>
 
-                <section className="relative max-w-6xl mx-auto px-4 md:px-8 pt-16 pb-24 md:pt-24">
-                    <img src="assets/djaunt-icon-bone.svg" alt="" aria-hidden="true" className="pointer-events-none select-none absolute -left-24 top-8 w-[36rem] opacity-[0.04]" />
-                    <div className="relative space-y-16">
+                <section className="max-w-6xl mx-auto px-4 md:px-8 pt-16 pb-24 md:pt-24">
+                    <div className="space-y-16">
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-end">
                         <div className="lg:col-span-7 space-y-6">
-                            <Eyebrow>VS Code extension · for Claude Code</Eyebrow>
                             <h1 className="font-display font-bold tracking-display leading-[1.08] text-[clamp(2.5rem,5.5vw,4.5rem)]">
                                 Vertical tabs for Claude sessions.
                             </h1>
                         </div>
                         <div className="lg:col-span-5 space-y-6">
                             <p className="text-lg text-bone leading-relaxed">
-                                Overseer keeps every Claude CLI session in a sidebar tree, grouped by ticket. Suspend the ones you are waiting on. Resume any of them from any repo, without remembering an ID.
+                                Overseer is a VS Code extension that keeps every Claude CLI session in a sidebar tree, grouped by ticket. Under each session it lists the PRs and tickets that session worked on. You can suspend the sessions you are waiting on and resume any of them from any repo, without remembering an ID.
                             </p>
-                            <p className="text-muted">Everything stays in the real terminal.</p>
+                            <p className="text-muted">Each session runs in a normal VS Code terminal.</p>
                             <div className="flex flex-wrap gap-3 pt-2">
                                 <a href={VSIX_URL} className="flex items-center gap-2 h-11 px-5 bg-accent text-on-accent font-medium shadow-glow transition-transform duration-200 ease-dj hover:scale-[1.02]">
                                     <Icon name="Download" className="w-4 h-4" />Download .vsix
@@ -548,21 +657,21 @@
                         </div>
                         <div className="xl:-mr-32 space-y-3">
                             <OverseerMock />
-                            <p className="font-mono text-xs text-muted">Live demo. Click the pause or play icon on a row. Double-click a title to rename.</p>
+                            <p className="font-mono text-xs text-muted">This is a live demo. Click the pause or play icon on a row, or double-click a title to rename it.</p>
                         </div>
                     </div>
                 </section>
 
                 <section className="border-y border-line bg-surface">
-                    <div className="max-w-6xl mx-auto px-4 md:px-8 py-16 grid grid-cols-1 md:grid-cols-12 gap-8">
-                        <div className="md:col-span-4"><Eyebrow>The problem</Eyebrow></div>
-                        <div className="md:col-span-8 space-y-6">
-                            <h2 className="font-display font-bold tracking-display text-3xl leading-tight">Twelve terminal tabs, and none of them say which ticket.</h2>
+                    <div className="max-w-6xl mx-auto px-4 md:px-8 py-16 space-y-6">
+                        <h2 className="font-display font-bold tracking-display text-3xl leading-tight max-w-[40rem]">The problem it solves</h2>
+                        <div>
                             <ul className="space-y-3 text-bone max-w-[65ch]">
                                 {[
-                                    'Tabs pile up across the top of the editor and blur together.',
-                                    'An idle session waiting two days on review still holds its memory.',
-                                    'claude --resume lists only sessions started in the current directory. A fix that began in one repo cannot be found from another.',
+                                    'Terminal tabs pile up across the top of the editor, and none of them say which ticket they are for.',
+                                    'An idle session that waits two days on a review still holds its memory.',
+                                    'claude --resume lists only the sessions that started in the current directory. A fix that began in one repo cannot be found from another.',
+                                    'The PR and ticket a session worked on are buried somewhere in its transcript.',
                                 ].map((problemLine) => (
                                     <li key={problemLine} className="flex gap-3">
                                         <Icon name="ChevronRight" className="w-4 h-4 mt-1 text-accent" />
@@ -575,15 +684,11 @@
                 </section>
 
                 <section id="features" className="max-w-6xl mx-auto px-4 md:px-8 py-24 space-y-12">
-                    <div className="space-y-4 max-w-[40rem]">
-                        <Eyebrow>Features</Eyebrow>
-                        <h2 className="font-display font-bold tracking-display text-3xl leading-tight">A file explorer for sessions.</h2>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-6 gap-px bg-line border border-line">
-                        {FEATURES.map(({ span, eyebrow, title, body, Visual }) => (
-                            <article key={title} className={`${span} bg-bg p-6 md:p-8 flex flex-col gap-6`}>
+                    <h2 className="font-display font-bold tracking-display text-3xl leading-tight max-w-[40rem]">What it does</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-line border border-line">
+                        {FEATURES.map(({ title, body, Visual }) => (
+                            <article key={title} className="bg-bg p-6 md:p-8 flex flex-col gap-6">
                                 <div className="space-y-2">
-                                    <p className="font-mono text-xs uppercase tracking-label text-muted">{eyebrow}</p>
                                     <h3 className="font-display font-semibold tracking-display text-xl">{title}</h3>
                                     <p className="text-muted leading-relaxed">{body}</p>
                                 </div>
@@ -596,9 +701,8 @@
                 <section className="border-y border-line bg-surface">
                     <div className="max-w-6xl mx-auto px-4 md:px-8 py-24 grid grid-cols-1 md:grid-cols-12 gap-8">
                         <div className="md:col-span-4 space-y-4">
-                            <Eyebrow>How it works</Eyebrow>
-                            <h2 className="font-display font-bold tracking-display text-3xl leading-tight">No agent, no service.</h2>
-                            <p className="text-muted">It reads what Claude Code already writes to disk. No model calls, no tokens.</p>
+                            <h2 className="font-display font-bold tracking-display text-3xl leading-tight">How it works</h2>
+                            <p className="text-muted">Overseer reads the files Claude Code already writes to disk. The tree, the grouping, and the live status make no model calls. Link sorting and the Summarize with Haiku button run Haiku through your own claude CLI, so they count against your Claude usage.</p>
                         </div>
                         <ol className="md:col-span-8 border-t border-line">
                             {HOW_IT_WORKS.map((item) => (
@@ -614,16 +718,16 @@
 
                 <section id="install" className="max-w-6xl mx-auto px-4 md:px-8 py-24 grid grid-cols-1 md:grid-cols-12 gap-8">
                     <div className="md:col-span-4 space-y-4">
-                        <Eyebrow>Install</Eyebrow>
-                        <h2 className="font-display font-bold tracking-display text-3xl leading-tight">Two commands.</h2>
-                        <p className="text-muted">Or in VS Code: Extensions, the ... menu, Install from VSIX.</p>
+                        <h2 className="font-display font-bold tracking-display text-3xl leading-tight">Install</h2>
+                        <p className="text-muted">Download the .vsix and install it with the code CLI. You can also open Extensions in VS Code, click the ... menu, and choose Install from VSIX.</p>
                     </div>
                     <div className="md:col-span-8 space-y-6">
                         <CopyBlock text={INSTALL_COMMANDS} />
-                        <dl className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-line border border-line font-mono text-xs">
+                        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-px bg-line border border-line font-mono text-xs">
                             {[
                                 ['VS Code', '1.100 or newer'],
                                 ['Claude Code', 'claude on your PATH'],
+                                ['Link status (optional)', 'gh for PRs, acli for Jira tickets'],
                                 ['Platform', 'Tested on macOS. Linux and Windows untested.'],
                             ].map(([requirement, value]) => (
                                 <div key={requirement} className="bg-bg p-4 space-y-1">
