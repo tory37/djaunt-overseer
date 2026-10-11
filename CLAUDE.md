@@ -36,6 +36,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `linkView.ts` | Pure: link filters, URLs, labels, icon names, busy-to-idle detection, concurrency limiter. |
 | `scripts/link-icons.mjs` | Writes the themed Lucide SVGs in `media/links`. Rerun after changing an icon or color. |
 | `sessionLinks.ts` | Scans on first view and 60s after busy-to-idle. Judges on expand, at most 2 at once. |
+| `sessionSummary.ts` / `sessionSummaries.ts` | Hover summary: newest of Claude Code's recap (`away_summary`) and an on-click Haiku summary of the transcript tail. |
 | `linkStatus.ts` / `linkStatusService.ts` | PR state via `gh`, ticket status via `acli`. Five-minute cache, at most 4 calls at once, on-screen links only. |
 | `quickPick.ts` / `repoFilter.ts` | All Sessions picker and the `repo:` filter. |
 

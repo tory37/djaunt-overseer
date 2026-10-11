@@ -6,6 +6,7 @@ import { Registry } from "./registry";
 import { SessionIndex } from "./sessionIndex";
 import { LinkStatusService } from "./linkStatusService";
 import { SessionLinkService } from "./sessionLinks";
+import { SessionSummaryService } from "./sessionSummaries";
 import { adoptTerminalsByPid } from "./terminals";
 import { SessionTreeProvider } from "./tree";
 
@@ -22,6 +23,7 @@ export function activate(context: vscode.ExtensionContext): void {
     sessionIndex.currentSessions.find((session) => session.sessionId === sessionId);
   const linkService = new SessionLinkService(context.globalStorageUri.fsPath, liveMonitor, findIndexedSession, log);
   const linkStatusService = new LinkStatusService(log);
+  const summaryService = new SessionSummaryService(context.globalStorageUri.fsPath, log);
   const treeProvider = new SessionTreeProvider(
     sessionIndex,
     liveMonitor,
@@ -29,6 +31,7 @@ export function activate(context: vscode.ExtensionContext): void {
     linkService,
     linkStatusService,
     context.extensionUri,
+    summaryService,
   );
   const treeView = vscode.window.createTreeView("overseer.sessions", {
     treeDataProvider: treeProvider,
@@ -52,12 +55,14 @@ export function activate(context: vscode.ExtensionContext): void {
     liveMonitor,
     linkService,
     linkStatusService,
+    summaryService,
     treeProvider,
     treeView,
     { dispose: () => clearInterval(indexRefreshTimer) },
     sessionIndex.onDidChange(refreshTree),
     linkService.onDidChange(refreshTree),
     linkStatusService.onDidChange(refreshTree),
+    summaryService.onDidChange(refreshTree),
     liveMonitor.onDidChange(() => {
       refreshTree();
       void adoptRevivedTerminals();
@@ -76,7 +81,16 @@ export function activate(context: vscode.ExtensionContext): void {
         void liveMonitor.refresh();
       }
     }),
-    ...registerCommands({ sessionIndex, liveMonitor, registry, linkService, linkStatusService, treeView, log }),
+    ...registerCommands({
+      sessionIndex,
+      liveMonitor,
+      registry,
+      linkService,
+      linkStatusService,
+      summaryService,
+      treeView,
+      log,
+    }),
   );
 
   void sessionIndex.refresh();

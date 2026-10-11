@@ -41,7 +41,7 @@ export function saveJudgeCache(cacheFile: string, entries: JudgeCacheEntries): P
   return saveVersionedCache(cacheFile, entries, JUDGE_CACHE_SCHEMA_VERSION);
 }
 
-async function loadVersionedCache<Entries>(cacheFile: string, schemaVersion: number): Promise<Entries> {
+export async function loadVersionedCache<Entries>(cacheFile: string, schemaVersion: number): Promise<Entries> {
   try {
     const cacheFileContent = JSON.parse(await fs.promises.readFile(cacheFile, "utf8")) as VersionedCacheFile<Entries>;
     return cacheFileContent.version === schemaVersion ? cacheFileContent.entries : ({} as Entries);
@@ -50,7 +50,7 @@ async function loadVersionedCache<Entries>(cacheFile: string, schemaVersion: num
   }
 }
 
-async function saveVersionedCache<Entries>(
+export async function saveVersionedCache<Entries>(
   cacheFile: string,
   entries: Entries,
   schemaVersion: number,

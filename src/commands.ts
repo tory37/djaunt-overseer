@@ -13,6 +13,7 @@ import { readLinkSettings, SessionLinkService } from "./sessionLinks";
 import { ResolvedLink } from "./linkJudge";
 import { linkUrl } from "./linkView";
 import { LinkStatusService } from "./linkStatusService";
+import { SessionSummaryService } from "./sessionSummaries";
 import {
   attachBackgroundSession,
   findSessionTerminal,
@@ -29,6 +30,7 @@ export interface CommandDependencies {
   registry: Registry;
   linkService: SessionLinkService;
   linkStatusService: LinkStatusService;
+  summaryService: SessionSummaryService;
   treeView: vscode.TreeView<TreeNode>;
   log: vscode.OutputChannel;
 }
@@ -76,7 +78,8 @@ interface DirectoryPickItem extends vscode.QuickPickItem {
 }
 
 export function registerCommands(dependencies: CommandDependencies): vscode.Disposable[] {
-  const { sessionIndex, liveMonitor, registry, linkService, linkStatusService, treeView, log } = dependencies;
+  const { sessionIndex, liveMonitor, registry, linkService, linkStatusService, summaryService, treeView, log } =
+    dependencies;
 
   const selectedSessionNodes = (clickedNode?: TreeNode): SessionNode[] => {
     const candidateNodes = clickedNode && !treeView.selection.includes(clickedNode) ? [clickedNode] : treeView.selection;
@@ -432,6 +435,20 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       const nextTarget = linksConfig.get<string>("openIn", "external") === "external" ? "vscode" : "external";
       await linksConfig.update("openIn", nextTarget, vscode.ConfigurationTarget.Global);
       void vscode.window.showInformationMessage(`Links open in ${LINK_BROWSER_NAMES[nextTarget]}.`);
+    }),
+    // The hover link passes a session ID; the context menu passes the clicked node.
+    vscode.commands.registerCommand("overseer.summarizeSession", async (clicked?: TreeNode | string) => {
+      if (typeof clicked === "string") {
+        const hoveredMeta = await findSessionMeta(clicked);
+        if (hoveredMeta !== undefined) {
+          await summaryService.summarize(hoveredMeta);
+        }
+        return;
+      }
+      const sessionMetas = selectedSessionNodes(clicked)
+        .map((node) => node.pinned.meta)
+        .filter(isDefined);
+      await Promise.all(sessionMetas.map((meta) => summaryService.summarize(meta)));
     }),
     vscode.commands.registerCommand("overseer.suspendGroup", async (clickedNode?: TreeNode) => {
       const groupNode = clickedNode ?? treeView.selection[0];

@@ -248,7 +248,7 @@ export function createClaudeRunner(claudeBinary: string): ClaudeRunner {
         { cwd: os.tmpdir(), timeout: JUDGE_TIMEOUT_MS, maxBuffer: JUDGE_MAX_BUFFER_BYTES },
         (error, stdout, stderr) => {
           if (error) {
-            reject(new Error(`claude judge run failed: ${describeJudgeFailure(error, stdout, stderr)}`));
+            reject(new Error(`headless claude run failed: ${describeJudgeFailure(error, stdout, stderr)}`));
           } else {
             resolve(stdout);
           }

@@ -89,6 +89,43 @@ describe("indexSessions", () => {
     expect(displayTitle(sessions[0])).toBe("PROJ-2567 final name");
   });
 
+  it("keeps the newest recap and marks it stale once a new prompt follows", async () => {
+    const recapRecord = (content: string, timestamp: string) => ({
+      type: "system",
+      subtype: "away_summary",
+      content,
+      timestamp,
+      cwd: REPO_CWD,
+      sessionId: SESSION_ID,
+    });
+    writeTranscript(REPO_CWD, SESSION_ID, [
+      userRecord(REPO_CWD, "hello"),
+      { type: "last-prompt", lastPrompt: "fix the login bug", sessionId: SESSION_ID },
+      recapRecord("Old recap.", "2026-10-08T14:00:00.000Z"),
+      recapRecord("Login fix is done. Next: run the tests. (disable recaps in /config)", "2026-10-08T15:00:00.000Z"),
+    ]);
+
+    const { sessions } = await indexSessions(projectsRoot, {});
+
+    expect(sessions[0].lastPrompt).toBe("fix the login bug");
+    expect(sessions[0].recap).toEqual({
+      text: "Login fix is done. Next: run the tests.",
+      writtenAtMs: Date.parse("2026-10-08T15:00:00.000Z"),
+      isStale: false,
+    });
+
+    writeTranscript(REPO_CWD, SESSION_ID, [
+      userRecord(REPO_CWD, "hello"),
+      { type: "last-prompt", lastPrompt: "fix the login bug", sessionId: SESSION_ID },
+      recapRecord("Login fix is done.", "2026-10-08T15:00:00.000Z"),
+      { type: "last-prompt", lastPrompt: "now the signup bug", sessionId: SESSION_ID },
+    ]);
+
+    const { sessions: rescannedSessions } = await indexSessions(projectsRoot, {});
+
+    expect(rescannedSessions[0].recap?.isStale).toBe(true);
+  });
+
   it("falls back from agent name to AI title to first prompt", async () => {
     writeTranscript(REPO_CWD, SESSION_ID, [
       userRecord(REPO_CWD, "hello"),

@@ -175,6 +175,12 @@
         "icon": "$(sync)"
       },
       {
+        "command": "overseer.summarizeSession",
+        "title": "Summarize with Haiku",
+        "category": "Overseer",
+        "icon": "$(sparkle)"
+      },
+      {
         "command": "overseer.toggleGithubLinks",
         "title": "Toggle GitHub PR Links",
         "category": "Overseer"
@@ -467,6 +473,11 @@
           "enumDescriptions": ["Your default browser.", "The browser built into VS Code."],
           "default": "external",
           "description": "Where clicked links open."
+        },
+        "overseer.summary.model": {
+          "type": "string",
+          "default": "haiku",
+          "description": "Model for Summarize with Haiku. Runs only when you click it."
         }
       }
     },

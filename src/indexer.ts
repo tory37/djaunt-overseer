@@ -15,10 +15,19 @@ export interface SessionMeta {
   agentName: string | undefined;
   aiTitle: string | undefined;
   prUrl: string | undefined;
+  lastPrompt: string | undefined;
+  recap: SessionRecap | undefined;
   homeRepo: string | undefined;
   otherReposTouched: string[];
   lastActivityMs: number;
   sizeBytes: number;
+}
+
+// Claude Code writes a short recap when the user returns to an idle session.
+export interface SessionRecap {
+  text: string;
+  writtenAtMs: number;
+  isStale: boolean;
 }
 
 export interface IndexCacheEntry {
@@ -40,6 +49,7 @@ const DEFAULT_SCAN_CONCURRENCY = 8;
 const TRANSCRIPT_EXTENSION = ".jsonl";
 const FILE_EDIT_TOOL_PATTERN = /"name":"(?:Write|Edit|MultiEdit|NotebookEdit)"/;
 const FILE_EDIT_TOOL_NAMES = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+const RECAP_SETTINGS_HINT_PATTERN = /\s*\(disable recaps in \/config\)\s*$/;
 
 export function displayTitle(meta: SessionMeta): string {
   return meta.customTitle ?? meta.agentName ?? meta.aiTitle ?? meta.firstPrompt ?? meta.sessionId;
@@ -114,6 +124,9 @@ export async function scanTranscript(
   let agentName: string | undefined;
   let aiTitle: string | undefined;
   let prUrl: string | undefined;
+  let lastPromptText: string | undefined;
+  let recap: Omit<SessionRecap, "isStale"> | undefined;
+  let promptAtRecap: string | undefined;
   const touchedDirectories = new Set<string>();
 
   const lineReader = readline.createInterface({
@@ -147,6 +160,11 @@ export async function scanTranscript(
       aiTitle = parseRecord(line)?.aiTitle ?? aiTitle;
     } else if (line.includes('"type":"pr-link"')) {
       prUrl = parseRecord(line)?.prUrl ?? prUrl;
+    } else if (line.includes('"type":"last-prompt"')) {
+      lastPromptText = parseRecord(line)?.lastPrompt ?? lastPromptText;
+    } else if (line.includes('"subtype":"away_summary"')) {
+      recap = readRecap(line) ?? recap;
+      promptAtRecap = lastPromptText;
     }
   }
 
@@ -173,6 +191,9 @@ export async function scanTranscript(
     agentName,
     aiTitle,
     prUrl,
+    lastPrompt: lastPromptText === undefined ? undefined : cleanPrompt(lastPromptText),
+    // last-prompt records carry no timestamp, so a new prompt text is the only sign of work after the recap.
+    recap: recap === undefined ? undefined : { ...recap, isStale: lastPromptText !== promptAtRecap },
     homeRepo,
     otherReposTouched,
     lastActivityMs: stats.mtimeMs,
@@ -182,6 +203,10 @@ export async function scanTranscript(
 
 interface TranscriptRecord {
   type?: string;
+  subtype?: string;
+  content?: unknown;
+  timestamp?: string;
+  lastPrompt?: string;
   isMeta?: boolean;
   isSidechain?: boolean;
   message?: { content?: unknown };
@@ -216,6 +241,19 @@ export function readStringField(line: string, fieldName: string): string | undef
   } catch {
     return undefined;
   }
+}
+
+function readRecap(line: string): Omit<SessionRecap, "isStale"> | undefined {
+  const record = parseRecord(line);
+  if (record?.type !== "system" || record.subtype !== "away_summary" || typeof record.content !== "string") {
+    return undefined;
+  }
+  const recapText = record.content.replace(RECAP_SETTINGS_HINT_PATTERN, "").trim();
+  const writtenAtMs = Date.parse(record.timestamp ?? "");
+  if (recapText === "" || Number.isNaN(writtenAtMs)) {
+    return undefined;
+  }
+  return { text: recapText, writtenAtMs };
 }
 
 function readEditedFiles(line: string): string[] {

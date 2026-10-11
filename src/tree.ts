@@ -15,6 +15,8 @@ import { moveBeside } from "./reorder";
 import { otherReposLabel } from "./repoFilter";
 import { SessionIndex } from "./sessionIndex";
 import { readLinkSettings, SessionLinkService } from "./sessionLinks";
+import { SessionSummaryService } from "./sessionSummaries";
+import { HoverSummary, pickHoverSummary } from "./sessionSummary";
 import { findSessionTerminal } from "./terminals";
 
 export type TreeNode =
@@ -53,6 +55,7 @@ export class SessionTreeProvider
     private readonly linkService: SessionLinkService,
     private readonly linkStatusService: LinkStatusService,
     private readonly extensionUri: vscode.Uri,
+    private readonly summaryService: SessionSummaryService,
   ) {}
 
   refresh(): void {
@@ -90,8 +93,13 @@ export class SessionTreeProvider
     if (node.kind === "link") {
       return linkTreeItem(this.extensionUri, node.link, node.sessionId, this.linkStatusService.statusFor(node.link));
     }
-    const links = node.pinned.meta === undefined ? [] : this.linkService.linksFor(node.pinned.meta);
-    return sessionTreeItem(node.pinned, this.liveMonitor.get(node.pinned.sessionId), links);
+    const meta = node.pinned.meta;
+    const links = meta === undefined ? [] : this.linkService.linksFor(meta);
+    const summaryState: SummaryState = {
+      summary: meta && pickHoverSummary(meta.recap, this.summaryService.summaryFor(meta.sessionId), meta.sizeBytes),
+      isSummarizing: this.summaryService.isSummarizing(node.pinned.sessionId),
+    };
+    return sessionTreeItem(node.pinned, this.liveMonitor.get(node.pinned.sessionId), links, summaryState);
   }
 
   handleDrag(sourceNodes: readonly TreeNode[], dataTransfer: vscode.DataTransfer): void {
@@ -212,10 +220,21 @@ const SESSION_STATE_LABELS: Record<SessionState, string> = {
   suspended: "Suspended",
 };
 
+interface SummaryState {
+  summary: HoverSummary | undefined;
+  isSummarizing: boolean;
+}
+
+const SUMMARY_SOURCE_LABELS: Record<HoverSummary["source"], string> = {
+  recap: "Claude Code recap",
+  haiku: "Haiku summary",
+};
+
 function sessionTreeItem(
   pinned: PinnedSession,
   liveSession: LiveSession | undefined,
   links: ResolvedLink[] | undefined,
+  summaryState: SummaryState,
 ): vscode.TreeItem {
   const state = sessionState(pinned.sessionId, liveSession);
   const treeItem = new vscode.TreeItem(pinnedSessionTitle(pinned), sessionCollapsibleState(links));
@@ -223,7 +242,7 @@ function sessionTreeItem(
   treeItem.description = [linkCountBadge(links ?? []), sessionDescription(pinned)]
     .filter((part) => part !== "")
     .join(" · ");
-  treeItem.tooltip = sessionTooltip(pinned, SESSION_STATE_LABELS[state]);
+  treeItem.tooltip = sessionTooltip(pinned, SESSION_STATE_LABELS[state], summaryState);
   treeItem.iconPath = SESSION_STATE_ICONS[state];
   treeItem.contextValue = `session.${state}`;
   const copyCount = liveSession?.processCount ?? 0;
@@ -308,8 +327,10 @@ function sessionDescription(pinned: PinnedSession): string {
     .join(" · ");
 }
 
-function sessionTooltip(pinned: PinnedSession, stateLabel: string): vscode.MarkdownString {
+function sessionTooltip(pinned: PinnedSession, stateLabel: string, summaryState: SummaryState): vscode.MarkdownString {
   const tooltip = new vscode.MarkdownString();
+  tooltip.isTrusted = { enabledCommands: ["overseer.summarizeSession"] };
+  tooltip.supportThemeIcons = true;
   const meta = pinned.meta;
   tooltip.appendMarkdown(`**${escapeMarkdown(pinnedSessionTitle(pinned))}**\n\n`);
   if (meta === undefined) {
@@ -328,10 +349,31 @@ function sessionTooltip(pinned: PinnedSession, stateLabel: string): vscode.Markd
   if (meta.prUrl) {
     tooltip.appendMarkdown(`\n\n[Pull request](${meta.prUrl})`);
   }
+  tooltip.appendMarkdown(`\n\n---\n\n${summaryMarkdown(pinned.sessionId, summaryState)}`);
   if (meta.firstPrompt && meta.firstPrompt !== displayTitle(meta)) {
-    tooltip.appendMarkdown(`\n\n---\n\n${escapeMarkdown(meta.firstPrompt)}`);
+    tooltip.appendMarkdown(`\n\n---\n\n**First prompt:** ${escapeMarkdown(meta.firstPrompt)}`);
+  }
+  if (meta.lastPrompt && meta.lastPrompt !== meta.firstPrompt) {
+    tooltip.appendMarkdown(`\n\n**Last prompt:** ${escapeMarkdown(meta.lastPrompt)}`);
   }
   return tooltip;
+}
+
+function summaryMarkdown(sessionId: string, summaryState: SummaryState): string {
+  const summary = summaryState.summary;
+  const summarizeArgs = encodeURIComponent(JSON.stringify([sessionId]));
+  const summarizeLink = `[Summarize with Haiku](command:overseer.summarizeSession?${summarizeArgs})`;
+  if (summaryState.isSummarizing) {
+    return "$(loading~spin) Summarizing with Haiku…";
+  }
+  if (summary === undefined) {
+    return `No summary yet. ${summarizeLink}`;
+  }
+  let summaryHeader = `*${SUMMARY_SOURCE_LABELS[summary.source]} · ${formatAge(summary.writtenAtMs)}*`;
+  if (summary.isStale) {
+    summaryHeader += ` · *the session moved on since* · ${summarizeLink}`;
+  }
+  return `${summaryHeader}\n\n${escapeMarkdown(summary.text)}`;
 }
 
 function escapeMarkdown(text: string): string {

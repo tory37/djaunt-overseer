@@ -15,6 +15,8 @@ function sessionMeta(sessionId: string, overrides: Partial<SessionMeta>): Sessio
     agentName: undefined,
     aiTitle: undefined,
     prUrl: undefined,
+    lastPrompt: undefined,
+    recap: undefined,
     homeRepo: "/repo",
     otherReposTouched: [],
     lastActivityMs: 0,
