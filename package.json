@@ -2,7 +2,7 @@
   "name": "djaunt-overseer",
   "displayName": "Overseer",
   "description": "Vertical tabs for Claude CLI sessions: group by ticket, suspend, and resume from any repo.",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "djaunt",
   "private": true,
   "license": "UNLICENSED",
@@ -559,8 +559,14 @@
         },
         "overseer.links.openIn": {
           "type": "string",
-          "enum": ["external", "vscode"],
-          "enumDescriptions": ["Your default browser.", "The browser built into VS Code."],
+          "enum": [
+            "external",
+            "vscode"
+          ],
+          "enumDescriptions": [
+            "Your default browser.",
+            "The browser built into VS Code."
+          ],
           "default": "external",
           "description": "Where clicked links open."
         },
