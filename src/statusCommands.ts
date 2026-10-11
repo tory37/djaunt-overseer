@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 import { JiraService } from "./jiraService";
 import { LinkStatusService } from "./linkStatusService";
 import { StatusConfig } from "./statusConfig";
-import { StatusSettingsPanel } from "./statusSettingsPanel";
 import { TreeNode } from "./tree";
 
 interface StatusCommandDependencies {
@@ -15,17 +14,19 @@ interface TransitionPickItem extends vscode.QuickPickItem {
   transitionName: string;
 }
 
-export function registerStatusCommands(dependencies: StatusCommandDependencies): vscode.Disposable[] {
-  const { jiraService, linkStatusService, statusConfig } = dependencies;
-
-  const refreshProjects = async (): Promise<void> => {
+export function jiraProjectRefresher(linkStatusService: LinkStatusService, statusConfig: StatusConfig): () => Promise<void> {
+  return async () => {
     await Promise.all(
       statusConfig.projects().map((project) => linkStatusService.loadProjectStatuses(project.key, project.sampleTicketKey)),
     );
   };
+}
+
+export function registerStatusCommands(dependencies: StatusCommandDependencies): vscode.Disposable[] {
+  const { jiraService, linkStatusService, statusConfig } = dependencies;
+  const refreshProjects = jiraProjectRefresher(linkStatusService, statusConfig);
 
   return [
-    vscode.commands.registerCommand("overseer.openStatusSettings", () => StatusSettingsPanel.show(statusConfig, refreshProjects)),
     vscode.commands.registerCommand("overseer.refreshJiraProjects", async () => {
       await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: "Refreshing Jira statuses" },

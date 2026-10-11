@@ -10,10 +10,11 @@ import { LinkStatusService } from "./linkStatusService";
 import { SessionLinkService } from "./sessionLinks";
 import { SessionSummaryService } from "./sessionSummaries";
 import { StoredStatusCache } from "./statusCache";
-import { registerStatusCommands } from "./statusCommands";
+import { registerSettingsCommands } from "./settingsCommands";
+import { SettingsPanel } from "./settingsPanel";
+import { jiraProjectRefresher, registerStatusCommands } from "./statusCommands";
 import { StatusConfig } from "./statusConfig";
 import { StatusIconWriter } from "./statusIcons";
-import { StatusSettingsPanel } from "./statusSettingsPanel";
 import { adoptTerminalsByPid } from "./terminals";
 import { SessionTreeProvider, TreeNode } from "./tree";
 
@@ -69,7 +70,7 @@ export function activate(context: vscode.ExtensionContext): void {
   registry.onDidChange(refreshTree);
   statusConfig.onDidChange(() => {
     refreshTree();
-    StatusSettingsPanel.notifyConfigChanged();
+    SettingsPanel.notifyConfigChanged();
   });
   const indexRefreshTimer = setInterval(() => void sessionIndex.refresh(), INDEX_REFRESH_INTERVAL_MS);
 
@@ -118,6 +119,16 @@ export function activate(context: vscode.ExtensionContext): void {
       log,
     }),
     ...registerStatusCommands({ jiraService, linkStatusService, statusConfig }),
+    ...registerSettingsCommands({
+      extensionUri: context.extensionUri,
+      statusConfig,
+      refreshProjects: jiraProjectRefresher(linkStatusService, statusConfig),
+    }),
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("overseer")) {
+        refreshTree();
+      }
+    }),
   );
 
   void sessionIndex.refresh();

@@ -181,21 +181,6 @@
         "icon": "$(sparkle)"
       },
       {
-        "command": "overseer.toggleGithubLinks",
-        "title": "Toggle GitHub PR Links",
-        "category": "Overseer"
-      },
-      {
-        "command": "overseer.toggleJiraLinks",
-        "title": "Toggle Jira Ticket Links",
-        "category": "Overseer"
-      },
-      {
-        "command": "overseer.toggleArtifactLinks",
-        "title": "Toggle Artifact Links",
-        "category": "Overseer"
-      },
-      {
         "command": "overseer.pinLink",
         "title": "Pin Link",
         "category": "Overseer",
@@ -236,14 +221,64 @@
         "icon": "$(arrow-swap)"
       },
       {
-        "command": "overseer.openStatusSettings",
-        "title": "Link Status Colors…",
-        "category": "Overseer",
-        "icon": "$(symbol-color)"
-      },
-      {
         "command": "overseer.refreshJiraProjects",
         "title": "Refresh Jira Statuses",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.openSettings",
+        "title": "Settings…",
+        "category": "Overseer",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "overseer.openSessionSettings",
+        "title": "Session Icon Settings…",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.openJiraSettings",
+        "title": "Jira Settings…",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.openGithubSettings",
+        "title": "GitHub Settings…",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.openAllSettings",
+        "title": "All Settings (Settings Editor)",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.enableJira",
+        "title": "Enable Jira Integration",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.disableJira",
+        "title": "Disable Jira Integration",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.enableGithub",
+        "title": "Enable GitHub Integration",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.disableGithub",
+        "title": "Disable GitHub Integration",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.enableArtifacts",
+        "title": "Enable Artifact Links",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.disableArtifacts",
+        "title": "Disable Artifact Links",
         "category": "Overseer"
       }
     ],
@@ -270,7 +305,7 @@
           "group": "navigation@9"
         },
         {
-          "command": "overseer.openStatusSettings",
+          "command": "overseer.openSettings",
           "when": "view == overseer.sessions",
           "group": "9_settings@1"
         }
@@ -537,6 +572,30 @@
         {
           "command": "overseer.moveTicketStatus",
           "when": "false"
+        },
+        {
+          "command": "overseer.enableJira",
+          "when": "!config.overseer.links.jira.enabled"
+        },
+        {
+          "command": "overseer.disableJira",
+          "when": "config.overseer.links.jira.enabled"
+        },
+        {
+          "command": "overseer.enableGithub",
+          "when": "!config.overseer.links.github.enabled"
+        },
+        {
+          "command": "overseer.disableGithub",
+          "when": "config.overseer.links.github.enabled"
+        },
+        {
+          "command": "overseer.enableArtifacts",
+          "when": "!config.overseer.links.artifacts.enabled"
+        },
+        {
+          "command": "overseer.disableArtifacts",
+          "when": "config.overseer.links.artifacts.enabled"
         }
       ]
     },
@@ -610,6 +669,36 @@
           "type": "string",
           "default": "haiku",
           "description": "Model for Summarize with Haiku. Runs only when you click it."
+        },
+        "overseer.sessionIcons.working": {
+          "type": "string",
+          "default": "loading~spin",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is working in this window. Set its color with `overseer.sessionWorking` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
+        },
+        "overseer.sessionIcons.running": {
+          "type": "string",
+          "default": "terminal",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is running in this window. Set its color with `overseer.sessionRunning` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
+        },
+        "overseer.sessionIcons.elsewhere": {
+          "type": "string",
+          "default": "window",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is running outside this window. Set its color with `overseer.sessionElsewhere` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
+        },
+        "overseer.sessionIcons.suspended": {
+          "type": "string",
+          "default": "debug-pause",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is suspended. Set its color with `overseer.sessionSuspended` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
+        },
+        "overseer.sessionIcons.duplicate": {
+          "type": "string",
+          "default": "warning",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is more than one copy running. Set its color with `overseer.sessionDuplicate` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
         }
       }
     },
@@ -618,6 +707,58 @@
         "command": "overseer.rename",
         "key": "f2",
         "when": "focusedView == overseer.sessions"
+      }
+    ],
+    "colors": [
+      {
+        "id": "overseer.sessionWorking",
+        "description": "Overseer sidebar icon: working in this window.",
+        "defaults": {
+          "dark": "terminal.ansiGreen",
+          "light": "terminal.ansiGreen",
+          "highContrast": "terminal.ansiGreen",
+          "highContrastLight": "terminal.ansiGreen"
+        }
+      },
+      {
+        "id": "overseer.sessionRunning",
+        "description": "Overseer sidebar icon: running in this window.",
+        "defaults": {
+          "dark": "terminal.ansiGreen",
+          "light": "terminal.ansiGreen",
+          "highContrast": "terminal.ansiGreen",
+          "highContrastLight": "terminal.ansiGreen"
+        }
+      },
+      {
+        "id": "overseer.sessionElsewhere",
+        "description": "Overseer sidebar icon: running outside this window.",
+        "defaults": {
+          "dark": "terminal.ansiYellow",
+          "light": "terminal.ansiYellow",
+          "highContrast": "terminal.ansiYellow",
+          "highContrastLight": "terminal.ansiYellow"
+        }
+      },
+      {
+        "id": "overseer.sessionSuspended",
+        "description": "Overseer sidebar icon: suspended.",
+        "defaults": {
+          "dark": "icon.foreground",
+          "light": "icon.foreground",
+          "highContrast": "icon.foreground",
+          "highContrastLight": "icon.foreground"
+        }
+      },
+      {
+        "id": "overseer.sessionDuplicate",
+        "description": "Overseer sidebar icon: more than one copy running.",
+        "defaults": {
+          "dark": "list.warningForeground",
+          "light": "list.warningForeground",
+          "highContrast": "list.warningForeground",
+          "highContrastLight": "list.warningForeground"
+        }
       }
     ]
   },
@@ -631,6 +772,7 @@
   "devDependencies": {
     "@types/node": "22.20.5",
     "@types/vscode": "1.100.0",
+    "@vscode/codicons": "0.0.46-24",
     "@vscode/vsce": "4.0.0",
     "esbuild": "0.28.2",
     "typescript": "6.0.3",

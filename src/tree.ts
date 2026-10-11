@@ -14,6 +14,7 @@ import { tildePath } from "./paths";
 import { GroupRef, Registry } from "./registry";
 import { moveBeside } from "./reorder";
 import { otherReposLabel } from "./repoFilter";
+import { SessionIconState, sessionIconName, sessionIconSpec } from "./sessionIcons";
 import { SessionIndex } from "./sessionIndex";
 import { readLinkSettings, SessionLinkService } from "./sessionLinks";
 import { SessionSummaryService } from "./sessionSummaries";
@@ -259,7 +260,7 @@ function groupTreeItem(group: SessionGroup, isCollapsed: boolean): vscode.TreeIt
   return treeItem;
 }
 
-type SessionState = "working" | "running" | "elsewhere" | "suspended";
+type SessionState = Exclude<SessionIconState, "duplicate">;
 
 function sessionState(sessionId: string, liveSession: LiveSession | undefined): SessionState {
   const hasTerminalHere = findSessionTerminal(sessionId) !== undefined;
@@ -269,19 +270,10 @@ function sessionState(sessionId: string, liveSession: LiveSession | undefined): 
   return liveSession === undefined ? "suspended" : "elsewhere";
 }
 
-const SESSION_STATE_ICONS: Record<SessionState, vscode.ThemeIcon> = {
-  working: new vscode.ThemeIcon("loading~spin", new vscode.ThemeColor("terminal.ansiGreen")),
-  running: new vscode.ThemeIcon("terminal", new vscode.ThemeColor("terminal.ansiGreen")),
-  elsewhere: new vscode.ThemeIcon("window", new vscode.ThemeColor("terminal.ansiYellow")),
-  suspended: new vscode.ThemeIcon("debug-pause"),
-};
-
-const SESSION_STATE_LABELS: Record<SessionState, string> = {
-  working: "Working in this window",
-  running: "Running in this window",
-  elsewhere: "Running outside this window",
-  suspended: "Suspended",
-};
+function sessionStateIcon(state: SessionIconState): vscode.ThemeIcon {
+  const configuredName = vscode.workspace.getConfiguration("overseer.sessionIcons").get<string>(state);
+  return new vscode.ThemeIcon(sessionIconName(state, configuredName), new vscode.ThemeColor(sessionIconSpec(state).colorId));
+}
 
 interface SummaryState {
   summary: HoverSummary | undefined;
@@ -306,12 +298,12 @@ function sessionTreeItem(
   treeItem.description = [linkCountBadge(links ?? []), sessionDescription(pinned)]
     .filter((part) => part !== "")
     .join(" · ");
-  treeItem.tooltip = sessionTooltip(pinned, SESSION_STATE_LABELS[state], summaryState);
-  treeItem.iconPath = SESSION_STATE_ICONS[state];
+  treeItem.tooltip = sessionTooltip(pinned, sessionIconSpec(state).label, summaryState);
+  treeItem.iconPath = sessionStateIcon(state);
   treeItem.contextValue = `session.${state}`;
   const copyCount = liveSession?.processCount ?? 0;
   if (copyCount > 1) {
-    treeItem.iconPath = new vscode.ThemeIcon("warning", new vscode.ThemeColor("list.warningForeground"));
+    treeItem.iconPath = sessionStateIcon("duplicate");
     treeItem.description = `${copyCount} copies running · ${treeItem.description}`;
   }
   treeItem.command = { command: "overseer.clickSession", title: "Open", arguments: [pinned.sessionId] };

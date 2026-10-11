@@ -45,18 +45,6 @@ const SUSPEND_ANYWAY_CHOICE = "Suspend Anyway";
 const DOUBLE_CLICK_WINDOW_MS = 400;
 const RECENT_DIRECTORY_LIMIT = 12;
 
-interface LinkSourceToggle {
-  command: string;
-  settingKey: string;
-  sourceName: string;
-}
-
-const LINK_SOURCE_TOGGLES: LinkSourceToggle[] = [
-  { command: "overseer.toggleGithubLinks", settingKey: "github.enabled", sourceName: "GitHub PR" },
-  { command: "overseer.toggleJiraLinks", settingKey: "jira.enabled", sourceName: "Jira ticket" },
-  { command: "overseer.toggleArtifactLinks", settingKey: "artifacts.enabled", sourceName: "Artifact" },
-];
-
 // The integrated browser arrived in newer VS Code; Simple Browser covers older builds.
 const VSCODE_BROWSER_COMMANDS = ["workbench.action.browser.open", "simpleBrowser.show"];
 
@@ -439,14 +427,6 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         () => Promise.all(sessionMetas.map((meta) => linkService.refreshSession(meta))),
       );
     }),
-    ...LINK_SOURCE_TOGGLES.map((toggle) =>
-      vscode.commands.registerCommand(toggle.command, async () => {
-        const linksConfig = vscode.workspace.getConfiguration("overseer.links");
-        const isEnabled = !linksConfig.get<boolean>(toggle.settingKey, true);
-        await linksConfig.update(toggle.settingKey, isEnabled, vscode.ConfigurationTarget.Global);
-        void vscode.window.showInformationMessage(`${toggle.sourceName} links ${isEnabled ? "on" : "off"}.`);
-      }),
-    ),
     ...LINK_MARK_COMMANDS.map((markCommand) =>
       vscode.commands.registerCommand(markCommand.command, async (clickedNode?: TreeNode) => {
         const linkKeysBySession = new Map<string, string[]>();

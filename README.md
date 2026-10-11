@@ -49,11 +49,21 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - Each PR and ticket shows its live status first in the row, and its icon takes that status's color. Overseer checks every five minutes, only for expanded sessions.
 - PR status comes from `gh`. Ticket status comes from the Jira MCP server in your `~/.claude.json`, the same one Claude Code uses. Overseer starts it on its own and reads all visible tickets in one call.
 - **Move to Status…** (right-click a ticket) lists the moves the ticket's workflow allows.
-- **Link Status Colors…** (the sidebar's `...` menu) opens a panel. Each Jira project Overseer has seen, like ASSMNT or CR, gets a row with its full status list and a color for each status. Turn a project off to stop its status lookups. PRs get one color per state: draft, open, review required, approved, changes requested, merged, and closed.
+- **Jira Settings…** lists each Jira project Overseer has seen, like ASSMNT or CR, with its full status list and a color for each status. Turn a project off to stop its status lookups.
+- **GitHub Settings…** sets one color per PR state: draft, open, review required, approved, changes requested, merged, and closed.
 - **Pin** keeps a link at the top and counts it, even when the judge called it irrelevant. **Remove** hides it. Both survive a rescan.
 - **Toggle Removed Links** shows removed links again, dimmed, so you can **Restore** them.
 - **Toggle Link Browser** switches between your browser and the VS Code browser.
 - **Refresh Links** (right-click) rescans and rejudges one session.
+
+### Settings
+Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:
+
+- **Settings…** opens the Overseer Settings panel. It is also in the sidebar's `...` menu.
+- **Session Icon Settings…**, **Jira Settings…**, and **GitHub Settings…** open the panel at that section.
+- **Enable/Disable Jira Integration**, **Enable/Disable GitHub Integration**, and **Enable/Disable Artifact Links** turn a link source on or off. The palette shows only the one that applies.
+- **All Settings (Settings Editor)** opens every `overseer.*` setting in the native editor.
+- Session icons take any [Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) name and any color. Colors save to `workbench.colorCustomizations` as `overseer.sessionWorking`, `overseer.sessionRunning`, `overseer.sessionElsewhere`, `overseer.sessionSuspended`, and `overseer.sessionDuplicate`.
 
 ### Hover
 - Hovering over a session shows its state, folder, branch, other repos, and first and last prompt.
@@ -98,6 +108,11 @@ Then run **Developer: Reload Window**. Cmd+R only reloads in the F5 development 
 | `overseer.links.liveStatus` | `true` | Show PR and ticket status through `gh` and your Jira MCP server. |
 | `overseer.links.openIn` | `external` | Open links in your browser or in VS Code. |
 | `overseer.summary.model` | `haiku` | Model for Summarize with Haiku. |
+| `overseer.sessionIcons.working` | `loading~spin` | Icon for a session working in this window. |
+| `overseer.sessionIcons.running` | `terminal` | Icon for a session running in this window. |
+| `overseer.sessionIcons.elsewhere` | `window` | Icon for a session running in another window. |
+| `overseer.sessionIcons.suspended` | `debug-pause` | Icon for a suspended session. |
+| `overseer.sessionIcons.duplicate` | `warning` | Icon for a session with more than one copy running. |
 
 Link sorting and Summarize with Haiku run through your `claude` CLI, so they count against your Claude usage. Everything else makes no model calls.
 
