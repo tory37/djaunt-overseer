@@ -46,7 +46,10 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - Overseer scans the transcript when the session first shows and 60 seconds after it goes idle.
 - When you expand a session, a headless `claude -p` run with Haiku sorts its links into owned, touched, and seen in passing. Passing links stay hidden unless `overseer.links.showIrrelevant` is on.
 - An owned ticket names the auto-group when the title and branch have no ticket key.
-- Icons show PR state from `gh` (open, draft, merged, closed) and ticket status from `acli` (to do, in progress, done). Overseer checks every five minutes, only for expanded sessions.
+- Each PR and ticket shows its live status first in the row, and its icon takes that status's color. Overseer checks every five minutes, only for expanded sessions.
+- PR status comes from `gh`. Ticket status comes from the Jira MCP server in your `~/.claude.json`, the same one Claude Code uses. Overseer starts it on its own and reads all visible tickets in one call.
+- **Move to Status…** (right-click a ticket) lists the moves the ticket's workflow allows.
+- **Link Status Colors…** (the sidebar's `...` menu) opens a panel. Each Jira project Overseer has seen, like ASSMNT or CR, gets a row with its full status list and a color for each status. Turn a project off to stop its status lookups. PRs get one color per state: draft, open, review required, approved, changes requested, merged, and closed.
 - **Pin** keeps a link at the top and counts it, even when the judge called it irrelevant. **Remove** hides it. Both survive a rescan.
 - **Toggle Removed Links** shows removed links again, dimmed, so you can **Restore** them.
 - **Toggle Link Browser** switches between your browser and the VS Code browser.
@@ -76,7 +79,7 @@ Then run **Developer: Reload Window**. Cmd+R only reloads in the F5 development 
 
 - VS Code 1.100 or later.
 - Claude Code CLI on your login shell's PATH.
-- Optional: `gh` for PR status and `acli` for Jira status. Without them, links show with no status.
+- Optional: `gh` for PR status, and a stdio Jira MCP server in `~/.claude.json` for ticket status. Without them, links show with no status.
 - Tested on macOS only.
 
 ## Settings
@@ -88,10 +91,11 @@ Then run **Developer: Reload Window**. Cmd+R only reloads in the F5 development 
 | `overseer.links.jira.enabled` | `true` | Show Jira tickets under each session. |
 | `overseer.links.artifacts.enabled` | `true` | Show claude.ai artifacts under each session. |
 | `overseer.links.jira.baseUrl` | empty | Jira site for tickets whose URL the transcript doesn't show, e.g. `https://acme.atlassian.net`. |
+| `overseer.jira.mcpServer` | `jira` | Name of the stdio Jira MCP server in `~/.claude.json`. |
 | `overseer.links.judgeModel` | `haiku` | Model that sorts links. |
 | `overseer.links.showIrrelevant` | `false` | Also show links seen in passing, dimmed. |
 | `overseer.links.showRemoved` | `false` | Also show links you removed, dimmed. |
-| `overseer.links.liveStatus` | `true` | Show PR and ticket status through `gh` and `acli`. |
+| `overseer.links.liveStatus` | `true` | Show PR and ticket status through `gh` and your Jira MCP server. |
 | `overseer.links.openIn` | `external` | Open links in your browser or in VS Code. |
 | `overseer.summary.model` | `haiku` | Model for Summarize with Haiku. |
 

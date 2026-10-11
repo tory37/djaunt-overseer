@@ -569,7 +569,7 @@
             { title: 'Resume a session from any repo', body: 'claude --resume lists only the sessions that started in the current directory. All Sessions searches every repo and resumes each session in the directory it started in.', Visual: QuickPickVisual },
             { title: 'Suspend a session and resume it later', body: 'When a session waits on a review for days, Suspend sends /exit so the process and its memory are freed. Resume starts the same session again with its full history.', Visual: SuspendVisual },
             { title: 'See the PRs, tickets, and artifacts a session worked on', body: 'Overseer scans each transcript for pull requests, Jira tickets, and claude.ai artifacts. A short Haiku run decides which ones the session owns, which it only touched, and which it saw in passing. The passing ones stay hidden. Click a link to open it in your browser or in the VS Code browser.', Visual: LinksVisual },
-            { title: 'Check PR and ticket status from the tree', body: 'The link icons show PR state from gh and ticket status from acli. Overseer checks every five minutes, and only for the sessions you have expanded.', Visual: LinkStatusVisual },
+            { title: 'Check PR and ticket status from the tree', body: 'Each PR and ticket shows its status, and its icon takes a color you pick per status. Ticket status comes from the Jira MCP server Claude Code already uses. Right-click a ticket to move it to another status.', Visual: LinkStatusVisual },
             { title: 'Pin or remove a link', body: 'A pinned link stays at the top, even when the judge thinks it does not matter. A removed link is hidden. Both survive a rescan. Toggle Removed Links shows the hidden ones again so you can restore them.', Visual: PinVisual },
             { title: 'Read a summary when you hover over a session', body: 'The hover shows the folder, branch, first and last prompt, and a short summary. The summary is the recap Claude Code wrote when it has one. Summarize with Haiku writes a new one from the end of the transcript, and it runs only when you click it.', Visual: HoverVisual },
             { title: 'Group sessions by ticket', body: 'Overseer reads the ticket key from the title, branch, or first prompt and puts the session in that ticket\'s group. Drag a session to put it somewhere else.', Visual: GroupVisual },
@@ -727,7 +727,7 @@
                             {[
                                 ['VS Code', '1.100 or newer'],
                                 ['Claude Code', 'claude on your PATH'],
-                                ['Link status (optional)', 'gh for PRs, acli for Jira tickets'],
+                                ['Link status (optional)', 'gh for PRs, a Jira MCP server in ~/.claude.json for tickets'],
                                 ['Platform', 'Tested on macOS. Linux and Windows untested.'],
                             ].map(([requirement, value]) => (
                                 <div key={requirement} className="bg-bg p-4 space-y-1">

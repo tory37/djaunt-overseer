@@ -228,6 +228,23 @@
         "command": "overseer.toggleLinkBrowser",
         "title": "Toggle Link Browser (External / VS Code)",
         "category": "Overseer"
+      },
+      {
+        "command": "overseer.moveTicketStatus",
+        "title": "Move to Status…",
+        "category": "Overseer",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "overseer.openStatusSettings",
+        "title": "Link Status Colors…",
+        "category": "Overseer",
+        "icon": "$(symbol-color)"
+      },
+      {
+        "command": "overseer.refreshJiraProjects",
+        "title": "Refresh Jira Statuses",
+        "category": "Overseer"
       }
     ],
     "menus": {
@@ -251,6 +268,11 @@
           "command": "overseer.refreshIndex",
           "when": "view == overseer.sessions",
           "group": "navigation@9"
+        },
+        {
+          "command": "overseer.openStatusSettings",
+          "when": "view == overseer.sessions",
+          "group": "9_settings@1"
         }
       ],
       "view/item/context": [
@@ -408,6 +430,11 @@
           "command": "overseer.summarizeSession",
           "when": "view == overseer.sessions && viewItem =~ /^session\\./",
           "group": "3_links@2"
+        },
+        {
+          "command": "overseer.moveTicketStatus",
+          "when": "view == overseer.sessions && viewItem =~ /^link\\.ticket\\./",
+          "group": "1_link@0"
         }
       ],
       "commandPalette": [
@@ -506,6 +533,10 @@
         {
           "command": "overseer.summarizeSession",
           "when": "false"
+        },
+        {
+          "command": "overseer.moveTicketStatus",
+          "when": "false"
         }
       ]
     },
@@ -537,6 +568,11 @@
           "default": "",
           "description": "Jira site for tickets whose URL the transcript doesn't show, e.g. https://acme.atlassian.net."
         },
+        "overseer.jira.mcpServer": {
+          "type": "string",
+          "default": "jira",
+          "description": "Name of the stdio Jira MCP server in ~/.claude.json. Overseer starts it to read ticket status and move tickets."
+        },
         "overseer.links.judgeModel": {
           "type": "string",
           "default": "haiku",
@@ -555,7 +591,7 @@
         "overseer.links.liveStatus": {
           "type": "boolean",
           "default": true,
-          "description": "Show live PR state through gh and Jira status through acli. Checked every five minutes for expanded sessions."
+          "description": "Show live PR state through gh and Jira status through your Jira MCP server. Checked every five minutes for expanded sessions."
         },
         "overseer.links.openIn": {
           "type": "string",

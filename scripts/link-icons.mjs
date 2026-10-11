@@ -1,5 +1,6 @@
 // Writes the link icons in media/links. Glyphs are Lucide v1.52.0 (ISC, https://lucide.dev).
 // Tree items can't tint file icons, so each icon is written once per theme with its color baked in.
+// Icons for a live status are drawn at runtime by src/statusIcons.ts in the user's chosen color.
 import { mkdirSync, writeFileSync } from "fs";
 
 const GLYPHS = {
@@ -20,25 +21,13 @@ const GLYPHS = {
 
 const COLORS = {
   neutral: { dark: "#C5C5C5", light: "#424242" },
-  green: { dark: "#5FBF7A", light: "#2F8A4C" },
-  gray: { dark: "#9DA3AE", light: "#6B7280" },
-  purple: { dark: "#9F8AE6", light: "#6A52B8" },
-  red: { dark: "#E0492E", light: "#C0391F" },
-  gold: { dark: "#F0C24B", light: "#A87A12" },
   cyan: { dark: "#7FD8F0", light: "#1A7F9C" },
   dim: { dark: "#6B6B6B", light: "#A0A0A0" },
 };
 
 const ICONS = {
   pr: ["git-pull-request", "neutral"],
-  "pr-open": ["git-pull-request", "green"],
-  "pr-draft": ["git-pull-request-draft", "gray"],
-  "pr-merged": ["git-merge", "purple"],
-  "pr-closed": ["git-pull-request-closed", "red"],
   ticket: ["ticket", "neutral"],
-  "ticket-todo": ["ticket", "gray"],
-  "ticket-active": ["ticket", "gold"],
-  "ticket-done": ["ticket-check", "green"],
   artifact: ["sparkles", "cyan"],
   "pr-dim": ["git-pull-request", "dim"],
   "ticket-dim": ["ticket", "dim"],

@@ -1,12 +1,19 @@
+import * as path from "path";
 import * as vscode from "vscode";
 import { registerCommands } from "./commands";
 import { LiveSessionMonitor } from "./liveSessions";
 import { defaultClaudeHome } from "./paths";
 import { Registry } from "./registry";
 import { SessionIndex } from "./sessionIndex";
+import { JiraService } from "./jiraService";
 import { LinkStatusService } from "./linkStatusService";
 import { SessionLinkService } from "./sessionLinks";
 import { SessionSummaryService } from "./sessionSummaries";
+import { StoredStatusCache } from "./statusCache";
+import { registerStatusCommands } from "./statusCommands";
+import { StatusConfig } from "./statusConfig";
+import { StatusIconWriter } from "./statusIcons";
+import { StatusSettingsPanel } from "./statusSettingsPanel";
 import { adoptTerminalsByPid } from "./terminals";
 import { SessionTreeProvider, TreeNode } from "./tree";
 
@@ -29,7 +36,9 @@ export function activate(context: vscode.ExtensionContext): void {
     (sessionId) => registry.linkOrder(sessionId),
     log,
   );
-  const linkStatusService = new LinkStatusService(log);
+  const statusConfig = new StatusConfig(context.globalState);
+  const jiraService = new JiraService(log);
+  const linkStatusService = new LinkStatusService(log, jiraService, statusConfig, new StoredStatusCache(context.globalState));
   const summaryService = new SessionSummaryService(context.globalStorageUri.fsPath, log);
   const treeProvider = new SessionTreeProvider(
     sessionIndex,
@@ -39,6 +48,8 @@ export function activate(context: vscode.ExtensionContext): void {
     linkStatusService,
     context.extensionUri,
     summaryService,
+    statusConfig,
+    new StatusIconWriter(path.join(context.globalStorageUri.fsPath, "status-icons")),
   );
   const treeView = vscode.window.createTreeView("overseer.sessions", {
     treeDataProvider: treeProvider,
@@ -56,6 +67,10 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
   registry.onDidChange(refreshTree);
+  statusConfig.onDidChange(() => {
+    refreshTree();
+    StatusSettingsPanel.notifyConfigChanged();
+  });
   const indexRefreshTimer = setInterval(() => void sessionIndex.refresh(), INDEX_REFRESH_INTERVAL_MS);
 
   context.subscriptions.push(
@@ -64,6 +79,7 @@ export function activate(context: vscode.ExtensionContext): void {
     liveMonitor,
     linkService,
     linkStatusService,
+    jiraService,
     summaryService,
     treeProvider,
     treeView,
@@ -86,6 +102,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.onDidChangeWindowState((windowState) => {
       if (windowState.focused) {
         registry.notifyExternalChange();
+        statusConfig.notifyExternalChange();
         void sessionIndex.refresh();
         void liveMonitor.refresh();
       }
@@ -100,6 +117,7 @@ export function activate(context: vscode.ExtensionContext): void {
       treeView,
       log,
     }),
+    ...registerStatusCommands({ jiraService, linkStatusService, statusConfig }),
   );
 
   void sessionIndex.refresh();

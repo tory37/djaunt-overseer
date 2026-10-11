@@ -1,28 +1,33 @@
-export type LinkStatusTone = "open" | "draft" | "merged" | "closed" | "todo" | "active" | "done";
+export type PrStatusKey = "draft" | "open" | "review required" | "approved" | "changes requested" | "merged" | "closed";
 
+export const PR_STATUS_KEYS: PrStatusKey[] = ["draft", "open", "review required", "approved", "changes requested", "merged", "closed"];
+
+export const DEFAULT_PR_COLORS: Record<PrStatusKey, string> = {
+  draft: "#8B8B8B",
+  open: "#3FA45B",
+  "review required": "#C08A00",
+  approved: "#3A9C9E",
+  "changes requested": "#C47520",
+  merged: "#A371F7",
+  closed: "#E5534B",
+};
+
+// `colorKey` names the status in the color config: a PR status key, or the Jira status name.
 export interface LinkStatus {
   text: string;
-  tone: LinkStatusTone;
+  colorKey: string;
 }
 
-const REVIEW_DECISION_TEXT: Record<string, string> = {
+const REVIEW_DECISION_KEYS: Record<string, PrStatusKey> = {
   APPROVED: "approved",
   CHANGES_REQUESTED: "changes requested",
   REVIEW_REQUIRED: "review required",
 };
 
-const JIRA_STATUS_CATEGORY_TONES: Record<string, LinkStatusTone> = {
-  new: "todo",
-  indeterminate: "active",
-  done: "done",
-};
+const DONE_STATUS_PATTERN = /done|closed|deployed|shipped|resolved|complete/i;
 
 export function prStatusArgs(prUrl: string): string[] {
   return ["pr", "view", prUrl, "--json", "state,isDraft,reviewDecision"];
-}
-
-export function ticketStatusArgs(ticketKey: string): string[] {
-  return ["jira", "workitem", "view", ticketKey, "--json"];
 }
 
 // Parses `gh pr view --json state,isDraft,reviewDecision`.
@@ -30,31 +35,36 @@ export function parsePrStatus(prJson: string): LinkStatus | undefined {
   const pr = parseJsonObject(prJson);
   const state = pr?.state;
   if (state === "MERGED") {
-    return { text: "merged", tone: "merged" };
+    return { text: "merged", colorKey: "merged" };
   }
   if (state === "CLOSED") {
-    return { text: "closed", tone: "closed" };
+    return { text: "closed", colorKey: "closed" };
   }
   if (state !== "OPEN") {
     return undefined;
   }
   if (pr?.isDraft === true) {
-    return { text: "draft", tone: "draft" };
+    return { text: "draft", colorKey: "draft" };
   }
-  const reviewText = typeof pr?.reviewDecision === "string" ? REVIEW_DECISION_TEXT[pr.reviewDecision] : undefined;
-  return { text: reviewText === undefined ? "open" : `open · ${reviewText}`, tone: "open" };
+  const reviewKey = typeof pr?.reviewDecision === "string" ? REVIEW_DECISION_KEYS[pr.reviewDecision] : undefined;
+  return reviewKey === undefined ? { text: "open", colorKey: "open" } : { text: `open · ${reviewKey}`, colorKey: reviewKey };
 }
 
-// Parses `acli jira workitem view --json`, which follows the Jira REST issue shape.
-export function parseTicketStatus(ticketJson: string): LinkStatus | undefined {
-  const fields = parseJsonObject(ticketJson)?.fields;
-  const status = isRecord(fields) ? fields.status : undefined;
-  if (!isRecord(status) || typeof status.name !== "string") {
-    return undefined;
+export function ticketStatus(statusName: string): LinkStatus {
+  return { text: statusName, colorKey: statusName };
+}
+
+// Names a glyph in statusIcons, so the shape still tells merged from closed without color.
+export function statusGlyph(kind: "pr" | "ticket", status: LinkStatus): string {
+  if (kind === "ticket") {
+    return DONE_STATUS_PATTERN.test(status.colorKey) ? "ticket-check" : "ticket";
   }
-  const category = isRecord(status.statusCategory) ? status.statusCategory.key : undefined;
-  const tone = typeof category === "string" ? JIRA_STATUS_CATEGORY_TONES[category] : undefined;
-  return { text: status.name, tone: tone ?? "active" };
+  const prGlyphs: Partial<Record<string, string>> = {
+    draft: "git-pull-request-draft",
+    merged: "git-merge",
+    closed: "git-pull-request-closed",
+  };
+  return prGlyphs[status.colorKey] ?? "git-pull-request";
 }
 
 function parseJsonObject(jsonText: string): Record<string, unknown> | undefined {

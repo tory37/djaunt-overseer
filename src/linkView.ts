@@ -61,8 +61,8 @@ export function linkDisplayId(link: ResolvedLink): string {
   return owner !== undefined && repo !== undefined && number !== undefined ? `${repo}#${number}` : link.id;
 }
 
-// Names a file in media/links, without the theme suffix.
-export function linkIconName(link: MarkedLink, status: LinkStatus | undefined): string {
+// Names a file in media/links, without the theme suffix, or returns undefined when the status color draws the icon.
+export function staticLinkIconName(link: MarkedLink, status: LinkStatus | undefined): string | undefined {
   const isDimmed = link.mark === "removed" || (link.mark !== "pinned" && (link.role === "irrelevant" || !link.stillRelevant));
   if (isDimmed) {
     return `${link.kind}-dim`;
@@ -70,7 +70,7 @@ export function linkIconName(link: MarkedLink, status: LinkStatus | undefined): 
   if (link.kind === "artifact" || status === undefined) {
     return link.kind;
   }
-  return `${link.kind}-${status.tone}`;
+  return undefined;
 }
 
 export function linkCountBadge(links: MarkedLink[]): string {

@@ -1,16 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { parsePrStatus, parseTicketStatus, prStatusArgs, ticketStatusArgs } from "../../src/linkStatus";
+import {
+  DEFAULT_PR_COLORS,
+  parsePrStatus,
+  PR_STATUS_KEYS,
+  prStatusArgs,
+  statusGlyph,
+  ticketStatus,
+} from "../../src/linkStatus";
 
 describe("parsePrStatus", () => {
   it("reads gh pr view state, draft, and review decision", () => {
     expect(parsePrStatus('{"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","state":"OPEN"}')).toEqual({
       text: "open · review required",
-      tone: "open",
+      colorKey: "review required",
     });
-    expect(parsePrStatus('{"isDraft":false,"reviewDecision":"","state":"OPEN"}')).toEqual({ text: "open", tone: "open" });
-    expect(parsePrStatus('{"isDraft":true,"reviewDecision":"APPROVED","state":"OPEN"}')).toEqual({ text: "draft", tone: "draft" });
-    expect(parsePrStatus('{"state":"MERGED"}')).toEqual({ text: "merged", tone: "merged" });
-    expect(parsePrStatus('{"state":"CLOSED"}')).toEqual({ text: "closed", tone: "closed" });
+    expect(parsePrStatus('{"isDraft":false,"reviewDecision":"","state":"OPEN"}')).toEqual({ text: "open", colorKey: "open" });
+    expect(parsePrStatus('{"isDraft":true,"reviewDecision":"APPROVED","state":"OPEN"}')).toEqual({ text: "draft", colorKey: "draft" });
+    expect(parsePrStatus('{"state":"MERGED"}')).toEqual({ text: "merged", colorKey: "merged" });
+    expect(parsePrStatus('{"state":"CLOSED"}')).toEqual({ text: "closed", colorKey: "closed" });
   });
 
   it("returns undefined for unknown shapes instead of throwing", () => {
@@ -20,31 +27,23 @@ describe("parsePrStatus", () => {
   });
 });
 
-describe("parseTicketStatus", () => {
-  it("reads the Jira status name and category", () => {
-    const ticketJson = JSON.stringify({
-      key: "PROJ-1",
-      fields: { status: { name: "In Review", statusCategory: { key: "indeterminate" } } },
-    });
-    expect(parseTicketStatus(ticketJson)).toEqual({ text: "In Review", tone: "active" });
-    expect(parseTicketStatus(JSON.stringify({ fields: { status: { name: "Done", statusCategory: { key: "done" } } } }))).toEqual({
-      text: "Done",
-      tone: "done",
-    });
-    expect(parseTicketStatus(JSON.stringify({ fields: { status: { name: "Backlog", statusCategory: { key: "new" } } } }))).toEqual({
-      text: "Backlog",
-      tone: "todo",
-    });
+describe("ticketStatus and statusGlyph", () => {
+  it("keys a ticket's color by its status name", () => {
+    expect(ticketStatus("Peer Review")).toEqual({ text: "Peer Review", colorKey: "Peer Review" });
   });
 
-  it("returns undefined without a status name", () => {
-    expect(parseTicketStatus(JSON.stringify({ fields: {} }))).toBeUndefined();
-    expect(parseTicketStatus("{")).toBeUndefined();
+  it("keeps a shape per state so color is not the only cue", () => {
+    expect(statusGlyph("ticket", ticketStatus("Deployed to Prod"))).toBe("ticket-check");
+    expect(statusGlyph("ticket", ticketStatus("In Progress"))).toBe("ticket");
+    expect(statusGlyph("pr", { text: "merged", colorKey: "merged" })).toBe("git-merge");
+    expect(statusGlyph("pr", { text: "draft", colorKey: "draft" })).toBe("git-pull-request-draft");
+    expect(statusGlyph("pr", { text: "closed", colorKey: "closed" })).toBe("git-pull-request-closed");
+    expect(statusGlyph("pr", { text: "open · approved", colorKey: "approved" })).toBe("git-pull-request");
   });
 });
 
 describe("status commands", () => {
-  it("asks gh and acli for only what the parsers read", () => {
+  it("asks gh for only what the parser reads", () => {
     expect(prStatusArgs("https://github.com/acme/api/pull/77")).toEqual([
       "pr",
       "view",
@@ -52,6 +51,13 @@ describe("status commands", () => {
       "--json",
       "state,isDraft,reviewDecision",
     ]);
-    expect(ticketStatusArgs("PROJ-1")).toEqual(["jira", "workitem", "view", "PROJ-1", "--json"]);
+  });
+});
+
+describe("DEFAULT_PR_COLORS", () => {
+  it("has a color for every PR status", () => {
+    for (const statusKey of PR_STATUS_KEYS) {
+      expect(DEFAULT_PR_COLORS[statusKey]).toMatch(/^#[0-9A-F]{6}$/);
+    }
   });
 });

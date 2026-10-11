@@ -4,9 +4,10 @@ import { formatAge } from "./format";
 import { buildGroups, PinnedSession, pinnedSessionTitle, SessionGroup } from "./grouping";
 import { displayTitle, SessionMeta } from "./indexer";
 import { linkKey } from "./linkJudge";
-import { LinkStatus } from "./linkStatus";
+import { projectKeyOf } from "./jira";
+import { LinkStatus, statusGlyph } from "./linkStatus";
 import { LinkStatusService } from "./linkStatusService";
-import { linkCountBadge, linkDisplayId, linkIconName, linkUrl, MarkedLink } from "./linkView";
+import { linkCountBadge, linkDisplayId, linkUrl, MarkedLink, staticLinkIconName } from "./linkView";
 import { LiveSession } from "./liveParse";
 import { LiveSessionMonitor } from "./liveSessions";
 import { tildePath } from "./paths";
@@ -17,6 +18,8 @@ import { SessionIndex } from "./sessionIndex";
 import { readLinkSettings, SessionLinkService } from "./sessionLinks";
 import { SessionSummaryService } from "./sessionSummaries";
 import { HoverSummary, pickHoverSummary } from "./sessionSummary";
+import { StatusConfig } from "./statusConfig";
+import { StatusIconWriter } from "./statusIcons";
 import { findSessionTerminal } from "./terminals";
 
 export type TreeNode =
@@ -62,6 +65,8 @@ export class SessionTreeProvider
     private readonly linkStatusService: LinkStatusService,
     private readonly extensionUri: vscode.Uri,
     private readonly summaryService: SessionSummaryService,
+    private readonly statusConfig: StatusConfig,
+    private readonly statusIconWriter: StatusIconWriter,
   ) {}
 
   refresh(): void {
@@ -97,10 +102,12 @@ export class SessionTreeProvider
       return groupTreeItem(node.group, this.registry.isGroupCollapsed(node.group.ref));
     }
     if (node.kind === "link") {
-      return linkTreeItem(this.extensionUri, node.link, node.sessionId, this.linkStatusService.statusFor(node.link));
+      const status = this.linkStatusService.statusFor(node.link);
+      return linkTreeItem(node.link, node.sessionId, status, this.linkIconPath(node.link, status));
     }
     const meta = node.pinned.meta;
-    const links = meta === undefined ? [] : this.linkService.linksFor(meta);
+    // Before the index loads a session has no meta; reporting "no links" then would drop its saved expansion.
+    const links = meta === undefined ? undefined : this.linkService.linksFor(meta);
     const summaryState: SummaryState = {
       summary: meta && pickHoverSummary(meta.recap, this.summaryService.summaryFor(meta.sessionId), meta.sizeBytes),
       isSummarizing: this.summaryService.isSummarizing(node.pinned.sessionId),
@@ -190,6 +197,23 @@ export class SessionTreeProvider
     const targetGroupRef = targetNode === undefined ? undefined : nodeGroupRef(targetNode);
     const displayedGroupRefs = this.currentGroups().map((group) => group.ref);
     await this.registry.setGroupOrder(moveBeside(displayedGroupRefs, draggedGroupRefs, targetGroupRef));
+  }
+
+  private linkIconPath(link: MarkedLink, status: LinkStatus | undefined): vscode.TreeItem["iconPath"] {
+    const staticIconName = staticLinkIconName(link, status);
+    if (staticIconName !== undefined || status === undefined || link.kind === "artifact") {
+      const iconName = staticIconName ?? link.kind;
+      return {
+        light: vscode.Uri.joinPath(this.extensionUri, "media", "links", `${iconName}-light.svg`),
+        dark: vscode.Uri.joinPath(this.extensionUri, "media", "links", `${iconName}-dark.svg`),
+      };
+    }
+    const color =
+      link.kind === "pr"
+        ? this.statusConfig.prColor(status.colorKey)
+        : this.statusConfig.jiraColor(projectKeyOf(link.id) ?? "", status.colorKey);
+    const iconFile = this.statusIconWriter.iconFile(statusGlyph(link.kind, status), color);
+    return iconFile === undefined ? new vscode.ThemeIcon("circle-filled") : vscode.Uri.file(iconFile);
   }
 
   private currentGroups(): SessionGroup[] {
@@ -309,32 +333,24 @@ const LINK_KIND_NAMES: Record<MarkedLink["kind"], string> = {
   artifact: "Artifact",
 };
 
-function linkIconPath(extensionUri: vscode.Uri, link: MarkedLink, status: LinkStatus | undefined) {
-  const iconName = linkIconName(link, status);
-  return {
-    light: vscode.Uri.joinPath(extensionUri, "media", "links", `${iconName}-light.svg`),
-    dark: vscode.Uri.joinPath(extensionUri, "media", "links", `${iconName}-dark.svg`),
-  };
-}
-
 function linkTreeItem(
-  extensionUri: vscode.Uri,
   link: MarkedLink,
   sessionId: string,
   status: LinkStatus | undefined,
+  iconPath: vscode.TreeItem["iconPath"],
 ): vscode.TreeItem {
   const displayId = linkDisplayId(link);
   const treeItem = new vscode.TreeItem(link.label ?? displayId, vscode.TreeItemCollapsibleState.None);
   treeItem.id = `link:${sessionId}:${link.kind}:${link.id}`;
   treeItem.description = [
-    link.mark ?? "",
     status?.text ?? "",
+    link.mark ?? "",
     link.label === undefined ? "" : displayId,
     link.role === "owned" ? "" : link.role,
   ]
     .filter((part) => part !== "")
     .join(" · ");
-  treeItem.iconPath = linkIconPath(extensionUri, link, status);
+  treeItem.iconPath = iconPath;
   treeItem.contextValue = `link.${link.kind}.${link.mark ?? "unmarked"}`;
   treeItem.tooltip = linkTooltip(link, status);
   treeItem.command = { command: "overseer.openLink", title: "Open Link", arguments: [link] };
@@ -353,7 +369,9 @@ function linkTooltip(link: MarkedLink, status: LinkStatus | undefined): vscode.M
     tooltip.appendMarkdown(` · ${link.mark} by you`);
   }
   if (status !== undefined) {
-    tooltip.appendMarkdown(`\n\nStatus: ${escapeMarkdown(status.text)}`);
+    const projectKey = link.kind === "ticket" ? projectKeyOf(link.id) : undefined;
+    const projectSuffix = projectKey === undefined ? "" : ` · project ${projectKey}`;
+    tooltip.appendMarkdown(`\n\nStatus: **${escapeMarkdown(status.text)}**${projectSuffix}`);
   }
   const url = linkUrl(link, readLinkSettings().jiraBaseUrl);
   tooltip.appendMarkdown(url === undefined ? "\n\nSet `overseer.links.jira.baseUrl` to open tickets." : `\n\n${url}`);
