@@ -18,6 +18,24 @@ export function extractTicketKey(sources: TicketSources): string | undefined {
   );
 }
 
+// Prose needs the hyphen; "OPS 2829" style keys are only trusted in titles.
+const PROSE_TICKET_PATTERN = /\b([A-Z][A-Z0-9]+)-(\d+)\b/g;
+
+export function findTicketKeysInText(text: string): string[] {
+  const ticketKeys = new Set<string>();
+  for (const match of text.matchAll(PROSE_TICKET_PATTERN)) {
+    if (!NON_TICKET_PREFIXES.has(match[1])) {
+      ticketKeys.add(`${match[1]}-${match[2]}`);
+    }
+  }
+  return [...ticketKeys];
+}
+
+export function isTicketKey(candidateKey: string): boolean {
+  const match = /^([A-Z][A-Z0-9]+)-\d+$/.exec(candidateKey);
+  return match !== null && !NON_TICKET_PREFIXES.has(match[1]);
+}
+
 function findTicketKey(text: string | undefined, pattern: RegExp): string | undefined {
   if (text === undefined) {
     return undefined;

@@ -200,7 +200,7 @@ function parseRecord(line: string): TranscriptRecord | undefined {
 }
 
 // Top-level string fields are unescaped quotes; the same key inside message text is always backslash-escaped.
-function readStringField(line: string, fieldName: string): string | undefined {
+export function readStringField(line: string, fieldName: string): string | undefined {
   const fieldMarker = `"${fieldName}":"`;
   const valueStart = line.lastIndexOf(fieldMarker);
   if (valueStart === -1) {
