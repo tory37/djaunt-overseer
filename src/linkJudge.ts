@@ -1,7 +1,7 @@
 import { execFile, ExecFileException } from "child_process";
 import { createHash } from "crypto";
 import * as os from "os";
-import { fallbackRole, LinkCandidate, LinkRole } from "./linkCandidates";
+import { fallbackRole, isPassiveMention, LinkCandidate, LinkRole } from "./linkCandidates";
 
 export type JudgedRole = "owned" | "touched" | "irrelevant";
 
@@ -95,15 +95,20 @@ export function linkKey(candidate: LinkCandidate): string {
 }
 
 // Signal counts grow on every turn, so only new links or new kinds of signal call for a fresh verdict.
+// Passive mentions never show, so the judge never sees them; quoted text in their snippets misled it.
+function judgeableCandidates(candidates: LinkCandidate[]): LinkCandidate[] {
+  return candidates.filter((candidate) => !isPassiveMention(candidate));
+}
+
 export function candidateFingerprint(candidates: LinkCandidate[]): string {
-  const fingerprintLines = candidates
+  const fingerprintLines = judgeableCandidates(candidates)
     .map((candidate) => `${linkKey(candidate)}|${Object.keys(candidate.signals).sort().join(",")}`)
     .sort();
   return createHash("sha1").update(fingerprintLines.join("\n")).digest("hex");
 }
 
 export function needsJudging(candidates: LinkCandidate[], cachedEntry: JudgeCacheEntry | undefined, model: string): boolean {
-  if (candidates.length === 0) {
+  if (judgeableCandidates(candidates).length === 0) {
     return false;
   }
   return cachedEntry === undefined || cachedEntry.model !== model || cachedEntry.fingerprint !== candidateFingerprint(candidates);
@@ -201,7 +206,7 @@ export async function judgeSessionLinks(
   model: string,
   runClaude: ClaudeRunner,
 ): Promise<JudgeCacheEntry> {
-  const digest = buildJudgeDigest(context, candidates);
+  const digest = buildJudgeDigest(context, judgeableCandidates(candidates));
   const stdout = await runClaude(judgeArgs(model), digest.text);
   return {
     fingerprint: candidateFingerprint(candidates),
@@ -215,6 +220,9 @@ export function resolveLinks(candidates: LinkCandidate[], judgeEntry: JudgeCache
   const resolvedLinks = candidates.map((candidate): ResolvedLink => {
     const verdict = judgeEntry?.verdicts[linkKey(candidate)];
     const signalRole = fallbackRole(candidate);
+    if (isPassiveMention(candidate)) {
+      return { ...candidate, role: "irrelevant", stillRelevant: true, label: candidate.title, judged: false };
+    }
     if (verdict !== undefined) {
       const role = signalRole === "owned" ? "owned" : verdict.role;
       return { ...candidate, ...verdict, role, label: verdict.label ?? candidate.title, judged: true };

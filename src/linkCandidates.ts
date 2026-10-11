@@ -110,6 +110,11 @@ export function scanLinkLine(state: LinkScanState, line: string): void {
     }
     return;
   }
+  // Compaction summaries and meta records (skill bodies, command output) are not the user's words or the session's work.
+  const isInjectedRecord = line.includes('"isCompactSummary":true') || line.includes('"isMeta":true');
+  if (isInjectedRecord) {
+    return;
+  }
 
   const isToolLine = line.includes('"tool_use"') || line.includes('"tool_result"');
   if (isToolLine) {
@@ -153,6 +158,11 @@ export function fallbackRole(candidate: LinkCandidate): LinkRole {
     return "touched";
   }
   return "mentioned";
+}
+
+// Seen only in passing, in tool output or assistant text, with no action on it.
+export function isPassiveMention(candidate: LinkCandidate): boolean {
+  return Object.keys(candidate.signals).every((signal) => signal === "mention");
 }
 
 function roleRank(role: LinkRole): number {

@@ -118,6 +118,22 @@ describe("scanLinkLine", () => {
     expect(find(candidates, "ticket", "PROJ-1615")).toBeUndefined();
   });
 
+  it("skips compaction summaries and meta records such as skill bodies", () => {
+    const summaryLine = JSON.stringify({
+      type: "user",
+      isCompactSummary: true,
+      message: { role: "user", content: `Tested the judge on CR-10770 and ${PR_URL}` },
+    });
+    const skillBodyLine = JSON.stringify({
+      type: "user",
+      isMeta: true,
+      message: { role: "user", content: [{ type: "text", text: "/djt-test-plan PROJ-1615 # work from a ticket" }] },
+    });
+    const candidates = summarizeCandidates(scanAll([summaryLine, skillBodyLine]));
+
+    expect(candidates).toEqual([]);
+  });
+
   it("records the URL from an Artifact publish result as owned", () => {
     const state = scanAll([
       toolUse("a1", "Artifact", { file_path: "/tmp/plan.html", icon: "checklist" }),

@@ -141,7 +141,9 @@ describe("needsJudging", () => {
     expect(needsJudging([CREATED_PR], undefined, "haiku")).toBe(true);
     expect(needsJudging([moreOfTheSameSignal], judgeEntry, "haiku")).toBe(false);
     expect(needsJudging([newSignalKind], judgeEntry, "haiku")).toBe(true);
-    expect(needsJudging([CREATED_PR, NOISE_PR], judgeEntry, "haiku")).toBe(true);
+    expect(needsJudging([CREATED_PR, REVIEWED_PR], judgeEntry, "haiku")).toBe(true);
+    expect(needsJudging([CREATED_PR, NOISE_PR], judgeEntry, "haiku")).toBe(false);
+    expect(needsJudging([NOISE_PR], undefined, "haiku")).toBe(false);
     expect(needsJudging([CREATED_PR], judgeEntry, "sonnet")).toBe(true);
   });
 
@@ -151,6 +153,19 @@ describe("needsJudging", () => {
 });
 
 describe("resolveLinks", () => {
+  it("keeps passive mentions out of the digest and hides them whatever the verdict", async () => {
+    let digestText = "";
+    const runClaude: ClaudeRunner = async (_claudeArgs, stdinText) => {
+      digestText = stdinText;
+      return cliEnvelope({ links: [{ id: "pr:other/docs/pull/5", role: "owned", stillRelevant: true, label: "" }] });
+    };
+    const judgeEntry = await judgeSessionLinks(CONTEXT, [CREATED_PR, NOISE_PR], "haiku", runClaude);
+    const noiseLink = resolveLinks([CREATED_PR, NOISE_PR], judgeEntry).find((link) => link.id === NOISE_PR.id);
+
+    expect(digestText).not.toContain(NOISE_PR.id);
+    expect(noiseLink?.role).toBe("irrelevant");
+  });
+
   it("uses verdicts for judged links and signal roles for links judged later, owned first", async () => {
     const runClaude: ClaudeRunner = async () =>
       cliEnvelope({ links: [{ id: "pr:acme/web-app/pull/2384", role: "owned", stillRelevant: true, label: "" }] });

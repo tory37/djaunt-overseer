@@ -3,7 +3,9 @@ import * as path from "path";
 import { LinkScanCacheEntry } from "./linkCandidates";
 import { JudgeCacheEntry } from "./linkJudge";
 
-const CACHE_SCHEMA_VERSION = 1;
+// Bump the scan version when the scanner changes, so saved scans rerun from the start.
+const SCAN_CACHE_SCHEMA_VERSION = 3;
+const JUDGE_CACHE_SCHEMA_VERSION = 1;
 const CACHE_FILE_NAME = "session-links.json";
 const JUDGE_CACHE_FILE_NAME = "session-link-verdicts.json";
 
@@ -24,33 +26,37 @@ export function judgeCacheFilePath(storageDir: string): string {
 }
 
 export function loadLinkCache(cacheFile: string): Promise<LinkCacheEntries> {
-  return loadVersionedCache<LinkCacheEntries>(cacheFile);
+  return loadVersionedCache<LinkCacheEntries>(cacheFile, SCAN_CACHE_SCHEMA_VERSION);
 }
 
 export function saveLinkCache(cacheFile: string, entries: LinkCacheEntries): Promise<void> {
-  return saveVersionedCache(cacheFile, entries);
+  return saveVersionedCache(cacheFile, entries, SCAN_CACHE_SCHEMA_VERSION);
 }
 
 export function loadJudgeCache(cacheFile: string): Promise<JudgeCacheEntries> {
-  return loadVersionedCache<JudgeCacheEntries>(cacheFile);
+  return loadVersionedCache<JudgeCacheEntries>(cacheFile, JUDGE_CACHE_SCHEMA_VERSION);
 }
 
 export function saveJudgeCache(cacheFile: string, entries: JudgeCacheEntries): Promise<void> {
-  return saveVersionedCache(cacheFile, entries);
+  return saveVersionedCache(cacheFile, entries, JUDGE_CACHE_SCHEMA_VERSION);
 }
 
-async function loadVersionedCache<Entries>(cacheFile: string): Promise<Entries> {
+async function loadVersionedCache<Entries>(cacheFile: string, schemaVersion: number): Promise<Entries> {
   try {
     const cacheFileContent = JSON.parse(await fs.promises.readFile(cacheFile, "utf8")) as VersionedCacheFile<Entries>;
-    return cacheFileContent.version === CACHE_SCHEMA_VERSION ? cacheFileContent.entries : ({} as Entries);
+    return cacheFileContent.version === schemaVersion ? cacheFileContent.entries : ({} as Entries);
   } catch {
     return {} as Entries;
   }
 }
 
-async function saveVersionedCache<Entries>(cacheFile: string, entries: Entries): Promise<void> {
+async function saveVersionedCache<Entries>(
+  cacheFile: string,
+  entries: Entries,
+  schemaVersion: number,
+): Promise<void> {
   await fs.promises.mkdir(path.dirname(cacheFile), { recursive: true });
-  const cacheFileContent: VersionedCacheFile<Entries> = { version: CACHE_SCHEMA_VERSION, entries };
+  const cacheFileContent: VersionedCacheFile<Entries> = { version: schemaVersion, entries };
   const temporaryFile = `${cacheFile}.${process.pid}.tmp`;
   await fs.promises.writeFile(temporaryFile, JSON.stringify(cacheFileContent));
   await fs.promises.rename(temporaryFile, cacheFile);
