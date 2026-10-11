@@ -1,5 +1,6 @@
 import { LinkKind } from "./linkCandidates";
 import { ResolvedLink } from "./linkJudge";
+import { LinkStatus } from "./linkStatus";
 import { LiveStatus } from "./liveParse";
 
 export interface LinkViewSettings {
@@ -31,6 +32,18 @@ export function linkDisplayId(link: ResolvedLink): string {
   }
   const [owner, repo, , number] = link.id.split("/");
   return owner !== undefined && repo !== undefined && number !== undefined ? `${repo}#${number}` : link.id;
+}
+
+// Names a file in media/links, without the theme suffix.
+export function linkIconName(link: ResolvedLink, status: LinkStatus | undefined): string {
+  const isDimmed = link.role === "irrelevant" || !link.stillRelevant;
+  if (isDimmed) {
+    return `${link.kind}-dim`;
+  }
+  if (link.kind === "artifact" || status === undefined) {
+    return link.kind;
+  }
+  return `${link.kind}-${status.tone}`;
 }
 
 export function linkCountBadge(links: ResolvedLink[]): string {

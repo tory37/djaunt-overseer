@@ -4,9 +4,9 @@ import { formatAge } from "./format";
 import { buildGroups, PinnedSession, pinnedSessionTitle, SessionGroup } from "./grouping";
 import { displayTitle, SessionMeta } from "./indexer";
 import { ResolvedLink } from "./linkJudge";
-import { LinkStatus, LinkStatusTone } from "./linkStatus";
+import { LinkStatus } from "./linkStatus";
 import { LinkStatusService } from "./linkStatusService";
-import { linkCountBadge, linkDisplayId, linkUrl } from "./linkView";
+import { linkCountBadge, linkDisplayId, linkIconName, linkUrl } from "./linkView";
 import { LiveSession } from "./liveParse";
 import { LiveSessionMonitor } from "./liveSessions";
 import { tildePath } from "./paths";
@@ -52,6 +52,7 @@ export class SessionTreeProvider
     private readonly registry: Registry,
     private readonly linkService: SessionLinkService,
     private readonly linkStatusService: LinkStatusService,
+    private readonly extensionUri: vscode.Uri,
   ) {}
 
   refresh(): void {
@@ -87,7 +88,7 @@ export class SessionTreeProvider
       return groupTreeItem(node.group);
     }
     if (node.kind === "link") {
-      return linkTreeItem(node.link, node.sessionId, this.linkStatusService.statusFor(node.link));
+      return linkTreeItem(this.extensionUri, node.link, node.sessionId, this.linkStatusService.statusFor(node.link));
     }
     const links = node.pinned.meta === undefined ? [] : this.linkService.linksFor(node.pinned.meta);
     return sessionTreeItem(node.pinned, this.liveMonitor.get(node.pinned.sessionId), links);
@@ -243,35 +244,26 @@ function sessionCollapsibleState(links: ResolvedLink[] | undefined): vscode.Tree
   return vscode.TreeItemCollapsibleState.Collapsed;
 }
 
-const LINK_KIND_ICONS: Record<ResolvedLink["kind"], string> = {
-  pr: "git-pull-request",
-  ticket: "issues",
-  artifact: "preview",
-};
-
 const LINK_KIND_NAMES: Record<ResolvedLink["kind"], string> = {
   pr: "Pull request",
   ticket: "Jira ticket",
   artifact: "Artifact",
 };
 
-const LINK_STATUS_COLORS: Record<LinkStatusTone, string | undefined> = {
-  open: "charts.green",
-  draft: "disabledForeground",
-  merged: "charts.purple",
-  closed: "charts.red",
-  todo: undefined,
-  active: "charts.blue",
-  done: "charts.purple",
-};
-
-function linkIconColor(link: ResolvedLink, status: LinkStatus | undefined): vscode.ThemeColor | undefined {
-  const isDimmed = link.role === "irrelevant" || !link.stillRelevant;
-  const colorId = isDimmed ? "disabledForeground" : status && LINK_STATUS_COLORS[status.tone];
-  return colorId === undefined ? undefined : new vscode.ThemeColor(colorId);
+function linkIconPath(extensionUri: vscode.Uri, link: ResolvedLink, status: LinkStatus | undefined) {
+  const iconName = linkIconName(link, status);
+  return {
+    light: vscode.Uri.joinPath(extensionUri, "media", "links", `${iconName}-light.svg`),
+    dark: vscode.Uri.joinPath(extensionUri, "media", "links", `${iconName}-dark.svg`),
+  };
 }
 
-function linkTreeItem(link: ResolvedLink, sessionId: string, status: LinkStatus | undefined): vscode.TreeItem {
+function linkTreeItem(
+  extensionUri: vscode.Uri,
+  link: ResolvedLink,
+  sessionId: string,
+  status: LinkStatus | undefined,
+): vscode.TreeItem {
   const displayId = linkDisplayId(link);
   const treeItem = new vscode.TreeItem(link.label ?? displayId, vscode.TreeItemCollapsibleState.None);
   treeItem.id = `link:${sessionId}:${link.kind}:${link.id}`;
@@ -282,7 +274,7 @@ function linkTreeItem(link: ResolvedLink, sessionId: string, status: LinkStatus 
   ]
     .filter((part) => part !== "")
     .join(" · ");
-  treeItem.iconPath = new vscode.ThemeIcon(LINK_KIND_ICONS[link.kind], linkIconColor(link, status));
+  treeItem.iconPath = linkIconPath(extensionUri, link, status);
   treeItem.contextValue = `link.${link.kind}`;
   treeItem.tooltip = linkTooltip(link, status);
   treeItem.command = { command: "overseer.openLink", title: "Open Link", arguments: [link] };

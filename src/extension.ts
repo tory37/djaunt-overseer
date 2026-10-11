@@ -22,7 +22,14 @@ export function activate(context: vscode.ExtensionContext): void {
     sessionIndex.currentSessions.find((session) => session.sessionId === sessionId);
   const linkService = new SessionLinkService(context.globalStorageUri.fsPath, liveMonitor, findIndexedSession, log);
   const linkStatusService = new LinkStatusService(log);
-  const treeProvider = new SessionTreeProvider(sessionIndex, liveMonitor, registry, linkService, linkStatusService);
+  const treeProvider = new SessionTreeProvider(
+    sessionIndex,
+    liveMonitor,
+    registry,
+    linkService,
+    linkStatusService,
+    context.extensionUri,
+  );
   const treeView = vscode.window.createTreeView("overseer.sessions", {
     treeDataProvider: treeProvider,
     dragAndDropController: treeProvider,

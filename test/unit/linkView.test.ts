@@ -1,15 +1,18 @@
+import { existsSync } from "fs";
 import { describe, expect, it } from "vitest";
 import { ResolvedLink } from "../../src/linkJudge";
 import {
   ConcurrencyLimiter,
   linkCountBadge,
   linkDisplayId,
+  linkIconName,
   LinkViewSettings,
   linkUrl,
   ownedTicketKey,
   sessionsThatWentIdle,
   visibleLinks,
 } from "../../src/linkView";
+import { LinkStatusTone } from "../../src/linkStatus";
 import { LiveStatus } from "../../src/liveParse";
 
 function resolvedLink(overrides: Partial<ResolvedLink> & Pick<ResolvedLink, "kind" | "id" | "role">): ResolvedLink {
@@ -97,5 +100,42 @@ describe("ConcurrencyLimiter", () => {
     await Promise.all([...firstWave, limiter.run(task), limiter.run(task)]);
 
     expect(peakActiveCount).toBe(2);
+  });
+});
+
+describe("linkIconName", () => {
+  it("names the icon after the live status", () => {
+    expect(linkIconName(OWNED_PR, { text: "merged", tone: "merged" })).toBe("pr-merged");
+    expect(linkIconName(OWNED_PR, undefined)).toBe("pr");
+  });
+
+  it("uses one icon for artifacts whatever the status", () => {
+    const artifact = resolvedLink({ kind: "artifact", id: "abc", role: "owned" });
+    expect(linkIconName(artifact, undefined)).toBe("artifact");
+  });
+
+  it("dims irrelevant and inactive links", () => {
+    const irrelevantTicket = resolvedLink({ kind: "ticket", id: "ABC-1", role: "irrelevant" });
+    const inactivePr = { ...OWNED_PR, stillRelevant: false };
+    expect(linkIconName(irrelevantTicket, { text: "Done", tone: "done" })).toBe("ticket-dim");
+    expect(linkIconName(inactivePr, { text: "open", tone: "open" })).toBe("pr-dim");
+  });
+
+  it("has a light and dark file for every icon a status can produce", () => {
+    const tonesByKind: Record<ResolvedLink["kind"], LinkStatusTone[]> = {
+      pr: ["open", "draft", "merged", "closed"],
+      ticket: ["todo", "active", "done"],
+      artifact: [],
+    };
+    const iconNames = Object.entries(tonesByKind).flatMap(([kind, tones]) => {
+      const link = resolvedLink({ kind: kind as ResolvedLink["kind"], id: "x", role: "owned" });
+      const dimmedLink = { ...link, role: "irrelevant" as const };
+      const statusIcons = tones.map((tone) => linkIconName(link, { text: tone, tone }));
+      return [...statusIcons, linkIconName(link, undefined), linkIconName(dimmedLink, undefined)];
+    });
+    for (const iconName of iconNames) {
+      expect(existsSync(`media/links/${iconName}-light.svg`), iconName).toBe(true);
+      expect(existsSync(`media/links/${iconName}-dark.svg`), iconName).toBe(true);
+    }
   });
 });
