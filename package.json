@@ -2,7 +2,7 @@
   "name": "djaunt-overseer",
   "displayName": "Overseer",
   "description": "Vertical tabs for Claude CLI sessions: group by ticket, suspend, and resume from any repo.",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "publisher": "djaunt",
   "private": true,
   "license": "UNLICENSED",
@@ -68,7 +68,7 @@
     "commands": [
       {
         "command": "overseer.allSessions",
-        "title": "All Sessions\u2026",
+        "title": "All Sessions…",
         "category": "Overseer",
         "icon": "$(search)"
       },
@@ -80,7 +80,7 @@
       },
       {
         "command": "overseer.newGroup",
-        "title": "New Group\u2026",
+        "title": "New Group…",
         "category": "Overseer",
         "icon": "$(new-folder)"
       },
@@ -97,7 +97,7 @@
       },
       {
         "command": "overseer.addExistingToGroup",
-        "title": "Add Existing Session\u2026",
+        "title": "Add Existing Session…",
         "category": "Overseer",
         "icon": "$(search)"
       },
@@ -115,7 +115,7 @@
       },
       {
         "command": "overseer.renameGroup",
-        "title": "Rename Group\u2026",
+        "title": "Rename Group…",
         "category": "Overseer"
       },
       {
@@ -130,13 +130,13 @@
       },
       {
         "command": "overseer.newSession",
-        "title": "New Session\u2026",
+        "title": "New Session…",
         "category": "Overseer",
         "icon": "$(add)"
       },
       {
         "command": "overseer.newTerminal",
-        "title": "New Terminal\u2026",
+        "title": "New Terminal…",
         "category": "Overseer",
         "icon": "$(terminal)"
       },
@@ -165,7 +165,7 @@
       },
       {
         "command": "overseer.renameSession",
-        "title": "Rename Session\u2026",
+        "title": "Rename Session…",
         "category": "Overseer"
       },
       {
@@ -180,7 +180,7 @@
       },
       {
         "command": "overseer.switchModel",
-        "title": "Switch Model\u2026",
+        "title": "Switch Model…",
         "category": "Overseer"
       },
       {
@@ -256,7 +256,7 @@
       },
       {
         "command": "overseer.moveTicketStatus",
-        "title": "Move to Status\u2026",
+        "title": "Move to Status…",
         "category": "Overseer",
         "icon": "$(arrow-swap)"
       },
@@ -267,34 +267,34 @@
       },
       {
         "command": "overseer.openSettings",
-        "title": "Settings\u2026",
+        "title": "Settings…",
         "category": "Overseer",
         "icon": "$(gear)"
       },
       {
         "command": "overseer.setSessionStatus",
-        "title": "Set Status\u2026",
+        "title": "Set Status…",
         "category": "Overseer",
         "icon": "$(tag)"
       },
       {
         "command": "overseer.openStatusSettings",
-        "title": "Session Status Settings\u2026",
+        "title": "Session Status Settings…",
         "category": "Overseer"
       },
       {
         "command": "overseer.openSessionSettings",
-        "title": "Session Icon Settings\u2026",
+        "title": "Session Icon Settings…",
         "category": "Overseer"
       },
       {
         "command": "overseer.openJiraSettings",
-        "title": "Jira Settings\u2026",
+        "title": "Jira Settings…",
         "category": "Overseer"
       },
       {
         "command": "overseer.openGithubSettings",
-        "title": "GitHub Settings\u2026",
+        "title": "GitHub Settings…",
         "category": "Overseer"
       },
       {
@@ -785,7 +785,7 @@
               "asksReason": false
             }
           ],
-          "markdownDescription": "Statuses you can set on a session or terminal with **Set Status\u2026**. A status tints the row's label and adds its badge. Edit them in **Overseer: Session Status Settings\u2026**.",
+          "markdownDescription": "Statuses you can set on a session or terminal with **Set Status…**. A status tints the row's label and adds its badge. Edit them in **Overseer: Session Status Settings…**.",
           "items": {
             "type": "object",
             "required": [
@@ -891,37 +891,37 @@
           "type": "string",
           "default": "loading~spin",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
-          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is working in this window. Set its color with `overseer.sessionWorking` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings\u2026**."
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is working in this window. Set its color with `overseer.sessionWorking` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
         },
         "overseer.sessionIcons.compacting": {
           "type": "string",
           "default": "sync~spin",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
-          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is compacting. Needs **Overseer: Install Compact Hooks**. Set its color with `overseer.sessionCompacting` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings\u2026**."
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is compacting. Needs **Overseer: Install Compact Hooks**. Set its color with `overseer.sessionCompacting` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
         },
         "overseer.sessionIcons.running": {
           "type": "string",
           "default": "terminal",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
-          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is running in this window. Set its color with `overseer.sessionRunning` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings\u2026**."
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is running in this window. Set its color with `overseer.sessionRunning` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
         },
         "overseer.sessionIcons.elsewhere": {
           "type": "string",
           "default": "window",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
-          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is running outside this window. Set its color with `overseer.sessionElsewhere` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings\u2026**."
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is running outside this window. Set its color with `overseer.sessionElsewhere` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
         },
         "overseer.sessionIcons.suspended": {
           "type": "string",
           "default": "debug-pause",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
-          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is suspended. Set its color with `overseer.sessionSuspended` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings\u2026**."
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is suspended. Set its color with `overseer.sessionSuspended` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
         },
         "overseer.sessionIcons.duplicate": {
           "type": "string",
           "default": "warning",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
-          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is more than one copy running. Set its color with `overseer.sessionDuplicate` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings\u2026**."
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is more than one copy running. Set its color with `overseer.sessionDuplicate` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
         }
       }
     },
