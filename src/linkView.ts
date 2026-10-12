@@ -1,7 +1,6 @@
 import { LinkKind } from "./linkCandidates";
 import { linkKey, ResolvedLink } from "./linkJudge";
 import { LinkStatus } from "./linkStatus";
-import { LiveStatus } from "./liveParse";
 import { LinkMark, LinkMarks } from "./registry";
 import { sortBySavedOrder } from "./reorder";
 
@@ -93,20 +92,6 @@ export function ownedTicketKey(links: MarkedLink[]): string | undefined {
   const tickets = links.filter((link) => link.kind === "ticket" && link.mark !== "removed");
   const pinnedTicket = tickets.find((link) => link.mark === "pinned");
   return (pinnedTicket ?? tickets.find((link) => link.role === "owned"))?.id;
-}
-
-export function sessionsThatWentIdle(
-  previousStatuses: Map<string, LiveStatus>,
-  currentStatuses: Map<string, LiveStatus>,
-): string[] {
-  const idleSessionIds: string[] = [];
-  for (const [sessionId, previousStatus] of previousStatuses) {
-    const currentStatus = currentStatuses.get(sessionId);
-    if (previousStatus === "busy" && currentStatus !== "busy") {
-      idleSessionIds.push(sessionId);
-    }
-  }
-  return idleSessionIds;
 }
 
 export class ConcurrencyLimiter {

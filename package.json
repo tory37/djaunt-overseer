@@ -169,10 +169,10 @@
         "category": "Overseer"
       },
       {
-        "command": "overseer.refreshLinks",
-        "title": "Refresh Links",
+        "command": "overseer.findResources",
+        "title": "Find Resources",
         "category": "Overseer",
-        "icon": "$(sync)"
+        "icon": "$(search)"
       },
       {
         "command": "overseer.summarizeSession",
@@ -457,7 +457,7 @@
           "group": "1_link@2"
         },
         {
-          "command": "overseer.refreshLinks",
+          "command": "overseer.findResources",
           "when": "view == overseer.sessions && viewItem =~ /^session\\./",
           "group": "3_links@1"
         },
@@ -562,7 +562,7 @@
           "when": "false"
         },
         {
-          "command": "overseer.refreshLinks",
+          "command": "overseer.findResources",
           "when": "false"
         },
         {

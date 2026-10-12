@@ -26,11 +26,14 @@ import { findSessionTerminal } from "./terminals";
 export type TreeNode =
   | { kind: "group"; group: SessionGroup }
   | { kind: "session"; pinned: PinnedSession; groupRef: GroupRef }
+  | { kind: "resources"; sessionId: string; groupRef: GroupRef }
   | { kind: "link"; link: MarkedLink; sessionId: string; groupRef: GroupRef };
 
 type SessionNode = Extract<TreeNode, { kind: "session" }>;
 type GroupNode = Extract<TreeNode, { kind: "group" }>;
+type ResourcesNode = Extract<TreeNode, { kind: "resources" }>;
 type LinkNode = Extract<TreeNode, { kind: "link" }>;
+type SessionChildNode = SessionNode | ResourcesNode | LinkNode;
 
 interface DraggedSession {
   sessionId: string;
@@ -49,6 +52,12 @@ interface DragPayload {
 }
 
 const TREE_DRAG_MIME = "application/vnd.code.tree.overseer.sessions";
+const RESOURCES_EXPANSION_PREFIX = "resources:";
+
+// The resources row saves its expansion beside the session's, under its own key.
+export function resourcesExpansionKey(sessionId: string): string {
+  return `${RESOURCES_EXPANSION_PREFIX}${sessionId}`;
+}
 
 export class SessionTreeProvider
   implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode>
@@ -85,13 +94,15 @@ export class SessionTreeProvider
         groupRef: parentNode.group.ref,
       }));
     }
-    if (parentNode.kind === "session" && parentNode.pinned.meta !== undefined) {
-      this.linkService.noteExpanded(parentNode.pinned.meta);
-      const links = this.linkService.linksFor(parentNode.pinned.meta) ?? [];
-      return links.map((link) => ({
+    if (parentNode.kind === "session") {
+      const sessionId = parentNode.pinned.sessionId;
+      return this.registry.hasFoundResources(sessionId) ? [{ kind: "resources", sessionId, groupRef: parentNode.groupRef }] : [];
+    }
+    if (parentNode.kind === "resources") {
+      return (this.resourceLinks(parentNode.sessionId) ?? []).map((link) => ({
         kind: "link",
         link,
-        sessionId: parentNode.pinned.sessionId,
+        sessionId: parentNode.sessionId,
         groupRef: parentNode.groupRef,
       }));
     }
@@ -106,15 +117,33 @@ export class SessionTreeProvider
       const status = this.linkStatusService.statusFor(node.link);
       return linkTreeItem(node.link, node.sessionId, status, this.linkIconPath(node.link, status));
     }
+    if (node.kind === "resources") {
+      return resourcesTreeItem(
+        node.sessionId,
+        this.resourceLinks(node.sessionId),
+        this.linkService.isFinding(node.sessionId),
+        this.registry.isSessionExpanded(resourcesExpansionKey(node.sessionId)),
+      );
+    }
     const meta = node.pinned.meta;
-    // Before the index loads a session has no meta; reporting "no links" then would drop its saved expansion.
-    const links = meta === undefined ? undefined : this.linkService.linksFor(meta);
+    const hasFoundResources = this.registry.hasFoundResources(node.pinned.sessionId);
     const summaryState: SummaryState = {
       summary: meta && pickHoverSummary(meta.recap, this.summaryService.summaryFor(meta.sessionId), meta.sizeBytes),
       isSummarizing: this.summaryService.isSummarizing(node.pinned.sessionId),
     };
     const isExpanded = this.registry.isSessionExpanded(node.pinned.sessionId);
-    return sessionTreeItem(node.pinned, this.liveMonitor.get(node.pinned.sessionId), links, summaryState, isExpanded);
+    return sessionTreeItem(
+      node.pinned,
+      this.liveMonitor.get(node.pinned.sessionId),
+      hasFoundResources,
+      summaryState,
+      isExpanded,
+    );
+  }
+
+  private resourceLinks(sessionId: string): MarkedLink[] | undefined {
+    const meta = this.sessionIndex.currentSessions.find((session) => session.sessionId === sessionId);
+    return meta === undefined ? undefined : this.linkService.linksFor(meta);
   }
 
   handleDrag(sourceNodes: readonly TreeNode[], dataTransfer: vscode.DataTransfer): void {
@@ -145,9 +174,9 @@ export class SessionTreeProvider
     }
   }
 
-  // Links reorder only within their own session; a drop on the session row moves them to the top.
+  // Links reorder only within their own session; a drop on the Associated Links row moves them to the top.
   private async dropLinks(draggedLinks: DraggedLink[], targetNode: TreeNode | undefined): Promise<void> {
-    if (targetNode === undefined || targetNode.kind === "group") {
+    if (targetNode === undefined || targetNode.kind === "group" || targetNode.kind === "session") {
       return;
     }
     const targetSessionId = nodeSessionId(targetNode);
@@ -163,7 +192,7 @@ export class SessionTreeProvider
     }
     const displayedLinkKeys = (this.linkService.linksFor(meta) ?? []).map(linkKey);
     const reorderedLinkKeys =
-      targetNode.kind === "session"
+      targetNode.kind === "resources"
         ? [...draggedLinkKeys, ...displayedLinkKeys.filter((key) => !draggedLinkKeys.includes(key))]
         : moveBeside(displayedLinkKeys, draggedLinkKeys, linkKey(targetNode.link));
     await this.registry.setLinkOrder(targetSessionId, reorderedLinkKeys);
@@ -231,7 +260,9 @@ export class SessionTreeProvider
       pendingSessions: this.registry.pendingSessions(),
       groupOrder: this.registry.groupOrder(),
       sessionOrder: this.registry.sessionOrder(),
-      linkedTicketKeys: this.linkService.ownedTicketKeys(pinnedSessionIds),
+      linkedTicketKeys: this.linkService.ownedTicketKeys(
+        pinnedSessionIds.filter((sessionId) => this.registry.hasFoundResources(sessionId)),
+      ),
     });
   }
 
@@ -244,7 +275,7 @@ function nodeGroupRef(node: TreeNode): GroupRef {
   return node.kind === "group" ? node.group.ref : node.groupRef;
 }
 
-function nodeSessionId(node: SessionNode | LinkNode): string {
+function nodeSessionId(node: SessionChildNode): string {
   return node.kind === "session" ? node.pinned.sessionId : node.sessionId;
 }
 
@@ -288,16 +319,14 @@ const SUMMARY_SOURCE_LABELS: Record<HoverSummary["source"], string> = {
 function sessionTreeItem(
   pinned: PinnedSession,
   liveSession: LiveSession | undefined,
-  links: MarkedLink[] | undefined,
+  hasFoundResources: boolean,
   summaryState: SummaryState,
   isExpanded: boolean,
 ): vscode.TreeItem {
   const state = sessionState(pinned.sessionId, liveSession);
-  const treeItem = new vscode.TreeItem(pinnedSessionTitle(pinned), sessionCollapsibleState(links, isExpanded));
+  const treeItem = new vscode.TreeItem(pinnedSessionTitle(pinned), expandableState(hasFoundResources, isExpanded));
   treeItem.id = `session:${pinned.sessionId}`;
-  treeItem.description = [linkCountBadge(links ?? []), sessionDescription(pinned)]
-    .filter((part) => part !== "")
-    .join(" · ");
+  treeItem.description = sessionDescription(pinned);
   treeItem.tooltip = sessionTooltip(pinned, sessionIconSpec(state).label, summaryState);
   treeItem.iconPath = sessionStateIcon(state);
   treeItem.contextValue = `session.${state}`;
@@ -310,13 +339,36 @@ function sessionTreeItem(
   return treeItem;
 }
 
-// Unscanned sessions stay expandable so a click can reveal links once the scan lands.
-function sessionCollapsibleState(links: MarkedLink[] | undefined, isExpanded: boolean): vscode.TreeItemCollapsibleState {
-  const hasNoLinks = links !== undefined && links.length === 0;
-  if (hasNoLinks || readLinkSettings().enabledKinds.size === 0) {
+function expandableState(hasChildren: boolean, isExpanded: boolean): vscode.TreeItemCollapsibleState {
+  if (!hasChildren) {
     return vscode.TreeItemCollapsibleState.None;
   }
   return isExpanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
+}
+
+function resourcesTreeItem(
+  sessionId: string,
+  links: MarkedLink[] | undefined,
+  isFinding: boolean,
+  isExpanded: boolean,
+): vscode.TreeItem {
+  const hasLinks = links !== undefined && links.length > 0;
+  const treeItem = new vscode.TreeItem("Associated Links", expandableState(hasLinks, isExpanded));
+  treeItem.id = `resources:${sessionId}`;
+  treeItem.iconPath = new vscode.ThemeIcon(isFinding ? "loading~spin" : "references");
+  treeItem.description = resourcesDescription(links, isFinding);
+  treeItem.contextValue = "resources";
+  return treeItem;
+}
+
+function resourcesDescription(links: MarkedLink[] | undefined, isFinding: boolean): string {
+  if (isFinding) {
+    return "Finding…";
+  }
+  if (links === undefined || links.length === 0) {
+    return "none found";
+  }
+  return linkCountBadge(links) || `${links.length} hidden`;
 }
 
 const LINK_KIND_NAMES: Record<MarkedLink["kind"], string> = {

@@ -25,15 +25,12 @@ import {
   MarkedLink,
   markLinks,
   ownedTicketKey,
-  sessionsThatWentIdle,
   visibleLinks,
 } from "./linkView";
-import { LiveStatus } from "./liveParse";
-import { LiveSessionMonitor, resolveClaudeBinary } from "./liveSessions";
+import { resolveClaudeBinary } from "./liveSessions";
 import { LinkMarks } from "./registry";
 
 const LINKS_CONFIG_SECTION = "overseer.links";
-const IDLE_RESCAN_DELAY_MS = 60_000;
 const SCAN_CACHE_SAVE_DELAY_MS = 5_000;
 const MAX_CONCURRENT_SCANS = 2;
 const MAX_CONCURRENT_JUDGES = 2;
@@ -64,21 +61,18 @@ export function readLinkSettings(): LinkSettings {
   };
 }
 
-// Scans transcripts for links on first view and after each busy-to-idle flip, and judges them when a session is expanded.
+// Scans and judges a session's links only when the user runs Find Resources on it.
 export class SessionLinkService implements vscode.Disposable {
   private scanEntries: LinkCacheEntries = {};
   private judgeEntries: JudgeCacheEntries = {};
   private readonly cachesLoaded: Promise<void>;
-  private readonly scannedThisWindow = new Set<string>();
   private readonly scansInFlight = new Map<string, Promise<void>>();
   private readonly judgesInFlight = new Map<string, Promise<void>>();
-  private readonly expandedSessionIds = new Set<string>();
+  private readonly findingSessionIds = new Set<string>();
   private readonly failedJudgeFingerprints = new Map<string, string>();
-  private readonly idleRescanTimers = new Map<string, NodeJS.Timeout>();
   private readonly candidatesByScanEntry = new WeakMap<LinkScanCacheEntry, LinkCandidate[]>();
   private readonly scanLimiter = new ConcurrencyLimiter(MAX_CONCURRENT_SCANS);
   private readonly judgeLimiter = new ConcurrencyLimiter(MAX_CONCURRENT_JUDGES);
-  private previousLiveStatuses = new Map<string, LiveStatus>();
   private scanCacheSaveTimer: NodeJS.Timeout | undefined;
   private claudeBinary: Promise<string> | undefined;
   private readonly changeEmitter = new vscode.EventEmitter<void>();
@@ -87,7 +81,6 @@ export class SessionLinkService implements vscode.Disposable {
 
   constructor(
     private readonly storageDir: string,
-    private readonly liveMonitor: LiveSessionMonitor,
     private readonly findSessionMeta: (sessionId: string) => SessionMeta | undefined,
     private readonly readLinkMarks: (sessionId: string) => LinkMarks,
     private readonly readLinkOrder: (sessionId: string) => string[],
@@ -95,7 +88,6 @@ export class SessionLinkService implements vscode.Disposable {
   ) {
     this.cachesLoaded = this.loadCaches();
     this.subscriptions = [
-      liveMonitor.onDidChange(() => this.scheduleIdleRescans()),
       vscode.workspace.onDidChangeConfiguration((change) => {
         if (change.affectsConfiguration(LINKS_CONFIG_SECTION)) {
           this.changeEmitter.fire();
@@ -104,11 +96,8 @@ export class SessionLinkService implements vscode.Disposable {
     ];
   }
 
-  // Returns undefined until the first scan of this transcript lands; the scan starts here.
+  // Returns undefined until Find Resources has scanned this transcript.
   linksFor(meta: SessionMeta): MarkedLink[] | undefined {
-    if (!this.scannedThisWindow.has(meta.transcriptFile)) {
-      void this.scan(meta);
-    }
     const scanEntry = this.scanEntries[meta.transcriptFile];
     if (scanEntry === undefined) {
       return undefined;
@@ -135,16 +124,21 @@ export class SessionLinkService implements vscode.Disposable {
     return ticketKeys;
   }
 
-  noteExpanded(meta: SessionMeta): void {
-    this.expandedSessionIds.add(meta.sessionId);
-    void this.judge(meta, false);
+  isFinding(sessionId: string): boolean {
+    return this.findingSessionIds.has(sessionId);
   }
 
-  async refreshSession(meta: SessionMeta): Promise<void> {
-    this.expandedSessionIds.add(meta.sessionId);
+  async findResources(meta: SessionMeta): Promise<void> {
+    this.findingSessionIds.add(meta.sessionId);
     this.failedJudgeFingerprints.delete(meta.sessionId);
-    await this.scan(meta);
-    await this.judge(meta, true);
+    this.changeEmitter.fire();
+    try {
+      await this.scan(meta);
+      await this.judge(meta, true);
+    } finally {
+      this.findingSessionIds.delete(meta.sessionId);
+      this.changeEmitter.fire();
+    }
   }
 
   private candidatesFor(scanEntry: LinkScanCacheEntry): LinkCandidate[] {
@@ -168,7 +162,6 @@ export class SessionLinkService implements vscode.Disposable {
 
   private scan(meta: SessionMeta): Promise<void> {
     const transcriptFile = meta.transcriptFile;
-    this.scannedThisWindow.add(transcriptFile);
     const inFlightScan = this.scansInFlight.get(transcriptFile);
     if (inFlightScan !== undefined) {
       return inFlightScan;
@@ -255,29 +248,6 @@ export class SessionLinkService implements vscode.Disposable {
     this.changeEmitter.fire();
   }
 
-  private scheduleIdleRescans(): void {
-    const currentLiveStatuses = this.liveMonitor.statuses();
-    const idleSessionIds = sessionsThatWentIdle(this.previousLiveStatuses, currentLiveStatuses);
-    this.previousLiveStatuses = currentLiveStatuses;
-    for (const sessionId of idleSessionIds) {
-      clearTimeout(this.idleRescanTimers.get(sessionId));
-      const rescanTimer = setTimeout(() => void this.rescanAfterIdle(sessionId), IDLE_RESCAN_DELAY_MS);
-      this.idleRescanTimers.set(sessionId, rescanTimer);
-    }
-  }
-
-  private async rescanAfterIdle(sessionId: string): Promise<void> {
-    this.idleRescanTimers.delete(sessionId);
-    const meta = this.findSessionMeta(sessionId);
-    if (meta === undefined || !this.scannedThisWindow.has(meta.transcriptFile)) {
-      return;
-    }
-    await this.scan(meta);
-    if (this.expandedSessionIds.has(sessionId)) {
-      await this.judge(meta, false);
-    }
-  }
-
   private scheduleScanCacheSave(): void {
     clearTimeout(this.scanCacheSaveTimer);
     this.scanCacheSaveTimer = setTimeout(() => void this.saveScanCache(), SCAN_CACHE_SAVE_DELAY_MS);
@@ -296,7 +266,6 @@ export class SessionLinkService implements vscode.Disposable {
       clearTimeout(this.scanCacheSaveTimer);
       void this.saveScanCache();
     }
-    this.idleRescanTimers.forEach((rescanTimer) => clearTimeout(rescanTimer));
     this.subscriptions.forEach((subscription) => subscription.dispose());
     this.changeEmitter.dispose();
   }

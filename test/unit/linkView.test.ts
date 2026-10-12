@@ -10,10 +10,8 @@ import {
   MarkedLink,
   markLinks,
   ownedTicketKey,
-  sessionsThatWentIdle,
   visibleLinks,
 } from "../../src/linkView";
-import { LiveStatus } from "../../src/liveParse";
 
 function resolvedLink(overrides: Partial<MarkedLink> & Pick<MarkedLink, "kind" | "id" | "role">): MarkedLink {
   return {
@@ -118,15 +116,6 @@ describe("link labels", () => {
   it("prefers a pinned ticket and skips a removed one", () => {
     expect(ownedTicketKey([OWNED_TICKET, { ...TOUCHED_TICKET, mark: "pinned" }])).toBe("PROJ-5");
     expect(ownedTicketKey([{ ...OWNED_TICKET, mark: "removed" }])).toBeUndefined();
-  });
-});
-
-describe("sessionsThatWentIdle", () => {
-  it("reports busy sessions that went idle or ended", () => {
-    const previous = new Map<string, LiveStatus>([["a", "busy"], ["b", "busy"], ["c", "idle"], ["d", "busy"]]);
-    const current = new Map<string, LiveStatus>([["a", "idle"], ["b", "busy"], ["c", "busy"]]);
-
-    expect(sessionsThatWentIdle(previous, current)).toEqual(["a", "d"]);
   });
 });
 

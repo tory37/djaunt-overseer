@@ -16,7 +16,7 @@ import { jiraProjectRefresher, registerStatusCommands } from "./statusCommands";
 import { StatusConfig } from "./statusConfig";
 import { StatusIconWriter } from "./statusIcons";
 import { adoptTerminalsByPid } from "./terminals";
-import { SessionTreeProvider, TreeNode } from "./tree";
+import { resourcesExpansionKey, SessionTreeProvider, TreeNode } from "./tree";
 
 const INDEX_REFRESH_INTERVAL_MS = 60_000;
 
@@ -31,7 +31,6 @@ export function activate(context: vscode.ExtensionContext): void {
     sessionIndex.currentSessions.find((session) => session.sessionId === sessionId);
   const linkService = new SessionLinkService(
     context.globalStorageUri.fsPath,
-    liveMonitor,
     findIndexedSession,
     (sessionId) => registry.linkMarks(sessionId),
     (sessionId) => registry.linkOrder(sessionId),
@@ -140,6 +139,8 @@ export function deactivate(): void {}
 async function saveExpansion(registry: Registry, node: TreeNode, isExpanded: boolean): Promise<void> {
   if (node.kind === "session") {
     await registry.setSessionExpanded(node.pinned.sessionId, isExpanded);
+  } else if (node.kind === "resources") {
+    await registry.setSessionExpanded(resourcesExpansionKey(node.sessionId), isExpanded);
   } else if (node.kind === "group") {
     await registry.setGroupCollapsed(node.group.ref, !isExpanded);
   }

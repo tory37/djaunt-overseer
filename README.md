@@ -42,10 +42,10 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - **Compact**, **Switch Model…**, **Clear Context**, and **Show Cost** (right-click) send `/compact`, `/model`, `/clear`, and `/cost`. They show only on idle sessions running in this window.
 
 ### Links
-- Each session lists the GitHub PRs, Jira tickets, and claude.ai artifacts it worked on, with a count like `3 links`.
-- Overseer scans the transcript when the session first shows and 60 seconds after it goes idle.
-- When you expand a session, a headless `claude -p` run with Haiku sorts its links into owned, touched, and seen in passing. Passing links stay hidden unless `overseer.links.showIrrelevant` is on.
-- An owned ticket names the auto-group when the title and branch have no ticket key.
+- **Find Resources** (right-click a session) finds the GitHub PRs, Jira tickets, and claude.ai artifacts it worked on. Overseer never scans on its own.
+- The session then shows one **Associated Links** row with a count like `3 links`. Run Find Resources again to pick up new links.
+- A headless `claude -p` run with Haiku sorts the links into owned, touched, and seen in passing. Passing links stay hidden unless `overseer.links.showIrrelevant` is on.
+- An owned ticket names the auto-group, for sessions you ran Find Resources on, when the title and branch have no ticket key.
 - Each PR and ticket shows its live status first in the row, and its icon takes that status's color. Overseer checks every five minutes, only for expanded sessions.
 - PR status comes from `gh`. Ticket status comes from the Jira MCP server in your `~/.claude.json`, the same one Claude Code uses. Overseer starts it on its own and reads all visible tickets in one call.
 - **Move to Status…** (right-click a ticket) lists the moves the ticket's workflow allows.
@@ -54,7 +54,6 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - **Pin** keeps a link at the top and counts it, even when the judge called it irrelevant. **Remove** hides it. Both survive a rescan.
 - **Toggle Removed Links** shows removed links again, dimmed, so you can **Restore** them.
 - **Toggle Link Browser** switches between your browser and the VS Code browser.
-- **Refresh Links** (right-click) rescans and rejudges one session.
 
 ### Settings
 Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:

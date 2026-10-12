@@ -30,6 +30,7 @@ const LINK_MARKS_KEY = "overseer.linkMarks";
 const LINK_ORDER_KEY = "overseer.linkOrder";
 const EXPANDED_SESSIONS_KEY = "overseer.expandedSessionIds";
 const COLLAPSED_GROUPS_KEY = "overseer.collapsedGroupRefs";
+const RESOURCE_SESSIONS_KEY = "overseer.resourceSessionIds";
 
 export type LinkMark = "pinned" | "removed";
 export type LinkMarks = Record<string, LinkMark>;
@@ -67,6 +68,7 @@ export class Registry {
     await this.write(PINNED_KEY, this.pinnedSessionIds().filter((pinnedId) => pinnedId !== sessionId));
     await this.write(SESSION_ORDER_KEY, this.sessionOrder().filter((orderedId) => orderedId !== sessionId));
     await this.setSessionExpanded(sessionId, false);
+    await this.write(RESOURCE_SESSIONS_KEY, this.resourceSessionIds().filter((foundId) => foundId !== sessionId));
     const { [sessionId]: _removedPending, ...remainingPending } = this.pendingSessions();
     await this.write(PENDING_KEY, remainingPending);
   }
@@ -175,6 +177,20 @@ export class Registry {
 
   async setLinkOrder(sessionId: string, linkKeys: string[]): Promise<void> {
     await this.write(LINK_ORDER_KEY, { ...this.allLinkOrders(), [sessionId]: linkKeys });
+  }
+
+  resourceSessionIds(): string[] {
+    return this.store.get<string[]>(RESOURCE_SESSIONS_KEY) ?? [];
+  }
+
+  hasFoundResources(sessionId: string): boolean {
+    return this.resourceSessionIds().includes(sessionId);
+  }
+
+  async markResourcesFound(sessionId: string): Promise<void> {
+    if (!this.hasFoundResources(sessionId)) {
+      await this.write(RESOURCE_SESSIONS_KEY, [...this.resourceSessionIds(), sessionId]);
+    }
   }
 
   isSessionExpanded(sessionId: string): boolean {

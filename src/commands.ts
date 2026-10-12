@@ -417,14 +417,18 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         await vscode.env.clipboard.writeText(linkUrl(link, readLinkSettings().jiraBaseUrl) ?? link.id);
       }
     }),
-    vscode.commands.registerCommand("overseer.refreshLinks", async (clickedNode?: TreeNode) => {
+    vscode.commands.registerCommand("overseer.findResources", async (clickedNode?: TreeNode) => {
       const sessionMetas = selectedSessionNodes(clickedNode)
         .map((node) => node.pinned.meta)
         .filter(isDefined);
       linkStatusService.clear();
+      for (const meta of sessionMetas) {
+        await registry.setSessionExpanded(meta.sessionId, true);
+        await registry.markResourcesFound(meta.sessionId);
+      }
       await vscode.window.withProgress(
-        { location: { viewId: "overseer.sessions" }, title: "Refreshing links" },
-        () => Promise.all(sessionMetas.map((meta) => linkService.refreshSession(meta))),
+        { location: { viewId: "overseer.sessions" }, title: "Finding resources" },
+        () => Promise.all(sessionMetas.map((meta) => linkService.findResources(meta))),
       );
     }),
     ...LINK_MARK_COMMANDS.map((markCommand) =>
