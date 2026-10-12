@@ -262,6 +262,16 @@
         "command": "overseer.openResources",
         "title": "Open Links",
         "category": "Overseer"
+      },
+      {
+        "command": "overseer.installCompactHooks",
+        "title": "Install Compact Hooks",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.removeCompactHooks",
+        "title": "Remove Compact Hooks",
+        "category": "Overseer"
       }
     ],
     "menus": {
@@ -608,6 +618,12 @@
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
           "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is working in this window. Set its color with `overseer.sessionWorking` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
         },
+        "overseer.sessionIcons.compacting": {
+          "type": "string",
+          "default": "sync~spin",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is compacting. Needs **Overseer: Install Compact Hooks**. Set its color with `overseer.sessionCompacting` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
+        },
         "overseer.sessionIcons.running": {
           "type": "string",
           "default": "terminal",
@@ -650,6 +666,16 @@
           "light": "terminal.ansiGreen",
           "highContrast": "terminal.ansiGreen",
           "highContrastLight": "terminal.ansiGreen"
+        }
+      },
+      {
+        "id": "overseer.sessionCompacting",
+        "description": "Overseer sidebar icon: compacting.",
+        "defaults": {
+          "dark": "terminal.ansiBlue",
+          "light": "terminal.ansiBlue",
+          "highContrast": "terminal.ansiBlue",
+          "highContrastLight": "terminal.ansiBlue"
         }
       },
       {

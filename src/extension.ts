@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { registerCommands } from "./commands";
+import { CompactMonitor, registerCompactHookCommands } from "./compactMonitor";
 import { displayTitle, SessionMeta } from "./indexer";
 import { LiveSessionMonitor } from "./liveSessions";
 import { defaultClaudeHome } from "./paths";
@@ -40,12 +41,14 @@ export function activate(context: vscode.ExtensionContext): void {
   const jiraService = new JiraService(log);
   const linkStatusService = new LinkStatusService(log, jiraService, statusConfig, new StoredStatusCache(context.globalState));
   const summaryService = new SessionSummaryService(context.globalStorageUri.fsPath, log);
+  const compactMonitor = new CompactMonitor(claudeHome, log);
   const treeProvider = new SessionTreeProvider(
     sessionIndex,
     liveMonitor,
     registry,
     linkService,
     summaryService,
+    compactMonitor,
   );
   const treeView = vscode.window.createTreeView("overseer.sessions", {
     treeDataProvider: treeProvider,
@@ -83,6 +86,9 @@ export function activate(context: vscode.ExtensionContext): void {
     sessionIndex.onDidChange(refreshTree),
     linkService.onDidChange(refreshTree),
     summaryService.onDidChange(refreshTree),
+    compactMonitor,
+    compactMonitor.onDidChange(refreshTree),
+    ...registerCompactHookCommands(context, claudeHome, log),
     liveMonitor.onDidChange(() => {
       refreshTree();
       void adoptRevivedTerminals();

@@ -42,6 +42,11 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - **Remove from Sidebar** only unpins.
 - **Compact**, **Switch Model…**, **Clear Context**, and **Show Cost** (right-click) send `/compact`, `/model`, `/clear`, and `/cost`. They show only on idle sessions running in this window.
 
+### Compacting
+- A session that is compacting shows a spinning sync icon in place of its running icon.
+- Claude Code doesn't report compaction anywhere Overseer can read, so this needs two hooks. A `PreCompact` hook writes a marker file to `~/.claude/overseer/compacting/`, and a `PostCompact` hook deletes it. A marker older than 10 minutes is ignored.
+- On startup, Overseer offers to install the hooks when they are missing. **Overseer: Install Compact Hooks** and **Overseer: Remove Compact Hooks** in the Command Palette do the same any time. Install backs up `~/.claude/settings.json` first and leaves your own hooks alone.
+
 ### Links
 - **Find Resources** (right-click a session) finds the GitHub PRs, Jira tickets, and claude.ai artifacts it worked on. Overseer never scans on its own.
 - The session then shows one **Associated Links** row with a count like `3 links`. Click it to open that session's links panel. A second click brings the open panel forward.

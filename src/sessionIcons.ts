@@ -1,4 +1,4 @@
-export type SessionIconState = "working" | "running" | "elsewhere" | "suspended" | "duplicate";
+export type SessionIconState = "working" | "compacting" | "running" | "elsewhere" | "suspended" | "duplicate";
 
 export interface SessionIconSpec {
   state: SessionIconState;
@@ -10,6 +10,7 @@ export interface SessionIconSpec {
 
 export const SESSION_ICON_SPECS: SessionIconSpec[] = [
   { state: "working", label: "Working in this window", defaultIcon: "loading~spin", colorId: "overseer.sessionWorking" },
+  { state: "compacting", label: "Compacting", defaultIcon: "sync~spin", colorId: "overseer.sessionCompacting" },
   { state: "running", label: "Running in this window", defaultIcon: "terminal", colorId: "overseer.sessionRunning" },
   { state: "elsewhere", label: "Running outside this window", defaultIcon: "window", colorId: "overseer.sessionElsewhere" },
   { state: "suspended", label: "Suspended", defaultIcon: "debug-pause", colorId: "overseer.sessionSuspended" },

@@ -11,6 +11,7 @@ import { GroupRef, Registry, TerminalSession } from "./registry";
 import { moveBeside } from "./reorder";
 import { otherReposLabel } from "./repoFilter";
 import { SessionIconState, sessionIconName, sessionIconSpec } from "./sessionIcons";
+import { CompactMonitor } from "./compactMonitor";
 import { SessionIndex } from "./sessionIndex";
 import { SessionLinkService } from "./sessionLinks";
 import { SessionSummaryService } from "./sessionSummaries";
@@ -52,6 +53,7 @@ export class SessionTreeProvider
     private readonly registry: Registry,
     private readonly linkService: SessionLinkService,
     private readonly summaryService: SessionSummaryService,
+    private readonly compactMonitor: CompactMonitor,
   ) {}
 
   refresh(): void {
@@ -99,6 +101,7 @@ export class SessionTreeProvider
       hasFoundResources,
       summaryState,
       isExpanded,
+      this.compactMonitor.isCompacting(node.pinned.sessionId),
     );
   }
 
@@ -207,7 +210,7 @@ function groupTreeItem(group: SessionGroup, isCollapsed: boolean): vscode.TreeIt
   return treeItem;
 }
 
-type SessionState = Exclude<SessionIconState, "duplicate">;
+type SessionState = Exclude<SessionIconState, "duplicate" | "compacting">;
 
 function sessionState(sessionId: string, liveSession: LiveSession | undefined): SessionState {
   const hasTerminalHere = findSessionTerminal(sessionId) !== undefined;
@@ -238,13 +241,16 @@ function sessionTreeItem(
   hasFoundResources: boolean,
   summaryState: SummaryState,
   isExpanded: boolean,
+  isCompacting: boolean,
 ): vscode.TreeItem {
   const state = sessionState(pinned.sessionId, liveSession);
+  // The menu still follows the running state; only the icon and tooltip say compacting.
+  const iconState: SessionIconState = isCompacting && liveSession !== undefined ? "compacting" : state;
   const treeItem = new vscode.TreeItem(pinnedSessionTitle(pinned), expandableState(hasFoundResources, isExpanded));
   treeItem.id = `session:${pinned.sessionId}`;
   treeItem.description = sessionDescription(pinned);
-  treeItem.tooltip = sessionTooltip(pinned, sessionIconSpec(state).label, summaryState);
-  treeItem.iconPath = sessionStateIcon(state);
+  treeItem.tooltip = sessionTooltip(pinned, sessionIconSpec(iconState).label, summaryState);
+  treeItem.iconPath = sessionStateIcon(iconState);
   treeItem.contextValue = `session.${state}`;
   const copyCount = liveSession?.processCount ?? 0;
   if (copyCount > 1) {
