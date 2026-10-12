@@ -68,7 +68,7 @@
     "commands": [
       {
         "command": "overseer.allSessions",
-        "title": "All Sessions…",
+        "title": "All Sessions\u2026",
         "category": "Overseer",
         "icon": "$(search)"
       },
@@ -80,7 +80,7 @@
       },
       {
         "command": "overseer.newGroup",
-        "title": "New Group…",
+        "title": "New Group\u2026",
         "category": "Overseer",
         "icon": "$(new-folder)"
       },
@@ -97,7 +97,7 @@
       },
       {
         "command": "overseer.addExistingToGroup",
-        "title": "Add Existing Session…",
+        "title": "Add Existing Session\u2026",
         "category": "Overseer",
         "icon": "$(search)"
       },
@@ -115,7 +115,7 @@
       },
       {
         "command": "overseer.renameGroup",
-        "title": "Rename Group…",
+        "title": "Rename Group\u2026",
         "category": "Overseer"
       },
       {
@@ -130,13 +130,13 @@
       },
       {
         "command": "overseer.newSession",
-        "title": "New Session…",
+        "title": "New Session\u2026",
         "category": "Overseer",
         "icon": "$(add)"
       },
       {
         "command": "overseer.newTerminal",
-        "title": "New Terminal…",
+        "title": "New Terminal\u2026",
         "category": "Overseer",
         "icon": "$(terminal)"
       },
@@ -165,7 +165,7 @@
       },
       {
         "command": "overseer.renameSession",
-        "title": "Rename Session…",
+        "title": "Rename Session\u2026",
         "category": "Overseer"
       },
       {
@@ -180,7 +180,7 @@
       },
       {
         "command": "overseer.switchModel",
-        "title": "Switch Model…",
+        "title": "Switch Model\u2026",
         "category": "Overseer"
       },
       {
@@ -256,7 +256,7 @@
       },
       {
         "command": "overseer.moveTicketStatus",
-        "title": "Move to Status…",
+        "title": "Move to Status\u2026",
         "category": "Overseer",
         "icon": "$(arrow-swap)"
       },
@@ -267,34 +267,34 @@
       },
       {
         "command": "overseer.openSettings",
-        "title": "Settings…",
+        "title": "Settings\u2026",
         "category": "Overseer",
         "icon": "$(gear)"
       },
       {
         "command": "overseer.setSessionStatus",
-        "title": "Set Status…",
+        "title": "Set Status\u2026",
         "category": "Overseer",
         "icon": "$(tag)"
       },
       {
         "command": "overseer.openStatusSettings",
-        "title": "Session Status Settings…",
+        "title": "Session Status Settings\u2026",
         "category": "Overseer"
       },
       {
         "command": "overseer.openSessionSettings",
-        "title": "Session Icon Settings…",
+        "title": "Session Icon Settings\u2026",
         "category": "Overseer"
       },
       {
         "command": "overseer.openJiraSettings",
-        "title": "Jira Settings…",
+        "title": "Jira Settings\u2026",
         "category": "Overseer"
       },
       {
         "command": "overseer.openGithubSettings",
-        "title": "GitHub Settings…",
+        "title": "GitHub Settings\u2026",
         "category": "Overseer"
       },
       {
@@ -733,45 +733,59 @@
               "name": "Todo",
               "color": "gray",
               "icon": "circle-large-outline",
-              "badge": "TD"
+              "badge": "TD",
+              "asksReason": false
             },
             {
               "id": "triage",
               "name": "Triage",
               "color": "orange",
               "icon": "search",
-              "badge": "TR"
+              "badge": "TR",
+              "asksReason": false
             },
             {
               "id": "in-progress",
               "name": "In Progress",
               "color": "blue",
               "icon": "play-circle",
-              "badge": "IP"
+              "badge": "IP",
+              "asksReason": false
+            },
+            {
+              "id": "blocked",
+              "name": "Blocked",
+              "color": "red",
+              "icon": "circle-slash",
+              "badge": "BL",
+              "asksReason": true
             },
             {
               "id": "ai-review",
               "name": "AI Review",
               "color": "purple",
               "icon": "sparkle",
-              "badge": "AI"
+              "badge": "AI",
+              "asksReason": false
             },
             {
               "id": "human-review",
               "name": "Human Review",
               "color": "yellow",
               "icon": "eye",
-              "badge": "HR"
+              "badge": "HR",
+              "asksReason": false
             },
             {
               "id": "ready-to-ship",
               "name": "Ready to Ship",
               "color": "green",
               "icon": "rocket",
-              "badge": "RS"
+              "badge": "RS",
+              "asksReason": false
             }
           ],
-          "markdownDescription": "Statuses you can set on a session or terminal with **Set Status…**. A status tints the row's label and adds its badge. Edit them in **Overseer: Session Status Settings…**.",
+          "markdownDescription": "Statuses you can set on a session or terminal with **Set Status\u2026**. A status tints the row's label and adds its badge. Edit them in **Overseer: Session Status Settings\u2026**.",
           "items": {
             "type": "object",
             "required": [
@@ -809,6 +823,11 @@
                 "type": "string",
                 "maxLength": 2,
                 "description": "Up to two characters on the right of the row. Empty shows no badge."
+              },
+              "asksReason": {
+                "type": "boolean",
+                "default": false,
+                "description": "Ask for a reason when this status is set. The reason shows in the row's tooltip."
               }
             }
           }
@@ -872,37 +891,37 @@
           "type": "string",
           "default": "loading~spin",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
-          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is working in this window. Set its color with `overseer.sessionWorking` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is working in this window. Set its color with `overseer.sessionWorking` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings\u2026**."
         },
         "overseer.sessionIcons.compacting": {
           "type": "string",
           "default": "sync~spin",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
-          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is compacting. Needs **Overseer: Install Compact Hooks**. Set its color with `overseer.sessionCompacting` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is compacting. Needs **Overseer: Install Compact Hooks**. Set its color with `overseer.sessionCompacting` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings\u2026**."
         },
         "overseer.sessionIcons.running": {
           "type": "string",
           "default": "terminal",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
-          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is running in this window. Set its color with `overseer.sessionRunning` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is running in this window. Set its color with `overseer.sessionRunning` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings\u2026**."
         },
         "overseer.sessionIcons.elsewhere": {
           "type": "string",
           "default": "window",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
-          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is running outside this window. Set its color with `overseer.sessionElsewhere` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is running outside this window. Set its color with `overseer.sessionElsewhere` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings\u2026**."
         },
         "overseer.sessionIcons.suspended": {
           "type": "string",
           "default": "debug-pause",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
-          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is suspended. Set its color with `overseer.sessionSuspended` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is suspended. Set its color with `overseer.sessionSuspended` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings\u2026**."
         },
         "overseer.sessionIcons.duplicate": {
           "type": "string",
           "default": "warning",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
-          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is more than one copy running. Set its color with `overseer.sessionDuplicate` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
+          "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is more than one copy running. Set its color with `overseer.sessionDuplicate` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings\u2026**."
         }
       }
     },

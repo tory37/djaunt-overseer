@@ -44,9 +44,10 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 
 ### Statuses
 - **Set Status…** (right-click a session or terminal, or several at once) marks it with a status. **Clear Status** removes it.
-- The defaults are Todo, Triage, In Progress, AI Review, Human Review, and Ready to Ship. They do not follow Jira, so a status like Triage works.
+- The defaults are Todo, Triage, In Progress, Blocked, AI Review, Human Review, and Ready to Ship. They do not follow Jira, so a status like Triage works.
+- A status with **Ask why** on (Blocked, by default) asks for a reason when you set it. Press Enter to skip. The reason shows in the row's tooltip and on the badge's hover. Setting another status clears it.
 - A status tints the row's label and adds a short badge on the right, like `IP`. The icon shows in the picker and the hover, so the row keeps one icon.
-- **Settings…** → **Statuses** adds, renames, reorders, and deletes statuses, and sets each one's color, icon, and badge. Renaming keeps the status on its sessions. **Reset to defaults** restores the six.
+- **Settings…** → **Statuses** adds, renames, reorders, and deletes statuses, and sets each one's color, icon, badge, and whether it asks why. Renaming keeps the status on its sessions. **Reset to defaults** restores the seven.
 - Colors come from a palette of nine theme colors, because tree labels take only theme colors. They follow your light or dark theme. If a badge shows with no tint, turn on `explorer.decorations.colors`.
 - The list is the `overseer.sessionStatuses` setting. Each session's status is saved in the extension's state.
 

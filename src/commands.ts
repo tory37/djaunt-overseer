@@ -24,7 +24,7 @@ import {
   suspendTerminal,
 } from "./terminals";
 import { RepoTreeNode } from "./repoTree";
-import { pickSessionStatus } from "./sessionStatusView";
+import { askStatusReason, configuredStatuses, pickSessionStatus } from "./sessionStatusView";
 import { TreeNode } from "./tree";
 
 export interface CommandDependencies {
@@ -549,8 +549,18 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       }
       const statusIdBySession = registry.sessionStatusIds();
       const pickedStatusId = await pickSessionStatus(new Set(sessionIds.map((sessionId) => statusIdBySession[sessionId])));
-      if (pickedStatusId !== null) {
+      if (pickedStatusId === null) {
+        return;
+      }
+      const pickedStatus = configuredStatuses().find((status) => status.id === pickedStatusId);
+      if (pickedStatus?.asksReason !== true) {
         await registry.setSessionStatus(sessionIds, pickedStatusId);
+        return;
+      }
+      const currentReason = sessionIds.length === 1 ? registry.sessionStatusReasons()[sessionIds[0]] : undefined;
+      const reason = await askStatusReason(pickedStatus, currentReason);
+      if (reason !== undefined) {
+        await registry.setSessionStatus(sessionIds, pickedStatusId, reason.trim());
       }
     }),
     vscode.commands.registerCommand("overseer.suspendGroup", async (clickedNode?: TreeNode) => {

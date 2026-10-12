@@ -33,6 +33,7 @@ const COLLAPSED_GROUPS_KEY = "overseer.collapsedGroupRefs";
 const RESOURCE_SESSIONS_KEY = "overseer.resourceSessionIds";
 const TERMINAL_SESSIONS_KEY = "overseer.terminalSessions";
 const SESSION_STATUS_KEY = "overseer.sessionStatusIds";
+const SESSION_STATUS_REASON_KEY = "overseer.sessionStatusReasons";
 
 export type LinkMark = "pinned" | "removed";
 export type LinkMarks = Record<string, LinkMark>;
@@ -231,17 +232,27 @@ export class Registry {
     return this.store.get<Record<string, string>>(SESSION_STATUS_KEY) ?? {};
   }
 
-  // An undefined status clears it.
-  async setSessionStatus(sessionIds: string[], statusId: string | undefined): Promise<void> {
+  sessionStatusReasons(): Record<string, string> {
+    return this.store.get<Record<string, string>>(SESSION_STATUS_REASON_KEY) ?? {};
+  }
+
+  // An undefined status clears it. A reason belongs to one status, so setting any status replaces the old reason.
+  async setSessionStatus(sessionIds: string[], statusId: string | undefined, reason?: string): Promise<void> {
     const statusIdBySession = { ...this.sessionStatusIds() };
+    const reasonBySession = { ...this.sessionStatusReasons() };
     for (const sessionId of sessionIds) {
+      delete reasonBySession[sessionId];
       if (statusId === undefined) {
         delete statusIdBySession[sessionId];
-      } else {
-        statusIdBySession[sessionId] = statusId;
+        continue;
+      }
+      statusIdBySession[sessionId] = statusId;
+      if (reason !== undefined && reason !== "") {
+        reasonBySession[sessionId] = reason;
       }
     }
     await this.write(SESSION_STATUS_KEY, statusIdBySession);
+    await this.write(SESSION_STATUS_REASON_KEY, reasonBySession);
   }
 
   isSessionExpanded(sessionId: string): boolean {

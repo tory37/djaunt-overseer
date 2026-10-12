@@ -384,7 +384,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .session-grid .codicon { font-size: 16px; justify-content: center; }
   .session-grid .heading { min-height: 24px; color: var(--vscode-descriptionForeground); font-size: 0.9em; }
   .tag { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
-  .status-grid { display: grid; grid-template-columns: 20px minmax(0, 1fr) 112px 200px 56px 84px; column-gap: 12px; align-items: center; }
+  .status-grid { display: grid; grid-template-columns: 20px minmax(0, 1fr) 112px 200px 56px 64px 84px; column-gap: 12px; align-items: center; }
   .status-grid > * { min-height: 32px; display: flex; align-items: center; }
   .status-grid .codicon { font-size: 16px; justify-content: center; }
   .status-grid .heading { min-height: 24px; color: var(--vscode-descriptionForeground); font-size: 0.9em; }
@@ -450,7 +450,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
         <h2>Session statuses</h2>
         <button id="reset-statuses">Reset to defaults</button>
       </div>
-      <p class="note muted">Set one on a session or terminal with <strong>Set Status…</strong> in its right-click menu. The status tints the row's label and adds its badge. The icon shows in the picker and the row's tooltip.</p>
+      <p class="note muted">Set one on a session or terminal with <strong>Set Status…</strong> in its right-click menu. The status tints the row's label and adds its badge. The icon shows in the picker and the row's tooltip. A status with <strong>Ask why</strong> on asks for a reason when you set it, and the reason shows in the tooltip.</p>
       <div id="status-rows" class="status-grid"></div>
       <div class="status-footer"><button id="add-status">Add status</button></div>
     </section>
@@ -849,6 +849,14 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     const badgeCell = document.createElement("span");
     badgeCell.append(badgeField);
 
+    const asksReasonBox = document.createElement("input");
+    asksReasonBox.type = "checkbox";
+    asksReasonBox.checked = status.asksReason === true;
+    asksReasonBox.setAttribute("aria-label", status.name + " asks for a reason");
+    asksReasonBox.addEventListener("change", () => saveStatuses(withStatusChange(index, { asksReason: asksReasonBox.checked })));
+    const asksReasonCell = document.createElement("span");
+    asksReasonCell.append(asksReasonBox);
+
     const moveStatus = (offset) => {
       const reordered = [...shownStatuses];
       const [moved] = reordered.splice(index, 1);
@@ -864,14 +872,14 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
         saveStatuses(shownStatuses.filter((_status, statusIndex) => statusIndex !== index)),
       ),
     );
-    return [preview, nameCell, colorCell, iconCell, badgeCell, actionsCell];
+    return [preview, nameCell, colorCell, iconCell, badgeCell, asksReasonCell, actionsCell];
   }
 
   function renderSessionStatuses(sessionStatuses, paletteColors) {
     shownStatuses = sessionStatuses;
     statusColors = paletteColors;
     const grid = document.getElementById("status-rows");
-    const headings = ["", "Name", "Color", "Icon", "Badge", ""].map((text) => textSpan("heading", text));
+    const headings = ["", "Name", "Color", "Icon", "Badge", "Ask why", ""].map((text) => textSpan("heading", text));
     const rows = sessionStatuses.flatMap(statusEditorRow);
     grid.replaceChildren(...headings, ...rows);
     if (sessionStatuses.length === 0) {
@@ -880,7 +888,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   }
 
   document.getElementById("add-status").addEventListener("click", () =>
-    saveStatuses([...shownStatuses, { name: "New status", color: "gray", icon: "circle-filled", badge: "" }]),
+    saveStatuses([...shownStatuses, { name: "New status", color: "gray", icon: "circle-filled", badge: "", asksReason: false }]),
   );
   document.getElementById("reset-statuses").addEventListener("click", () =>
     vscodeApi.postMessage({ type: "resetSessionStatuses" }),

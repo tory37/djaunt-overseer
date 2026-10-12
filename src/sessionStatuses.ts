@@ -9,15 +9,22 @@ export interface SessionStatus {
   color: StatusColor;
   icon: string;
   badge: string;
+  asksReason: boolean;
+}
+
+// A status as one session carries it: the reason is the note the user gave when setting it.
+export interface MarkedStatus extends SessionStatus {
+  reason?: string;
 }
 
 export const DEFAULT_SESSION_STATUSES: SessionStatus[] = [
-  { id: "todo", name: "Todo", color: "gray", icon: "circle-large-outline", badge: "TD" },
-  { id: "triage", name: "Triage", color: "orange", icon: "search", badge: "TR" },
-  { id: "in-progress", name: "In Progress", color: "blue", icon: "play-circle", badge: "IP" },
-  { id: "ai-review", name: "AI Review", color: "purple", icon: "sparkle", badge: "AI" },
-  { id: "human-review", name: "Human Review", color: "yellow", icon: "eye", badge: "HR" },
-  { id: "ready-to-ship", name: "Ready to Ship", color: "green", icon: "rocket", badge: "RS" },
+  { id: "todo", name: "Todo", color: "gray", icon: "circle-large-outline", badge: "TD", asksReason: false },
+  { id: "triage", name: "Triage", color: "orange", icon: "search", badge: "TR", asksReason: false },
+  { id: "in-progress", name: "In Progress", color: "blue", icon: "play-circle", badge: "IP", asksReason: false },
+  { id: "blocked", name: "Blocked", color: "red", icon: "circle-slash", badge: "BL", asksReason: true },
+  { id: "ai-review", name: "AI Review", color: "purple", icon: "sparkle", badge: "AI", asksReason: false },
+  { id: "human-review", name: "Human Review", color: "yellow", icon: "eye", badge: "HR", asksReason: false },
+  { id: "ready-to-ship", name: "Ready to Ship", color: "green", icon: "rocket", badge: "RS", asksReason: false },
 ];
 
 export const MAX_BADGE_LENGTH = 2;
@@ -56,7 +63,8 @@ function parseSessionStatus(entry: unknown, takenIds: string[]): SessionStatus |
   const color = STATUS_COLORS.find((paletteColor) => paletteColor === fields.color) ?? "gray";
   const icon = typeof fields.icon === "string" && CODICON_NAME_PATTERN.test(fields.icon.trim()) ? fields.icon.trim() : DEFAULT_ICON;
   const badge = typeof fields.badge === "string" ? fields.badge.trim().slice(0, MAX_BADGE_LENGTH) : defaultBadge(name);
-  return { id: takenIds.includes(requestedId) ? statusIdFor(requestedId, takenIds) : requestedId, name, color, icon, badge };
+  const asksReason = fields.asksReason === true;
+  return { id: takenIds.includes(requestedId) ? statusIdFor(requestedId, takenIds) : requestedId, name, color, icon, badge, asksReason };
 }
 
 // Assignments store the id, so a status keeps its sessions when it is renamed.

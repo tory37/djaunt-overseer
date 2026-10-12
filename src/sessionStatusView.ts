@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { Registry } from "./registry";
-import { parseSessionStatuses, SessionStatus, statusColorId, statusOfSession } from "./sessionStatuses";
+import { MarkedStatus, parseSessionStatuses, SessionStatus, statusColorId, statusOfSession } from "./sessionStatuses";
 
 const SESSION_STATUS_SCHEME = "overseer-session";
 const STATUSES_SETTING = "sessionStatuses";
@@ -13,8 +13,9 @@ export async function saveStatuses(statuses: SessionStatus[]): Promise<void> {
   await vscode.workspace.getConfiguration("overseer").update(STATUSES_SETTING, statuses, vscode.ConfigurationTarget.Global);
 }
 
-export function sessionStatusFor(registry: Registry, sessionId: string): SessionStatus | undefined {
-  return statusOfSession(sessionId, registry.sessionStatusIds(), configuredStatuses());
+export function sessionStatusFor(registry: Registry, sessionId: string): MarkedStatus | undefined {
+  const status = statusOfSession(sessionId, registry.sessionStatusIds(), configuredStatuses());
+  return status && { ...status, reason: registry.sessionStatusReasons()[sessionId] };
 }
 
 // Tree rows carry this URI so the decoration below can tint the label and add the badge.
@@ -46,7 +47,8 @@ export class SessionStatusDecorations implements vscode.FileDecorationProvider, 
     if (status === undefined) {
       return undefined;
     }
-    return new vscode.FileDecoration(status.badge || undefined, status.name, new vscode.ThemeColor(statusColorId(status.color)));
+    const tooltip = status.reason ? `${status.name}: ${status.reason}` : status.name;
+    return new vscode.FileDecoration(status.badge || undefined, tooltip, new vscode.ThemeColor(statusColorId(status.color)));
   }
 
   // A cleared status needs its old row repainted too, so every pinned row refreshes, not only those with a status.
@@ -85,4 +87,13 @@ export async function pickSessionStatus(currentStatusIds: Set<string | undefined
     return null;
   }
   return picked.statusId === CLEAR_STATUS_ID ? undefined : picked.statusId;
+}
+
+// Returns the reason, "" for none, or undefined when the user cancels the whole change.
+export async function askStatusReason(status: SessionStatus, currentReason: string | undefined): Promise<string | undefined> {
+  return vscode.window.showInputBox({
+    title: `Why is it ${status.name.toLowerCase()}?`,
+    prompt: "Optional. It shows in the row's tooltip. Press Enter to skip.",
+    value: currentReason,
+  });
 }

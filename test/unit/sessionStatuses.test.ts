@@ -24,8 +24,8 @@ describe("parseSessionStatuses", () => {
         { id: "x", name: "Ship", color: "green", icon: "rocket", badge: "SHIP" },
       ]),
     ).toEqual([
-      { id: "blocked-on-qa", name: "Blocked on QA", color: "gray", icon: "circle-filled", badge: "BO" },
-      { id: "x", name: "Ship", color: "green", icon: "rocket", badge: "SH" },
+      { id: "blocked-on-qa", name: "Blocked on QA", color: "gray", icon: "circle-filled", badge: "BO", asksReason: false },
+      { id: "x", name: "Ship", color: "green", icon: "rocket", badge: "SH", asksReason: false },
     ]);
   });
 
@@ -39,6 +39,22 @@ describe("parseSessionStatuses", () => {
       ["todo", ""],
       ["todo-2", "TA"],
     ]);
+  });
+});
+
+describe("asking for a reason", () => {
+  it("ships Blocked as the one default that asks", () => {
+    const asking = DEFAULT_SESSION_STATUSES.filter((status) => status.asksReason).map((status) => status.id);
+    expect(asking).toEqual(["blocked"]);
+  });
+
+  it("keeps asksReason only when it is exactly true", () => {
+    const parsed = parseSessionStatuses([
+      { name: "A", asksReason: true },
+      { name: "B", asksReason: "yes" },
+      { name: "C" },
+    ]);
+    expect(parsed.map((status) => status.asksReason)).toEqual([true, false, false]);
   });
 });
 

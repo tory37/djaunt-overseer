@@ -22,6 +22,20 @@ describe("Registry", () => {
     expect(registry.sessionStatusIds()).toEqual({ b: "in-progress" });
   });
 
+  it("keeps a status reason until the status changes or clears", async () => {
+    const registry = new Registry(memoryStore());
+
+    await registry.setSessionStatus(["a", "b"], "blocked", "waiting on the API key");
+    expect(registry.sessionStatusReasons()).toEqual({ a: "waiting on the API key", b: "waiting on the API key" });
+    await registry.setSessionStatus(["a"], "blocked", "");
+    expect(registry.sessionStatusReasons()).toEqual({ b: "waiting on the API key" });
+    await registry.setSessionStatus(["b"], "in-progress");
+    expect(registry.sessionStatusReasons()).toEqual({});
+    await registry.setSessionStatus(["a"], "blocked", "no access");
+    await registry.setSessionStatus(["a"], undefined);
+    expect(registry.sessionStatusReasons()).toEqual({});
+  });
+
   it("keeps link marks per session and drops cleared ones", async () => {
     const registry = new Registry(memoryStore());
 

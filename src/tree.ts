@@ -16,7 +16,7 @@ import { SessionIndex } from "./sessionIndex";
 import { SessionLinkService } from "./sessionLinks";
 import { SessionSummaryService } from "./sessionSummaries";
 import { sessionStatusFor, sessionStatusUri } from "./sessionStatusView";
-import { SessionStatus } from "./sessionStatuses";
+import { MarkedStatus } from "./sessionStatuses";
 import { HoverSummary, pickHoverSummary } from "./sessionSummary";
 import { findSessionTerminal } from "./terminals";
 
@@ -291,7 +291,7 @@ function sessionTreeItem(
   summaryState: SummaryState,
   isExpanded: boolean,
   isCompacting: boolean,
-  status: SessionStatus | undefined,
+  status: MarkedStatus | undefined,
 ): vscode.TreeItem {
   const state = sessionState(pinned.sessionId, liveSession);
   // The menu still follows the running state; only the icon and tooltip say compacting.
@@ -312,7 +312,7 @@ function sessionTreeItem(
   return treeItem;
 }
 
-function terminalTreeItem(pinned: PinnedSession, terminalSession: TerminalSession, status: SessionStatus | undefined): vscode.TreeItem {
+function terminalTreeItem(pinned: PinnedSession, terminalSession: TerminalSession, status: MarkedStatus | undefined): vscode.TreeItem {
   const isOpen = findSessionTerminal(pinned.sessionId) !== undefined;
   const treeItem = new vscode.TreeItem(pinnedSessionTitle(pinned), vscode.TreeItemCollapsibleState.None);
   treeItem.id = `session:${pinned.sessionId}`;
@@ -370,15 +370,19 @@ function sessionDescription(pinned: PinnedSession): string {
     .join(" · ");
 }
 
-function statusMarkdown(status: SessionStatus | undefined): string {
-  return status === undefined ? "" : `\n\nStatus: $(${status.icon}) ${escapeMarkdown(status.name)}`;
+function statusMarkdown(status: MarkedStatus | undefined): string {
+  if (status === undefined) {
+    return "";
+  }
+  const reasonLine = status.reason ? `\n\nWhy: ${escapeMarkdown(status.reason)}` : "";
+  return `\n\nStatus: $(${status.icon}) ${escapeMarkdown(status.name)}${reasonLine}`;
 }
 
 function sessionTooltip(
   pinned: PinnedSession,
   stateLabel: string,
   summaryState: SummaryState,
-  status: SessionStatus | undefined,
+  status: MarkedStatus | undefined,
 ): vscode.MarkdownString {
   const tooltip = new vscode.MarkdownString();
   tooltip.isTrusted = { enabledCommands: ["overseer.summarizeSession"] };
