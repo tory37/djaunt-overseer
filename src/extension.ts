@@ -144,6 +144,7 @@ export function activate(context: vscode.ExtensionContext): void {
           },
           sessionId,
         ),
+      pinnedSessions: () => treeProvider.pinnedSessions(),
       log,
     }),
     ...registerStatusCommands({ jiraService, linkStatusService, statusConfig }),

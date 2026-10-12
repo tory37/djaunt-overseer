@@ -187,6 +187,12 @@
         "icon": "$(sparkle)"
       },
       {
+        "command": "overseer.openRepoInScm",
+        "title": "Open Repo in Source Control",
+        "category": "Overseer",
+        "icon": "$(source-control)"
+      },
+      {
         "command": "overseer.toggleRemovedLinks",
         "title": "Toggle Removed Links",
         "category": "Overseer"
@@ -407,6 +413,11 @@
           "command": "overseer.summarizeSession",
           "when": "view == overseer.sessions && viewItem =~ /^session\\./",
           "group": "3_links@2"
+        },
+        {
+          "command": "overseer.openRepoInScm",
+          "when": "view == overseer.sessions && viewItem =~ /^(session|terminal)\\./",
+          "group": "4_repo@1"
         },
         {
           "command": "overseer.openTerminal",

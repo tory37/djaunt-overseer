@@ -164,6 +164,10 @@ export class SessionTreeProvider
     await this.registry.setGroupOrder(moveBeside(displayedGroupRefs, draggedGroupRefs, targetGroupRef));
   }
 
+  pinnedSessions(): PinnedSession[] {
+    return this.currentGroups().flatMap((group) => group.sessions);
+  }
+
   private currentGroups(): SessionGroup[] {
     const sessionsById = new Map<string, SessionMeta>(
       this.sessionIndex.currentSessions.map((meta) => [meta.sessionId, meta]),

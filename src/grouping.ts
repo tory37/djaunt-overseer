@@ -131,6 +131,6 @@ function byMostRecentActivity(left: PinnedSession, right: PinnedSession): number
   return lastActivityMs(right) - lastActivityMs(left);
 }
 
-function lastActivityMs(pinned: PinnedSession): number {
+export function lastActivityMs(pinned: PinnedSession): number {
   return pinned.meta?.lastActivityMs ?? pinned.pending?.createdAtMs ?? pinned.terminal?.createdAtMs ?? 0;
 }

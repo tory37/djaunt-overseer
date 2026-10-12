@@ -8,6 +8,8 @@ import { tildePath } from "./paths";
 import { LiveSessionMonitor } from "./liveSessions";
 import { pickSession } from "./quickPick";
 import { Registry, userGroupRef } from "./registry";
+import { resolveRepos, sessionDirectory } from "./repoSet";
+import { createGitRootResolver } from "./gitRoots";
 import { SessionIndex } from "./sessionIndex";
 import { SessionLinkService } from "./sessionLinks";
 import { LinkStatusService } from "./linkStatusService";
@@ -32,6 +34,7 @@ export interface CommandDependencies {
   summaryService: SessionSummaryService;
   treeView: vscode.TreeView<TreeNode>;
   showResources: (sessionId: string) => void;
+  pinnedSessions: () => PinnedSession[];
   log: vscode.OutputChannel;
 }
 
@@ -57,12 +60,41 @@ interface DirectoryPickItem extends vscode.QuickPickItem {
 }
 
 export function registerCommands(dependencies: CommandDependencies): vscode.Disposable[] {
-  const { sessionIndex, liveMonitor, registry, linkService, linkStatusService, summaryService, treeView, showResources, log } =
-    dependencies;
+  const {
+    sessionIndex,
+    liveMonitor,
+    registry,
+    linkService,
+    linkStatusService,
+    summaryService,
+    treeView,
+    showResources,
+    pinnedSessions,
+    log,
+  } = dependencies;
 
   const selectedSessionNodes = (clickedNode?: TreeNode): SessionNode[] => {
     const candidateNodes = clickedNode && !treeView.selection.includes(clickedNode) ? [clickedNode] : treeView.selection;
     return candidateNodes.filter((node): node is SessionNode => node.kind === "session");
+  };
+
+  // A clicked session offers only its own repos; the palette offers every repo in the tree.
+  const pickRepo = async (clickedNode?: TreeNode): Promise<string | undefined> => {
+    const sessionNodes = clickedNode === undefined ? [] : selectedSessionNodes(clickedNode);
+    const sourceSessions = sessionNodes.length > 0 ? sessionNodes.map((node) => node.pinned) : pinnedSessions();
+    const repos = await resolveRepos(sourceSessions, createGitRootResolver());
+    if (repos.length === 0) {
+      void vscode.window.showInformationMessage("Overseer: no git repo found for that session.");
+      return undefined;
+    }
+    if (repos.length === 1) {
+      return repos[0].root;
+    }
+    const pickedRepo = await vscode.window.showQuickPick(
+      repos.map((repo) => ({ label: repo.name, description: tildePath(repo.root), repo })),
+      { placeHolder: "Open which repo in Source Control?" },
+    );
+    return pickedRepo?.repo.root;
   };
 
   const findSessionMeta = async (sessionId: string): Promise<SessionMeta | undefined> => {
@@ -361,7 +393,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     }),
     vscode.commands.registerCommand("overseer.newSession", async (clickedNode?: TreeNode) => {
       const groupDirectories =
-        clickedNode?.kind === "group" ? clickedNode.group.sessions.map(pinnedSessionDirectory).filter(isDefined) : [];
+        clickedNode?.kind === "group" ? clickedNode.group.sessions.map(sessionDirectory).filter(isDefined) : [];
       const startDirectory = await pickDirectory(groupDirectories, "New Claude session: where should it start?");
       if (startDirectory === undefined) {
         return;
@@ -389,7 +421,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     }),
     vscode.commands.registerCommand("overseer.newTerminal", async (clickedNode?: TreeNode) => {
       const groupDirectories =
-        clickedNode?.kind === "group" ? clickedNode.group.sessions.map(pinnedSessionDirectory).filter(isDefined) : [];
+        clickedNode?.kind === "group" ? clickedNode.group.sessions.map(sessionDirectory).filter(isDefined) : [];
       const startDirectory = await pickDirectory(groupDirectories, "New terminal: where should it open?");
       if (startDirectory === undefined) {
         return;
@@ -482,6 +514,13 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         .filter(isDefined);
       await Promise.all(sessionMetas.map((meta) => summaryService.summarize(meta)));
     }),
+    // The Repos view passes a repo root; the session context menu passes the clicked node.
+    vscode.commands.registerCommand("overseer.openRepoInScm", async (clicked?: TreeNode | string) => {
+      const repoRoot = typeof clicked === "string" ? clicked : await pickRepo(clicked);
+      if (repoRoot !== undefined) {
+        await openRepoInSourceControl(repoRoot, log);
+      }
+    }),
     vscode.commands.registerCommand("overseer.suspendGroup", async (clickedNode?: TreeNode) => {
       const groupNode = clickedNode ?? treeView.selection[0];
       if (groupNode?.kind === "group") {
@@ -491,8 +530,14 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
   ];
 }
 
-function pinnedSessionDirectory(pinned: PinnedSession): string | undefined {
-  return pinned.meta?.resumeCwd ?? pinned.meta?.startCwd ?? pinned.pending?.cwd ?? pinned.terminal?.cwd;
+async function openRepoInSourceControl(repoRoot: string, log: vscode.OutputChannel): Promise<void> {
+  try {
+    await vscode.commands.executeCommand("git.openRepository", repoRoot);
+    await vscode.commands.executeCommand("workbench.view.scm");
+  } catch (error) {
+    log.appendLine(`Can't open ${repoRoot} in Source Control: ${String(error)}`);
+    void vscode.window.showErrorMessage(`Overseer: can't open ${tildePath(repoRoot)} in Source Control. Is the Git extension on?`);
+  }
 }
 
 function isDefined<Value>(value: Value | undefined): value is Value {
