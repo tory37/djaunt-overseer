@@ -65,6 +65,20 @@ export function activate(context: vscode.ExtensionContext): void {
   const { provider: treeProvider, view: treeView } = createSectionTree("claude", "overseer.sessions");
   const { provider: terminalTreeProvider, view: terminalTreeView } = createSectionTree("terminal", "overseer.terminals");
   const pinnedSessions = (): PinnedSession[] => [...treeProvider.pinnedSessions(), ...terminalTreeProvider.pinnedSessions()];
+  // Switching tabs by hand should move the sidebar highlight too. A row already in the selection stays, so a multi-select survives.
+  const selectSessionRow = (sessionId: string): void => {
+    for (const { provider, view } of [{ provider: treeProvider, view: treeView }, { provider: terminalTreeProvider, view: terminalTreeView }]) {
+      const sessionNode = provider.sessionNode(sessionId);
+      if (sessionNode === undefined) {
+        continue;
+      }
+      const isAlreadySelected = view.selection.some((node) => node.kind === "session" && node.pinned.sessionId === sessionId);
+      if (view.visible && !isAlreadySelected) {
+        void Promise.resolve(view.reveal(sessionNode, { select: true, focus: false })).catch(() => undefined);
+      }
+      return;
+    }
+  };
   const statusDecorations = new SessionStatusDecorations(registry);
   const repoService = new RepoService(log);
   let authorshipSource: SessionMeta[] | undefined;
@@ -161,6 +175,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (activeTerminal === undefined || sessionId === undefined) {
         return;
       }
+      selectSessionRow(sessionId);
       const meta = findIndexedSession(sessionId);
       const expectedName = registry.labels()[sessionId] ?? (meta === undefined ? undefined : displayTitle(meta));
       if (expectedName !== undefined && activeTerminal.name !== expectedName) {
