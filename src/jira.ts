@@ -3,6 +3,12 @@ export interface JiraTransition {
   toStatus: string;
 }
 
+export interface IssueFacts {
+  status: string;
+  parentKey: string | undefined;
+  summary: string | undefined;
+}
+
 export interface JiraWorkflow {
   currentStatus: string | undefined;
   statuses: string[];
@@ -33,14 +39,18 @@ export function defaultJiraStatusColor(statusName: string): string {
 }
 
 // Parses the Jira MCP server's `jira_issues get` envelope; failed tickets are left out.
-export function parseIssueStatuses(envelopeText: string): Map<string, string> {
-  const issueStatuses = new Map<string, string>();
+export function parseIssueStatuses(envelopeText: string): Map<string, IssueFacts> {
+  const issueStatuses = new Map<string, IssueFacts>();
   const envelope = parseJsonObject(envelopeText);
   const results = Array.isArray(envelope?.results) ? envelope.results : [];
   for (const result of results) {
     const issueData = isRecord(result) && result.success === true ? result.data : undefined;
     if (isRecord(issueData) && typeof issueData.key === "string" && typeof issueData.status === "string") {
-      issueStatuses.set(issueData.key, issueData.status);
+      issueStatuses.set(issueData.key, {
+        status: issueData.status,
+        parentKey: nonEmptyString(issueData.parent),
+        summary: nonEmptyString(issueData.summary),
+      });
     }
   }
   return issueStatuses;
@@ -65,7 +75,7 @@ export function parseWorkflow(envelopeText: string): JiraWorkflow | undefined {
 }
 
 export function issueStatusesArgs(ticketKeys: string[]): Record<string, unknown> {
-  return { action: "get", issue_keys: ticketKeys, fields: "status", comment_limit: 0 };
+  return { action: "get", issue_keys: ticketKeys, fields: "status,parent,summary", comment_limit: 0 };
 }
 
 export function workflowArgs(ticketKey: string): Record<string, unknown> {
@@ -85,6 +95,10 @@ export function transitionError(envelopeText: string): string | undefined {
   }
   const message = isRecord(firstResult) ? (firstResult.error ?? firstResult.message) : envelope?.error;
   return typeof message === "string" ? message : "the transition failed";
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
 }
 
 function parseJsonObject(jsonText: string): Record<string, unknown> | undefined {

@@ -13,9 +13,13 @@ export const DEFAULT_PR_COLORS: Record<PrStatusKey, string> = {
 };
 
 // `colorKey` names the status in the color config: a PR status key, or the Jira status name.
+// `title` is the PR title or ticket summary; `parentKey` and `branch` place the link in the resources tree.
 export interface LinkStatus {
   text: string;
   colorKey: string;
+  title?: string;
+  parentKey?: string;
+  branch?: string;
 }
 
 const REVIEW_DECISION_KEYS: Record<string, PrStatusKey> = {
@@ -27,12 +31,22 @@ const REVIEW_DECISION_KEYS: Record<string, PrStatusKey> = {
 const DONE_STATUS_PATTERN = /done|closed|deployed|shipped|resolved|complete/i;
 
 export function prStatusArgs(prUrl: string): string[] {
-  return ["pr", "view", prUrl, "--json", "state,isDraft,reviewDecision"];
+  return ["pr", "view", prUrl, "--json", "state,isDraft,reviewDecision,title,headRefName"];
 }
 
-// Parses `gh pr view --json state,isDraft,reviewDecision`.
+// Parses `gh pr view --json state,isDraft,reviewDecision,title,headRefName`.
 export function parsePrStatus(prJson: string): LinkStatus | undefined {
   const pr = parseJsonObject(prJson);
+  const prState = prStateStatus(pr);
+  if (prState === undefined) {
+    return undefined;
+  }
+  const title = typeof pr?.title === "string" && pr.title !== "" ? pr.title : undefined;
+  const branch = typeof pr?.headRefName === "string" && pr.headRefName !== "" ? pr.headRefName : undefined;
+  return withDefinedFields({ ...prState, title, branch });
+}
+
+function prStateStatus(pr: Record<string, unknown> | undefined): LinkStatus | undefined {
   const state = pr?.state;
   if (state === "MERGED") {
     return { text: "merged", colorKey: "merged" };
@@ -50,8 +64,13 @@ export function parsePrStatus(prJson: string): LinkStatus | undefined {
   return reviewKey === undefined ? { text: "open", colorKey: "open" } : { text: `open · ${reviewKey}`, colorKey: reviewKey };
 }
 
-export function ticketStatus(statusName: string): LinkStatus {
-  return { text: statusName, colorKey: statusName };
+export function ticketStatus(statusName: string, summary?: string, parentKey?: string): LinkStatus {
+  return withDefinedFields({ text: statusName, colorKey: statusName, title: summary, parentKey });
+}
+
+// Keeps optional fields off the object when unknown, so equality checks and stored JSON stay minimal.
+function withDefinedFields(status: LinkStatus): LinkStatus {
+  return Object.fromEntries(Object.entries(status).filter(([, value]) => value !== undefined)) as unknown as LinkStatus;
 }
 
 // Names a glyph in statusIcons, so the shape still tells merged from closed without color.

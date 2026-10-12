@@ -48,7 +48,8 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - An owned ticket names the auto-group, for sessions you ran Find Resources on, when the title and branch have no ticket key.
 - Clicking a row only selects it. Each row has buttons: **Open in VS Code**, **Open in Browser**, **Copy Link**, **Move to Status…** (tickets), **Pin**, and **Remove**.
 - **Open in VS Code** always opens a new browser tab. VS Code gives extensions no way to find an open one.
-- Drag rows to reorder them. Pinned links stay above the rest.
+- The panel nests links: parent ticket, then its sub-tickets, then the PRs for each ticket. Jira's parent field and the ticket key in a PR's branch or title decide the nesting. Haiku places the rest. Other tickets, PRs, and artifacts follow.
+- Drag rows to reorder them within their level. A saved order beats the computed one. Pinned links stay above the rest.
 - **Passing** and **Removed** in the panel header show those links again, dimmed. **Find again** rescans the session.
 - Each PR and ticket shows its live status, and its icon takes that status's color. Overseer checks every five minutes while a panel is open.
 - PR status comes from `gh`. Ticket status comes from the Jira MCP server in your `~/.claude.json`, the same one Claude Code uses. Overseer starts it on its own and reads all visible tickets in one call.

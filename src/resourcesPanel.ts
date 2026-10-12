@@ -9,6 +9,7 @@ import { LinkStatusService } from "./linkStatusService";
 import { MarkedLink } from "./linkView";
 import { openInBrowser, openInVscode } from "./openUrl";
 import { LinkMark, Registry } from "./registry";
+import { orderResources } from "./resourceOrder";
 import { acceptedOrder, ResourceRow, resourceRow } from "./resourceRows";
 import { readLinkSettings, SessionLinkService } from "./sessionLinks";
 import { StatusConfig } from "./statusConfig";
@@ -109,10 +110,13 @@ export class ResourcesPanel {
     const { linkService, linkStatusService, findSessionMeta, sessionTitle } = this.dependencies;
     const meta = findSessionMeta(this.sessionId);
     const linkSettings = readLinkSettings();
-    this.shownLinks = meta === undefined ? [] : (linkService.linksFor(meta) ?? []);
-    const rows = this.shownLinks.map((link) => {
+    const visibleLinks = meta === undefined ? [] : (linkService.linksFor(meta) ?? []);
+    const hasSavedOrder = this.dependencies.registry.linkOrder(this.sessionId).length > 0;
+    const orderedResources = orderResources(visibleLinks, (link) => linkStatusService.statusFor(link), hasSavedOrder);
+    this.shownLinks = orderedResources.map((resource) => resource.link);
+    const rows = orderedResources.map(({ link, depth }) => {
       const status = linkStatusService.statusFor(link);
-      return resourceRow(link, status, this.statusColor(link, status), linkSettings.jiraBaseUrl);
+      return resourceRow(link, status, this.statusColor(link, status), linkSettings.jiraBaseUrl, depth);
     });
     const title = sessionTitle(this.sessionId);
     this.panel.title = tabTitle(title);

@@ -92,6 +92,20 @@ describe("judgeArgs", () => {
 describe("parseJudgeOutput", () => {
   const includedKeys = ["pr:acme/web-app/pull/2384", "pr:acme/api/pull/77"];
 
+  it("keeps a parentId only when it names another included link", () => {
+    const verdicts = parseJudgeOutput(
+      cliEnvelope({
+        links: [
+          { id: "pr:acme/web-app/pull/2384", role: "owned", stillRelevant: true, label: "", parentId: "pr:acme/api/pull/77" },
+          { id: "pr:acme/api/pull/77", role: "touched", stillRelevant: true, label: "", parentId: "ticket:NOPE-1" },
+        ],
+      }),
+      includedKeys,
+    );
+    expect(verdicts["pr:acme/web-app/pull/2384"].parentKey).toBe("pr:acme/api/pull/77");
+    expect(verdicts["pr:acme/api/pull/77"]).not.toHaveProperty("parentKey");
+  });
+
   it("reads structured_output and keeps only known ids", () => {
     const verdicts = parseJudgeOutput(
       cliEnvelope({

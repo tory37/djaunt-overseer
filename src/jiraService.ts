@@ -1,6 +1,7 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import {
+  IssueFacts,
   issueStatusesArgs,
   JiraWorkflow,
   parseIssueStatuses,
@@ -24,7 +25,7 @@ export class JiraService implements vscode.Disposable {
     this.client = new McpStdioClient(() => this.serverConfig(), (line) => log.appendLine(line));
   }
 
-  async issueStatuses(ticketKeys: string[]): Promise<Map<string, string>> {
+  async issueStatuses(ticketKeys: string[]): Promise<Map<string, IssueFacts>> {
     return parseIssueStatuses(await this.client.callTool(JIRA_TOOL_NAME, issueStatusesArgs(ticketKeys)));
   }
 

@@ -9,6 +9,8 @@ export interface JudgeVerdict {
   role: JudgedRole;
   stillRelevant: boolean;
   label: string | undefined;
+  // The link key this link sits under in the resources panel.
+  parentKey?: string;
 }
 
 export interface JudgeSessionContext {
@@ -30,6 +32,7 @@ export interface ResolvedLink extends LinkCandidate {
   stillRelevant: boolean;
   label: string | undefined;
   judged: boolean;
+  parentKey?: string;
 }
 
 export type ClaudeRunner = (claudeArgs: string[], stdinText: string) => Promise<string>;
@@ -65,6 +68,7 @@ A link the user typed once in passing is irrelevant unless the session went on t
 
 stillRelevant is false when an owned or touched link was replaced or abandoned later in the session, for example an artifact republished under a new link or a PR closed for another one. Otherwise it is true.
 label is a short name for the link, at most 60 characters: the PR title, the ticket summary, or what the artifact shows. Use an empty string if the snippets do not say.
+parentId is the id of another returned link this one belongs under: a sub-ticket's parent ticket, the ticket a PR implements, or the PR or ticket an artifact documents. Use an empty string when it belongs under nothing.
 Return only the owned and touched links, each once. Leave irrelevant links out.`;
 
 const JUDGE_OUTPUT_SCHEMA = {
@@ -79,8 +83,9 @@ const JUDGE_OUTPUT_SCHEMA = {
           role: { type: "string", enum: ["owned", "touched"] },
           stillRelevant: { type: "boolean" },
           label: { type: "string" },
+          parentId: { type: "string" },
         },
-        required: ["id", "role", "stillRelevant", "label"],
+        required: ["id", "role", "stillRelevant", "label", "parentId"],
       },
     },
   },
@@ -194,7 +199,9 @@ export function parseJudgeOutput(stdout: string, includedKeys: string[]): Record
   for (const rawVerdict of verdictList) {
     const verdict = validateVerdict(rawVerdict);
     if (verdict !== undefined && expectedKeys.has(verdict.key)) {
-      verdicts[verdict.key] = verdict.verdict;
+      const { parentKey, ...verdictFields } = verdict.verdict;
+      const hasValidParent = parentKey !== undefined && parentKey !== verdict.key && expectedKeys.has(parentKey);
+      verdicts[verdict.key] = hasValidParent ? { ...verdictFields, parentKey } : verdictFields;
     }
   }
   return verdicts;
@@ -295,7 +302,7 @@ function validateVerdict(rawVerdict: unknown): { key: string; verdict: JudgeVerd
   if (typeof rawVerdict !== "object" || rawVerdict === null) {
     return undefined;
   }
-  const { id, role, stillRelevant, label } = rawVerdict as Record<string, unknown>;
+  const { id, role, stillRelevant, label, parentId } = rawVerdict as Record<string, unknown>;
   if (typeof id !== "string" || typeof role !== "string" || !JUDGED_ROLES.has(role)) {
     return undefined;
   }
@@ -306,6 +313,7 @@ function validateVerdict(rawVerdict: unknown): { key: string; verdict: JudgeVerd
       role: role as JudgedRole,
       stillRelevant: stillRelevant !== false,
       label: trimmedLabel === "" ? undefined : clipText(trimmedLabel, MAX_LABEL_LENGTH),
+      parentKey: typeof parentId === "string" && parentId.trim() !== "" ? parentId.trim() : undefined,
     },
   };
 }

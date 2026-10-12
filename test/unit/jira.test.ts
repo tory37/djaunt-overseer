@@ -20,14 +20,14 @@ describe("parseIssueStatuses", () => {
     const envelope = JSON.stringify({
       success: true,
       results: [
-        { success: true, data: { status: "Peer Review", key: "ASSMNT-2567" } },
+        { success: true, data: { status: "Peer Review", key: "ASSMNT-2567", parent: "ASSMNT-2337", summary: "Fix login" } },
         { success: false, error: "Issue does not exist" },
         { success: true, data: { status: "Closed", key: "CR-1" } },
       ],
     });
     expect([...parseIssueStatuses(envelope)]).toEqual([
-      ["ASSMNT-2567", "Peer Review"],
-      ["CR-1", "Closed"],
+      ["ASSMNT-2567", { status: "Peer Review", parentKey: "ASSMNT-2337", summary: "Fix login" }],
+      ["CR-1", { status: "Closed", parentKey: undefined, summary: undefined }],
     ]);
     expect(parseIssueStatuses("not json").size).toBe(0);
   });

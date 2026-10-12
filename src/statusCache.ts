@@ -9,9 +9,7 @@ export interface StatusCacheEntry {
   fetchedAtMs: number;
 }
 
-interface StoredStatus {
-  text: string;
-  colorKey: string;
+interface StoredStatus extends LinkStatus {
   fetchedAtMs: number;
 }
 
@@ -23,7 +21,7 @@ export class StoredStatusCache {
     const loadedEntries = new Map<string, StatusCacheEntry>();
     for (const [cacheKey, storedStatus] of Object.entries(this.storedStatuses(nowMs))) {
       loadedEntries.set(cacheKey, {
-        status: { text: storedStatus.text, colorKey: storedStatus.colorKey },
+        status: storedLinkStatus(storedStatus),
         fetchedAtMs: storedStatus.fetchedAtMs,
       });
     }
@@ -53,6 +51,13 @@ export class StoredStatusCache {
     }
     return validStatuses;
   }
+}
+
+function storedLinkStatus(storedStatus: StoredStatus): LinkStatus {
+  const { fetchedAtMs: _fetchedAtMs, ...status } = storedStatus;
+  const optionalFields = (["title", "parentKey", "branch"] as const).filter((field) => typeof status[field] !== "string");
+  optionalFields.forEach((field) => delete status[field]);
+  return status;
 }
 
 function isStoredStatus(value: unknown): value is StoredStatus {

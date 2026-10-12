@@ -1,6 +1,6 @@
 import { execFile } from "child_process";
 import * as vscode from "vscode";
-import { projectKeyOf } from "./jira";
+import { IssueFacts, projectKeyOf } from "./jira";
 import { JiraService, MAX_TICKETS_PER_CALL } from "./jiraService";
 import { ResolvedLink } from "./linkJudge";
 import { LinkStatus, parsePrStatus, prStatusArgs, ticketStatus } from "./linkStatus";
@@ -104,7 +104,7 @@ export class LinkStatusService implements vscode.Disposable {
   }
 
   private async fetchTicketStatuses(ticketKeys: string[]): Promise<void> {
-    let issueStatuses: Map<string, string>;
+    let issueStatuses: Map<string, IssueFacts>;
     try {
       issueStatuses = await this.jiraService.issueStatuses(ticketKeys);
       this.isJiraFailing = false;
@@ -119,10 +119,12 @@ export class LinkStatusService implements vscode.Disposable {
     }
     let hasChanged = false;
     for (const ticketKey of ticketKeys) {
-      const statusName = issueStatuses.get(ticketKey);
-      hasChanged = this.store(`ticket:${ticketKey}`, statusName === undefined ? undefined : ticketStatus(statusName)) || hasChanged;
-      if (statusName !== undefined) {
-        await this.noteTicketStatus(ticketKey, statusName);
+      const issueFacts = issueStatuses.get(ticketKey);
+      const status =
+        issueFacts === undefined ? undefined : ticketStatus(issueFacts.status, issueFacts.summary, issueFacts.parentKey);
+      hasChanged = this.store(`ticket:${ticketKey}`, status) || hasChanged;
+      if (issueFacts !== undefined) {
+        await this.noteTicketStatus(ticketKey, issueFacts.status);
       }
     }
     if (hasChanged) {
@@ -176,7 +178,7 @@ export class LinkStatusService implements vscode.Disposable {
     const previousStatus = this.statusCache.get(cacheKey)?.status;
     this.statusCache.set(cacheKey, { status, fetchedAtMs: Date.now() });
     this.scheduleSave();
-    return previousStatus?.text !== status?.text;
+    return JSON.stringify(previousStatus) !== JSON.stringify(status);
   }
 
   private scheduleSave(): void {

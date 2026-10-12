@@ -18,6 +18,12 @@ describe("parsePrStatus", () => {
     expect(parsePrStatus('{"isDraft":true,"reviewDecision":"APPROVED","state":"OPEN"}')).toEqual({ text: "draft", colorKey: "draft" });
     expect(parsePrStatus('{"state":"MERGED"}')).toEqual({ text: "merged", colorKey: "merged" });
     expect(parsePrStatus('{"state":"CLOSED"}')).toEqual({ text: "closed", colorKey: "closed" });
+    expect(parsePrStatus('{"state":"MERGED","title":"Fix login","headRefName":"fix/PROJ-12-login"}')).toEqual({
+      text: "merged",
+      colorKey: "merged",
+      title: "Fix login",
+      branch: "fix/PROJ-12-login",
+    });
   });
 
   it("returns undefined for unknown shapes instead of throwing", () => {
@@ -49,7 +55,7 @@ describe("status commands", () => {
       "view",
       "https://github.com/acme/api/pull/77",
       "--json",
-      "state,isDraft,reviewDecision",
+      "state,isDraft,reviewDecision,title,headRefName",
     ]);
   });
 });

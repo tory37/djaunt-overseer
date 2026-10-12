@@ -31,6 +31,7 @@ export function resourceRow(
   status: LinkStatus | undefined,
   statusColor: string | undefined,
   jiraBaseUrl: string,
+  depth = 0,
 ): ResourceRow {
   const hasStatus = status !== undefined && link.kind !== "artifact";
   const glyphName =
@@ -39,7 +40,7 @@ export function resourceRow(
     key: linkKey(link),
     kind: link.kind,
     displayId: linkDisplayId(link),
-    label: link.label,
+    label: link.label ?? status?.title,
     url: linkUrl(link, jiraBaseUrl),
     glyph: statusGlyphMarkup(glyphName),
     statusText: status?.text,
@@ -47,7 +48,7 @@ export function resourceRow(
     role: link.role,
     mark: link.mark,
     isDimmed: isDimmedLink(link),
-    depth: 0,
+    depth,
   };
 }
 
