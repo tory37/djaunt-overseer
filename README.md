@@ -54,6 +54,9 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - Rows update a second after anything changes in the repo's `.git` folder, and when the window gets focus. Git runs only while the view is open.
 - **Open Repo in Source Control** (the inline icon, a right-click on a session or terminal, or the palette) adds that repo to VS Code's Source Control view, so its graph, changes, and diffs work there. A session that touched more than one repo asks which.
 - **Open Repo in New Window** and **Copy Repo Path** are on the right-click menu.
+- Expand a repo to see its last 20 commits on the current branch: subject, short hash, and age.
+- A commit a Claude session made shows a green sparkle and the session's name. Overseer knows a session made it when the transcript holds that commit's `git commit` output. It doesn't guess from timing.
+- Click a commit to open its diff. Right-click for **Show Session**, **Open Commit on GitHub**, and **Copy Commit Hash**.
 
 ### Links
 - **Find Resources** (right-click a session) finds the GitHub PRs, Jira tickets, and claude.ai artifacts it worked on. Overseer never scans on its own.

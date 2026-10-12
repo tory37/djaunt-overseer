@@ -22,6 +22,8 @@ const SHORT_HASH_LENGTH = 7;
 const AHEAD_BEHIND_PATTERN = /^\+(\d+) -(\d+)$/;
 // `git commit` prints "[branch abc1234] subject"; a root commit adds "(root-commit)" before the hash.
 const COMMIT_OUTPUT_PATTERN = /\[[^\]\s]+(?: \(root-commit\))? ([0-9a-f]{7,40})\] /g;
+// Claude Code also records the commit it saw on the tool result, when it recognized one.
+const GIT_OPERATION_PATTERN = /"gitOperation":\{"commit":\{"sha":"([0-9a-f]{7,40})"/g;
 const GITHUB_REMOTE_PATTERN = /github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/;
 
 export const LOG_FORMAT = ["%H", "%h", "%an", "%ct", "%s", "%D"].join("%x1f") + "%x1e";
@@ -102,7 +104,9 @@ export function parseLog(logText: string): CommitEntry[] {
 }
 
 export function commitHashesIn(text: string): string[] {
-  return [...text.matchAll(COMMIT_OUTPUT_PATTERN)].map((match) => match[1]);
+  const printedHashes = [...text.matchAll(COMMIT_OUTPUT_PATTERN)].map((match) => match[1]);
+  const recordedHashes = [...text.matchAll(GIT_OPERATION_PATTERN)].map((match) => match[1]);
+  return [...new Set([...printedHashes, ...recordedHashes])];
 }
 
 export interface CommitAuthorship {

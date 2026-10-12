@@ -218,6 +218,27 @@
         "category": "Overseer"
       },
       {
+        "command": "overseer.showCommit",
+        "title": "Show Commit",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.copyCommitHash",
+        "title": "Copy Commit Hash",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.revealCommitSession",
+        "title": "Show Session",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.openCommitOnGitHub",
+        "title": "Open Commit on GitHub",
+        "category": "Overseer",
+        "icon": "$(github)"
+      },
+      {
         "command": "overseer.toggleRemovedLinks",
         "title": "Toggle Removed Links",
         "category": "Overseer"
@@ -498,6 +519,21 @@
           "command": "overseer.copyRepoPath",
           "when": "view == overseer.repos && viewItem == repo",
           "group": "2_copy@1"
+        },
+        {
+          "command": "overseer.revealCommitSession",
+          "when": "view == overseer.repos && viewItem == commit.session",
+          "group": "1_open@1"
+        },
+        {
+          "command": "overseer.openCommitOnGitHub",
+          "when": "view == overseer.repos && viewItem =~ /^commit/",
+          "group": "1_open@2"
+        },
+        {
+          "command": "overseer.copyCommitHash",
+          "when": "view == overseer.repos && viewItem =~ /^commit/",
+          "group": "2_copy@1"
         }
       ],
       "commandPalette": [
@@ -619,6 +655,22 @@
         },
         {
           "command": "overseer.copyRepoPath",
+          "when": "false"
+        },
+        {
+          "command": "overseer.showCommit",
+          "when": "false"
+        },
+        {
+          "command": "overseer.copyCommitHash",
+          "when": "false"
+        },
+        {
+          "command": "overseer.revealCommitSession",
+          "when": "false"
+        },
+        {
+          "command": "overseer.openCommitOnGitHub",
           "when": "false"
         }
       ]

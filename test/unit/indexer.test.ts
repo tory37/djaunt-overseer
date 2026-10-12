@@ -126,6 +126,23 @@ describe("indexSessions", () => {
     expect(rescannedSessions[0].recap?.isStale).toBe(true);
   });
 
+  it("collects the hashes of commits the session made, but not ones it only talked about", async () => {
+    writeTranscript(REPO_CWD, SESSION_ID, [
+      userRecord(REPO_CWD, "commit it"),
+      userRecord(REPO_CWD, [{ tool_use_id: "toolu_1", type: "tool_result", content: "[fix/login a20a66b] Fix login\n 2 files changed" }], {
+        toolUseResult: { stdout: "[fix/login a20a66b] Fix login", gitOperation: { commit: { sha: "a20a66b", kind: "committed" } } },
+      }),
+      userRecord(REPO_CWD, [{ tool_use_id: "toolu_2", type: "tool_result", content: "ok" }], {
+        toolUseResult: { gitOperation: { commit: { sha: "b31c4d5e", kind: "committed" } } },
+      }),
+      { type: "assistant", cwd: REPO_CWD, message: { content: [{ type: "text", text: "Done: [main 9999999] Old" }] } },
+    ]);
+
+    const { sessions } = await indexSessions(projectsRoot, {});
+
+    expect(sessions[0].commitHashes).toEqual(["a20a66b", "b31c4d5e"]);
+  });
+
   it("falls back from agent name to AI title to first prompt", async () => {
     writeTranscript(REPO_CWD, SESSION_ID, [
       userRecord(REPO_CWD, "hello"),

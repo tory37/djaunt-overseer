@@ -517,7 +517,11 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     }),
     // The Repos view passes a repo row; the session context menu passes the clicked session.
     vscode.commands.registerCommand("overseer.openRepoInScm", async (clicked?: TreeNode | RepoTreeNode) => {
-      const repoRoot = clicked?.kind === "repo" ? clicked.repo.root : await pickRepo(clicked);
+      if (clicked?.kind === "repo" || clicked?.kind === "commit") {
+        await openRepoInSourceControl(clicked.kind === "repo" ? clicked.repo.root : clicked.repoRoot, log);
+        return;
+      }
+      const repoRoot = await pickRepo(clicked);
       if (repoRoot !== undefined) {
         await openRepoInSourceControl(repoRoot, log);
       }

@@ -20,7 +20,8 @@ import { createGitRootResolver } from "./gitRoots";
 import { registerRepoCommands } from "./repoCommands";
 import { RepoService } from "./repoService";
 import { resolveRepos } from "./repoSet";
-import { RepoTreeProvider } from "./repoTree";
+import { COMMIT_DOCUMENT_SCHEME, CommitDocumentProvider, RepoTreeProvider } from "./repoTree";
+import { CommitAuthorship, indexCommitAuthorship } from "./gitStatus";
 import { ResourcesPanel } from "./resourcesPanel";
 import { SessionTreeProvider, TreeNode } from "./tree";
 
@@ -62,7 +63,23 @@ export function activate(context: vscode.ExtensionContext): void {
     showCollapseAll: true,
   });
   const repoService = new RepoService(log);
-  const repoTreeProvider = new RepoTreeProvider(repoService, (sessionId) => sessionTitle(sessionId, registry, findIndexedSession));
+  let authorshipSource: SessionMeta[] | undefined;
+  let authorshipByPrefix = new Map<string, CommitAuthorship[]>();
+  // Rebuilt only when the index hands over a new session list.
+  const commitAuthorship = (): Map<string, CommitAuthorship[]> => {
+    if (authorshipSource !== sessionIndex.currentSessions) {
+      authorshipSource = sessionIndex.currentSessions;
+      authorshipByPrefix = indexCommitAuthorship(
+        new Map(authorshipSource.map((meta) => [meta.sessionId, meta.commitHashes])),
+      );
+    }
+    return authorshipByPrefix;
+  };
+  const repoTreeProvider = new RepoTreeProvider({
+    repoService,
+    sessionTitle: (sessionId) => sessionTitle(sessionId, registry, findIndexedSession),
+    commitAuthorship,
+  });
   const repoTreeView = vscode.window.createTreeView("overseer.repos", { treeDataProvider: repoTreeProvider });
   repoService.setVisible(repoTreeView.visible);
   // A new resolver each time, so a folder that became a repo since the last update is found.
@@ -103,7 +120,20 @@ export function activate(context: vscode.ExtensionContext): void {
     repoTreeProvider,
     repoTreeView,
     repoTreeView.onDidChangeVisibility(({ visible }) => repoService.setVisible(visible)),
-    ...registerRepoCommands(repoService),
+    vscode.workspace.registerTextDocumentContentProvider(COMMIT_DOCUMENT_SCHEME, new CommitDocumentProvider(repoService)),
+    sessionIndex.onDidChange(() => repoTreeProvider.refresh()),
+    ...registerRepoCommands({
+      repoService,
+      revealSession: async (sessionId) => {
+        const sessionNode = treeProvider.sessionNode(sessionId);
+        if (sessionNode === undefined) {
+          return false;
+        }
+        await treeView.reveal(sessionNode, { select: true, focus: true });
+        await vscode.commands.executeCommand("overseer.focusSession", sessionId);
+        return true;
+      },
+    }),
     sessionIndex.onDidChange(refreshTree),
     linkService.onDidChange(refreshTree),
     summaryService.onDidChange(refreshTree),

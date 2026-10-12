@@ -164,6 +164,28 @@ export class SessionTreeProvider
     await this.registry.setGroupOrder(moveBeside(displayedGroupRefs, draggedGroupRefs, targetGroupRef));
   }
 
+  // TreeView.reveal walks up from the node it shows, so every node needs its parent.
+  getParent(node: TreeNode): TreeNode | undefined {
+    if (node.kind === "group") {
+      return undefined;
+    }
+    if (node.kind === "resources") {
+      return this.sessionNode(node.sessionId);
+    }
+    const parentGroup = this.currentGroups().find((group) => group.ref === node.groupRef);
+    return parentGroup === undefined ? undefined : { kind: "group", group: parentGroup };
+  }
+
+  sessionNode(sessionId: string): SessionNode | undefined {
+    for (const group of this.currentGroups()) {
+      const pinned = group.sessions.find((session) => session.sessionId === sessionId);
+      if (pinned !== undefined) {
+        return { kind: "session", pinned, groupRef: group.ref };
+      }
+    }
+    return undefined;
+  }
+
   pinnedSessions(): PinnedSession[] {
     return this.currentGroups().flatMap((group) => group.sessions);
   }

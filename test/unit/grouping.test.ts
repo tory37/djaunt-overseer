@@ -19,6 +19,7 @@ function sessionMeta(sessionId: string, overrides: Partial<SessionMeta>): Sessio
     recap: undefined,
     homeRepo: "/repo",
     otherReposTouched: [],
+    commitHashes: [],
     lastActivityMs: 0,
     sizeBytes: 0,
     ...overrides,

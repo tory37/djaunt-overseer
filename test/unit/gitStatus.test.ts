@@ -3,7 +3,16 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { describe, expect, it } from "vitest";
-import { branchStatusLabel, parseBranchStatus, statusArgs } from "../../src/gitStatus";
+import {
+  branchStatusLabel,
+  commitHashesIn,
+  commitSessionId,
+  githubCommitUrl,
+  indexCommitAuthorship,
+  parseBranchStatus,
+  parseLog,
+  statusArgs,
+} from "../../src/gitStatus";
 
 describe("branch status", () => {
   it("reads branch, ahead and behind, and changed files, skipping ignored ones", () => {
@@ -56,5 +65,37 @@ describe("branch status", () => {
     } finally {
       fs.rmSync(repoRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe("commit log", () => {
+  it("parses git log records, refs included", () => {
+    const record = (fields: string[]) => fields.join("\x1f") + "\x1e";
+    const logText =
+      record(["a20a66bc0ffee", "a20a66b", "Tory", "1760000000", "Fix login", "HEAD -> main, origin/main"]) +
+      "\n" +
+      record(["b31c4d5e0ffee", "b31c4d5", "Sam", "1759990000", "Subject with | pipe", ""]) +
+      "\n";
+    expect(parseLog(logText)).toEqual([
+      { hash: "a20a66bc0ffee", shortHash: "a20a66b", author: "Tory", committedAtMs: 1760000000000, subject: "Fix login", refs: ["HEAD -> main", "origin/main"] },
+      { hash: "b31c4d5e0ffee", shortHash: "b31c4d5", author: "Sam", committedAtMs: 1759990000000, subject: "Subject with | pipe", refs: [] },
+    ]);
+  });
+
+  it("matches a full hash to the session whose transcript printed its short hash", () => {
+    const authorship = indexCommitAuthorship(new Map([["session-a", ["a20a66b"]], ["session-b", ["a20a66b9f"]]]));
+    expect(commitSessionId("a20a66b9f1234", authorship)).toBe("session-a");
+    expect(commitSessionId("a20a66c0000", authorship)).toBeUndefined();
+  });
+
+  it("finds printed and recorded commit hashes, including root commits", () => {
+    expect(commitHashesIn('"[main (root-commit) 1a2b3c4] first" "gitOperation":{"commit":{"sha":"5d6e7f8a"')).toEqual(["1a2b3c4", "5d6e7f8a"]);
+    expect(commitHashesIn("see [link] here and [main notahash] x")).toEqual([]);
+  });
+
+  it("builds a GitHub commit URL from ssh and https remotes only", () => {
+    expect(githubCommitUrl("git@github.com:tory37/djaunt-overseer.git", "abc")).toBe("https://github.com/tory37/djaunt-overseer/commit/abc");
+    expect(githubCommitUrl("https://github.com/tory37/djaunt-overseer\n", "abc")).toBe("https://github.com/tory37/djaunt-overseer/commit/abc");
+    expect(githubCommitUrl("https://gitlab.com/acme/app.git", "abc")).toBeUndefined();
   });
 });

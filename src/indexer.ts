@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as readline from "readline";
 import { createGitRootResolver, GitRootResolver } from "./gitRoots";
+import { commitHashesIn } from "./gitStatus";
 import { encodeProjectDir, isTemporaryPath } from "./paths";
 
 export interface SessionMeta {
@@ -19,6 +20,7 @@ export interface SessionMeta {
   recap: SessionRecap | undefined;
   homeRepo: string | undefined;
   otherReposTouched: string[];
+  commitHashes: string[];
   lastActivityMs: number;
   sizeBytes: number;
 }
@@ -128,6 +130,7 @@ export async function scanTranscript(
   let recap: Omit<SessionRecap, "isStale"> | undefined;
   let promptAtRecap: string | undefined;
   const touchedDirectories = new Set<string>();
+  const commitHashes = new Set<string>();
 
   const lineReader = readline.createInterface({
     input: fs.createReadStream(transcriptFile, { encoding: "utf8" }),
@@ -149,6 +152,11 @@ export async function scanTranscript(
       }
     }
     gitBranch = readStringField(line, "gitBranch") ?? gitBranch;
+    if (line.includes("tool_result")) {
+      for (const commitHash of commitHashesIn(line)) {
+        commitHashes.add(commitHash);
+      }
+    }
 
     if (firstPrompt === undefined && line.includes('"type":"user"')) {
       firstPrompt = readFirstPrompt(line);
@@ -196,6 +204,7 @@ export async function scanTranscript(
     recap: recap === undefined ? undefined : { ...recap, isStale: lastPromptText !== promptAtRecap },
     homeRepo,
     otherReposTouched,
+    commitHashes: [...commitHashes],
     lastActivityMs: stats.mtimeMs,
     sizeBytes: stats.size,
   };
