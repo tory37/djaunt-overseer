@@ -36,11 +36,18 @@
       "djauntOverseer": [
         {
           "id": "overseer.sessions",
-          "name": "Sessions"
+          "name": "Sessions",
+          "when": "config.overseer.views.sessions"
+        },
+        {
+          "id": "overseer.terminals",
+          "name": "Terminals",
+          "when": "config.overseer.views.terminals"
         },
         {
           "id": "overseer.repos",
-          "name": "Repos"
+          "name": "Repos",
+          "when": "config.overseer.views.repos"
         }
       ]
     },
@@ -48,6 +55,10 @@
       {
         "view": "overseer.sessions",
         "contents": "No pinned sessions yet.\n[Browse all sessions](command:overseer.allSessions)"
+      },
+      {
+        "view": "overseer.terminals",
+        "contents": "No terminals yet.\n[New Terminal](command:overseer.newTerminal)"
       },
       {
         "view": "overseer.repos",
@@ -261,6 +272,17 @@
         "icon": "$(gear)"
       },
       {
+        "command": "overseer.setSessionStatus",
+        "title": "Set Status…",
+        "category": "Overseer",
+        "icon": "$(tag)"
+      },
+      {
+        "command": "overseer.openStatusSettings",
+        "title": "Session Status Settings…",
+        "category": "Overseer"
+      },
+      {
         "command": "overseer.openSessionSettings",
         "title": "Session Icon Settings…",
         "category": "Overseer"
@@ -335,7 +357,7 @@
         },
         {
           "command": "overseer.newTerminal",
-          "when": "view == overseer.sessions",
+          "when": "view == overseer.terminals",
           "group": "navigation@0"
         },
         {
@@ -355,7 +377,7 @@
         },
         {
           "command": "overseer.openSettings",
-          "when": "view == overseer.sessions",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/",
           "group": "9_settings@1"
         },
         {
@@ -366,48 +388,53 @@
       ],
       "view/item/context": [
         {
+          "command": "overseer.setSessionStatus",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^(session|terminal)\\./",
+          "group": "1_session@4"
+        },
+        {
           "command": "overseer.resumeSession",
-          "when": "view == overseer.sessions && viewItem =~ /^session\\.(suspended|elsewhere)$/",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\.(suspended|elsewhere)$/",
           "group": "inline@1"
         },
         {
           "command": "overseer.resumeSession",
-          "when": "view == overseer.sessions && viewItem =~ /^session\\.(suspended|elsewhere)$/",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\.(suspended|elsewhere)$/",
           "group": "1_session@1"
         },
         {
           "command": "overseer.unpinSession",
-          "when": "view == overseer.sessions && viewItem =~ /^session\\./",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./",
           "group": "9_remove@1"
         },
         {
           "command": "overseer.killSession",
-          "when": "view == overseer.sessions && viewItem =~ /^session\\./",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./",
           "group": "9_remove@2"
         },
         {
           "command": "overseer.renameGroup",
-          "when": "view == overseer.sessions && viewItem =~ /^group\\.(user|auto)$/",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^group\\.(user|auto)$/",
           "group": "1_group@1"
         },
         {
           "command": "overseer.deleteGroup",
-          "when": "view == overseer.sessions && viewItem == group.user",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == group.user",
           "group": "9_remove@1"
         },
         {
           "command": "overseer.suspendSession",
-          "when": "view == overseer.sessions && viewItem =~ /^session\\.(running|working)$/",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\.(running|working)$/",
           "group": "inline@1"
         },
         {
           "command": "overseer.suspendSession",
-          "when": "view == overseer.sessions && viewItem =~ /^session\\.(running|working)$/",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\.(running|working)$/",
           "group": "1_session@2"
         },
         {
           "command": "overseer.renameSession",
-          "when": "view == overseer.sessions && viewItem =~ /^session\\./",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./",
           "group": "1_session@3"
         },
         {
@@ -437,67 +464,72 @@
         },
         {
           "command": "overseer.compactSession",
-          "when": "view == overseer.sessions && viewItem == session.running",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == session.running",
           "group": "2_claude@1"
         },
         {
           "command": "overseer.switchModel",
-          "when": "view == overseer.sessions && viewItem == session.running",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == session.running",
           "group": "2_claude@2"
         },
         {
           "command": "overseer.clearSession",
-          "when": "view == overseer.sessions && viewItem == session.running",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == session.running",
           "group": "2_claude@3"
         },
         {
           "command": "overseer.costSession",
-          "when": "view == overseer.sessions && viewItem == session.running",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == session.running",
           "group": "2_claude@4"
         },
         {
           "command": "overseer.findResources",
-          "when": "view == overseer.sessions && viewItem =~ /^session\\./",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./",
           "group": "3_links@1"
         },
         {
           "command": "overseer.summarizeSession",
-          "when": "view == overseer.sessions && viewItem =~ /^session\\./",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./",
           "group": "3_links@2"
         },
         {
           "command": "overseer.openRepoInScm",
-          "when": "view == overseer.sessions && viewItem =~ /^(session|terminal)\\./",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^(session|terminal)\\./",
           "group": "4_repo@1"
         },
         {
           "command": "overseer.openTerminal",
-          "when": "view == overseer.sessions && viewItem == terminal.closed",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == terminal.closed",
           "group": "inline@1"
         },
         {
           "command": "overseer.openTerminal",
-          "when": "view == overseer.sessions && viewItem == terminal.closed",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == terminal.closed",
           "group": "1_session@1"
         },
         {
           "command": "overseer.renameTerminal",
-          "when": "view == overseer.sessions && viewItem =~ /^terminal\\./",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^terminal\\./",
           "group": "1_session@3"
         },
         {
           "command": "overseer.unpinSession",
-          "when": "view == overseer.sessions && viewItem =~ /^terminal\\./",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^terminal\\./",
           "group": "9_remove@1"
         },
         {
           "command": "overseer.killSession",
-          "when": "view == overseer.sessions && viewItem =~ /^terminal\\./",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^terminal\\./",
           "group": "9_remove@2"
         },
         {
           "command": "overseer.newTerminal",
-          "when": "view == overseer.sessions && viewItem =~ /^group\\./",
+          "when": "view == overseer.terminals && viewItem =~ /^group\\./",
+          "group": "inline@0"
+        },
+        {
+          "command": "overseer.newTerminal",
+          "when": "view == overseer.terminals && viewItem =~ /^group\\./",
           "group": "1_group@1"
         },
         {
@@ -678,6 +710,109 @@
     "configuration": {
       "title": "Overseer",
       "properties": {
+        "overseer.views.sessions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Sessions view."
+        },
+        "overseer.views.terminals": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Terminals view."
+        },
+        "overseer.views.repos": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Repos view."
+        },
+        "overseer.sessionStatuses": {
+          "type": "array",
+          "default": [
+            {
+              "id": "todo",
+              "name": "Todo",
+              "color": "gray",
+              "icon": "circle-large-outline",
+              "badge": "TD"
+            },
+            {
+              "id": "triage",
+              "name": "Triage",
+              "color": "orange",
+              "icon": "search",
+              "badge": "TR"
+            },
+            {
+              "id": "in-progress",
+              "name": "In Progress",
+              "color": "blue",
+              "icon": "play-circle",
+              "badge": "IP"
+            },
+            {
+              "id": "ai-review",
+              "name": "AI Review",
+              "color": "purple",
+              "icon": "sparkle",
+              "badge": "AI"
+            },
+            {
+              "id": "human-review",
+              "name": "Human Review",
+              "color": "yellow",
+              "icon": "eye",
+              "badge": "HR"
+            },
+            {
+              "id": "ready-to-ship",
+              "name": "Ready to Ship",
+              "color": "green",
+              "icon": "rocket",
+              "badge": "RS"
+            }
+          ],
+          "markdownDescription": "Statuses you can set on a session or terminal with **Set Status…**. A status tints the row's label and adds its badge. Edit them in **Overseer: Session Status Settings…**.",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Stable id. Sessions keep their status by this id when the name changes."
+              },
+              "name": {
+                "type": "string"
+              },
+              "color": {
+                "type": "string",
+                "enum": [
+                  "gray",
+                  "red",
+                  "orange",
+                  "yellow",
+                  "green",
+                  "teal",
+                  "blue",
+                  "purple",
+                  "pink"
+                ],
+                "default": "gray"
+              },
+              "icon": {
+                "type": "string",
+                "description": "Codicon name, shown in the status picker and the row's tooltip."
+              },
+              "badge": {
+                "type": "string",
+                "maxLength": 2,
+                "description": "Up to two characters on the right of the row. Empty shows no badge."
+              }
+            }
+          }
+        },
         "overseer.claudeHome": {
           "type": "string",
           "default": "",
@@ -775,10 +910,100 @@
       {
         "command": "overseer.rename",
         "key": "f2",
-        "when": "focusedView == overseer.sessions"
+        "when": "focusedView =~ /^overseer\\.(sessions|terminals)$/"
       }
     ],
     "colors": [
+      {
+        "id": "overseer.statusGray",
+        "description": "Overseer session status color: gray.",
+        "defaults": {
+          "dark": "descriptionForeground",
+          "light": "descriptionForeground",
+          "highContrast": "descriptionForeground",
+          "highContrastLight": "descriptionForeground"
+        }
+      },
+      {
+        "id": "overseer.statusRed",
+        "description": "Overseer session status color: red.",
+        "defaults": {
+          "dark": "charts.red",
+          "light": "charts.red",
+          "highContrast": "charts.red",
+          "highContrastLight": "charts.red"
+        }
+      },
+      {
+        "id": "overseer.statusOrange",
+        "description": "Overseer session status color: orange.",
+        "defaults": {
+          "dark": "charts.orange",
+          "light": "charts.orange",
+          "highContrast": "charts.orange",
+          "highContrastLight": "charts.orange"
+        }
+      },
+      {
+        "id": "overseer.statusYellow",
+        "description": "Overseer session status color: yellow.",
+        "defaults": {
+          "dark": "charts.yellow",
+          "light": "charts.yellow",
+          "highContrast": "charts.yellow",
+          "highContrastLight": "charts.yellow"
+        }
+      },
+      {
+        "id": "overseer.statusGreen",
+        "description": "Overseer session status color: green.",
+        "defaults": {
+          "dark": "charts.green",
+          "light": "charts.green",
+          "highContrast": "charts.green",
+          "highContrastLight": "charts.green"
+        }
+      },
+      {
+        "id": "overseer.statusTeal",
+        "description": "Overseer session status color: teal.",
+        "defaults": {
+          "dark": "terminal.ansiCyan",
+          "light": "terminal.ansiCyan",
+          "highContrast": "terminal.ansiCyan",
+          "highContrastLight": "terminal.ansiCyan"
+        }
+      },
+      {
+        "id": "overseer.statusBlue",
+        "description": "Overseer session status color: blue.",
+        "defaults": {
+          "dark": "charts.blue",
+          "light": "charts.blue",
+          "highContrast": "charts.blue",
+          "highContrastLight": "charts.blue"
+        }
+      },
+      {
+        "id": "overseer.statusPurple",
+        "description": "Overseer session status color: purple.",
+        "defaults": {
+          "dark": "charts.purple",
+          "light": "charts.purple",
+          "highContrast": "charts.purple",
+          "highContrastLight": "charts.purple"
+        }
+      },
+      {
+        "id": "overseer.statusPink",
+        "description": "Overseer session status color: pink.",
+        "defaults": {
+          "dark": "terminal.ansiMagenta",
+          "light": "terminal.ansiMagenta",
+          "highContrast": "terminal.ansiMagenta",
+          "highContrastLight": "terminal.ansiMagenta"
+        }
+      },
       {
         "id": "overseer.sessionWorking",
         "description": "Overseer sidebar icon: working in this window.",

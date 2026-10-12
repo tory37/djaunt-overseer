@@ -24,6 +24,7 @@ import {
   suspendTerminal,
 } from "./terminals";
 import { RepoTreeNode } from "./repoTree";
+import { pickSessionStatus } from "./sessionStatusView";
 import { TreeNode } from "./tree";
 
 export interface CommandDependencies {
@@ -33,7 +34,7 @@ export interface CommandDependencies {
   linkService: SessionLinkService;
   linkStatusService: LinkStatusService;
   summaryService: SessionSummaryService;
-  treeView: vscode.TreeView<TreeNode>;
+  sessionViews: vscode.TreeView<TreeNode>[];
   showResources: (sessionId: string) => void;
   pinnedSessions: () => PinnedSession[];
   log: vscode.OutputChannel;
@@ -68,14 +69,28 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     linkService,
     linkStatusService,
     summaryService,
-    treeView,
+    sessionViews,
     showResources,
     pinnedSessions,
     log,
   } = dependencies;
 
+  // Palette commands act on the view the user selected in last.
+  let activeSessionView = sessionViews[0];
+  const selectionListeners = sessionViews.map((sessionView) =>
+    sessionView.onDidChangeSelection(({ selection }) => {
+      if (selection.length > 0) {
+        activeSessionView = sessionView;
+      }
+    }),
+  );
+
+  // A right-clicked row that is part of a multi-select acts on the whole selection of its own view.
+  const selectionHolding = (clickedNode: TreeNode): readonly TreeNode[] =>
+    sessionViews.map((sessionView) => sessionView.selection).find((selection) => selection.includes(clickedNode)) ?? [clickedNode];
+
   const selectedSessionNodes = (clickedNode?: TreeNode): SessionNode[] => {
-    const candidateNodes = clickedNode && !treeView.selection.includes(clickedNode) ? [clickedNode] : treeView.selection;
+    const candidateNodes = clickedNode === undefined ? activeSessionView.selection : selectionHolding(clickedNode);
     return candidateNodes.filter((node): node is SessionNode => node.kind === "session");
   };
 
@@ -240,9 +255,9 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
   };
 
   const findPinnedSession = (sessionId: string): PinnedSession | undefined => {
-    const sessionNode = treeView.selection.find(
-      (node): node is SessionNode => node.kind === "session" && node.pinned.sessionId === sessionId,
-    );
+    const sessionNode = sessionViews
+      .flatMap((sessionView) => sessionView.selection)
+      .find((node): node is SessionNode => node.kind === "session" && node.pinned.sessionId === sessionId);
     return sessionNode?.pinned;
   };
 
@@ -281,6 +296,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
   };
 
   return [
+    ...selectionListeners,
     vscode.commands.registerCommand("overseer.allSessions", async () => {
       const pickedSession = await pickSession(sessionIndex, liveMonitor, registry);
       if (pickedSession) {
@@ -349,19 +365,19 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       }
     }),
     vscode.commands.registerCommand("overseer.renameGroup", async (clickedNode?: TreeNode) => {
-      const groupNode = clickedNode ?? treeView.selection[0];
+      const groupNode = clickedNode ?? activeSessionView.selection[0];
       if (groupNode?.kind === "group" && groupNode.group.kind !== "ungrouped") {
         await renameGroup(groupNode);
       }
     }),
     vscode.commands.registerCommand("overseer.deleteGroup", async (clickedNode?: TreeNode) => {
-      const groupNode = clickedNode ?? treeView.selection[0];
+      const groupNode = clickedNode ?? activeSessionView.selection[0];
       if (groupNode?.kind === "group" && groupNode.group.kind === "user") {
         await registry.deleteGroup(groupNode.group.ref.slice("user:".length));
       }
     }),
     vscode.commands.registerCommand("overseer.rename", async () => {
-      const selectedNode = treeView.selection[0];
+      const selectedNode = activeSessionView.selection[0];
       if (selectedNode?.kind === "session") {
         await renameSession(selectedNode.pinned);
       } else if (selectedNode?.kind === "group" && selectedNode.group.kind !== "ungrouped") {
@@ -526,8 +542,19 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         await openRepoInSourceControl(repoRoot, log);
       }
     }),
+    vscode.commands.registerCommand("overseer.setSessionStatus", async (clickedNode?: TreeNode) => {
+      const sessionIds = selectedSessionNodes(clickedNode).map((node) => node.pinned.sessionId);
+      if (sessionIds.length === 0) {
+        return;
+      }
+      const statusIdBySession = registry.sessionStatusIds();
+      const pickedStatusId = await pickSessionStatus(new Set(sessionIds.map((sessionId) => statusIdBySession[sessionId])));
+      if (pickedStatusId !== null) {
+        await registry.setSessionStatus(sessionIds, pickedStatusId);
+      }
+    }),
     vscode.commands.registerCommand("overseer.suspendGroup", async (clickedNode?: TreeNode) => {
-      const groupNode = clickedNode ?? treeView.selection[0];
+      const groupNode = clickedNode ?? activeSessionView.selection[0];
       if (groupNode?.kind === "group") {
         await suspendSessions(groupNode.group.sessions);
       }

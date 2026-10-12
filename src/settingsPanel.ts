@@ -10,10 +10,12 @@ import {
   sessionIconSpec,
   withSessionColor,
 } from "./sessionIcons";
+import { configuredStatuses, saveStatuses } from "./sessionStatusView";
+import { DEFAULT_SESSION_STATUSES, parseSessionStatuses, SessionStatus, STATUS_COLORS, statusColorId } from "./sessionStatuses";
 import { StatusConfig } from "./statusConfig";
 import { statusGlyphMarkup } from "./statusIcons";
 
-export type SettingsSection = "sessions" | "jira" | "github" | "general";
+export type SettingsSection = "sessions" | "statuses" | "jira" | "github" | "general";
 
 export interface SettingsPanelDependencies {
   extensionUri: vscode.Uri;
@@ -43,9 +45,14 @@ interface LinkSettings {
   liveStatus: boolean;
 }
 
+type OverseerView = "sessions" | "terminals" | "repos";
+
 interface PanelState {
   sessionIcons: SessionIconRow[];
   linkSettings: LinkSettings;
+  visibleViews: Record<OverseerView, boolean>;
+  sessionStatuses: SessionStatus[];
+  statusColors: Array<{ name: string; colorVariable: string }>;
   projects: Array<{ key: string; isEnabled: boolean; statuses: StatusRow[] }>;
   prStatuses: StatusRow[];
 }
@@ -53,6 +60,9 @@ interface PanelState {
 type PanelMessage =
   | { type: "ready" }
   | { type: "setLinkSetting"; settingKey: keyof LinkSettings; value: boolean }
+  | { type: "setViewVisible"; view: OverseerView; isVisible: boolean }
+  | { type: "setSessionStatuses"; statuses: unknown }
+  | { type: "resetSessionStatuses" }
   | { type: "setSessionIcon"; state: SessionIconState; iconName: string }
   | { type: "setSessionColor"; state: SessionIconState; color: string | undefined }
   | { type: "setProjectEnabled"; projectKey: string; isEnabled: boolean }
@@ -66,6 +76,7 @@ type PanelMessage =
 
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 const LINK_SETTING_KEYS: Array<keyof LinkSettings> = ["jira.enabled", "github.enabled", "artifacts.enabled", "liveStatus"];
+const OVERSEER_VIEWS: OverseerView[] = ["sessions", "terminals", "repos"];
 const CODICON_REFERENCE_URL = "https://microsoft.github.io/vscode-codicons/dist/codicon.html";
 const EXTENSION_SETTINGS_QUERY = "@ext:djaunt.djaunt-overseer";
 
@@ -161,7 +172,12 @@ export class SettingsPanel {
       color: statusConfig.prColor(statusKey),
       glyph: statusGlyphMarkup(statusGlyph("pr", { text: statusKey, colorKey: statusKey })),
     }));
-    return { sessionIcons, linkSettings, projects, prStatuses };
+    const viewsConfig = vscode.workspace.getConfiguration("overseer.views");
+    const visibleViews = Object.fromEntries(
+      OVERSEER_VIEWS.map((view) => [view, viewsConfig.get<boolean>(view, true)]),
+    ) as Record<OverseerView, boolean>;
+    const statusColors = STATUS_COLORS.map((color) => ({ name: color, colorVariable: themeColorVariable(statusColorId(color)) }));
+    return { sessionIcons, linkSettings, visibleViews, sessionStatuses: configuredStatuses(), statusColors, projects, prStatuses };
   }
 
   private async receive(message: PanelMessage): Promise<void> {
@@ -174,6 +190,19 @@ export class SettingsPanel {
         return;
       case "setLinkSetting":
         await updateLinkSetting(message.settingKey, message.value);
+        return;
+      case "setViewVisible":
+        if (OVERSEER_VIEWS.includes(message.view) && typeof message.isVisible === "boolean") {
+          await vscode.workspace
+            .getConfiguration("overseer.views")
+            .update(message.view, message.isVisible, vscode.ConfigurationTarget.Global);
+        }
+        return;
+      case "setSessionStatuses":
+        await saveStatuses(parseSessionStatuses(message.statuses));
+        return;
+      case "resetSessionStatuses":
+        await saveStatuses(DEFAULT_SESSION_STATUSES);
         return;
       case "setSessionIcon":
         await updateSessionIcon(message.state, message.iconName);
@@ -212,6 +241,10 @@ export class SettingsPanel {
         return;
     }
   }
+}
+
+function themeColorVariable(colorId: string): string {
+  return `--vscode-${colorId.replace(/\./g, "-")}`;
 }
 
 function readColorCustomizations(): Record<string, unknown> | undefined {
@@ -351,6 +384,16 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .session-grid .codicon { font-size: 16px; justify-content: center; }
   .session-grid .heading { min-height: 24px; color: var(--vscode-descriptionForeground); font-size: 0.9em; }
   .tag { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
+  .status-grid { display: grid; grid-template-columns: 20px minmax(0, 1fr) 112px 200px 56px 84px; column-gap: 12px; align-items: center; }
+  .status-grid > * { min-height: 32px; display: flex; align-items: center; }
+  .status-grid .codicon { font-size: 16px; justify-content: center; }
+  .status-grid .heading { min-height: 24px; color: var(--vscode-descriptionForeground); font-size: 0.9em; }
+  .status-grid select { width: 100%; }
+  .status-actions { gap: 4px; }
+  button.icon-button { width: 24px; height: 24px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: none; background: none; color: var(--vscode-icon-foreground); }
+  button.icon-button:hover { background: var(--vscode-toolbar-hoverBackground); }
+  .status-grid .empty { grid-column: 1 / -1; }
+  .status-footer { display: flex; gap: 8px; margin-top: 12px; }
   .project + .project { margin-top: 16px; }
   .project-head { display: flex; align-items: center; gap: 8px; height: 28px; cursor: pointer; }
   .project-key { font-family: var(--vscode-editor-font-family); font-weight: 600; }
@@ -383,6 +426,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
 <div class="layout">
   <nav class="toc" aria-label="Sections">
     <a href="#sessions" data-section="sessions">Sessions</a>
+    <a href="#statuses" data-section="statuses">Statuses</a>
     <a href="#jira" data-section="jira">Jira</a>
     <a href="#github" data-section="github">GitHub</a>
     <a href="#general" data-section="general">General</a>
@@ -399,6 +443,16 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       <p class="note muted">Any Codicon name works. <code>~spin</code> animates <code>loading</code>, <code>sync</code>, and <code>gear</code>. Colors save to <code>workbench.colorCustomizations</code>.</p>
       <div id="session-rows" class="session-grid"></div>
       <datalist id="icon-suggestions">${iconOptions}</datalist>
+    </section>
+
+    <section id="statuses">
+      <div class="section-head">
+        <h2>Session statuses</h2>
+        <button id="reset-statuses">Reset to defaults</button>
+      </div>
+      <p class="note muted">Set one on a session or terminal with <strong>Set Status…</strong> in its right-click menu. The status tints the row's label and adds its badge. The icon shows in the picker and the row's tooltip.</p>
+      <div id="status-rows" class="status-grid"></div>
+      <div class="status-footer"><button id="add-status">Add status</button></div>
     </section>
 
     <section id="jira">
@@ -428,6 +482,9 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
 
     <section id="general">
       <div class="section-head"><h2>General</h2></div>
+      <label class="switch"><input type="checkbox" id="view-sessions"> Sessions view</label>
+      <label class="switch"><input type="checkbox" id="view-terminals"> Terminals view</label>
+      <label class="switch"><input type="checkbox" id="view-repos"> Repos view</label>
       <label class="switch"><input type="checkbox" id="live-status"> Fetch live ticket and PR status</label>
       <label class="switch"><input type="checkbox" id="artifacts-enabled"> Artifact links</label>
       <div class="general-row"><button id="all-settings">All settings…</button><span class="muted">Every <code>overseer.*</code> setting in the Settings editor.</span></div>
@@ -680,6 +737,155 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     );
   }
 
+  const VIEW_CHECKBOXES = { "view-sessions": "sessions", "view-terminals": "terminals", "view-repos": "repos" };
+  for (const [checkboxId, view] of Object.entries(VIEW_CHECKBOXES)) {
+    const checkbox = document.getElementById(checkboxId);
+    checkbox.addEventListener("change", () =>
+      vscodeApi.postMessage({ type: "setViewVisible", view, isVisible: checkbox.checked }),
+    );
+  }
+
+  function renderVisibleViews(visibleViews) {
+    for (const [checkboxId, view] of Object.entries(VIEW_CHECKBOXES)) {
+      document.getElementById(checkboxId).checked = visibleViews[view];
+    }
+  }
+
+  let shownStatuses = [];
+  let statusColors = [];
+
+  function saveStatuses(statuses) {
+    vscodeApi.postMessage({ type: "setSessionStatuses", statuses });
+  }
+
+  function iconButton(iconName, label, isDisabled, onClick) {
+    const button = document.createElement("button");
+    button.className = "icon-button";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.disabled = isDisabled;
+    const glyph = document.createElement("i");
+    setCodiconClass(glyph, iconName);
+    button.append(glyph);
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  function withStatusChange(index, changedFields) {
+    return shownStatuses.map((status, statusIndex) => (statusIndex === index ? { ...status, ...changedFields } : status));
+  }
+
+  function statusColorVariable(colorName) {
+    const paletteColor = statusColors.find((color) => color.name === colorName);
+    return "var(" + (paletteColor ? paletteColor.colorVariable : "--vscode-foreground") + ")";
+  }
+
+  function statusEditorRow(status, index) {
+    const preview = document.createElement("i");
+    setCodiconClass(preview, status.icon);
+    preview.style.color = statusColorVariable(status.color);
+    preview.setAttribute("aria-hidden", "true");
+
+    const nameField = document.createElement("input");
+    nameField.type = "text";
+    nameField.value = status.name;
+    nameField.setAttribute("aria-label", "Status name");
+    nameField.addEventListener("change", () => {
+      const name = nameField.value.trim();
+      nameField.classList.toggle("invalid", name === "");
+      if (name !== "") {
+        saveStatuses(withStatusChange(index, { name }));
+      }
+    });
+    const nameCell = document.createElement("span");
+    nameCell.append(nameField);
+
+    const colorPicker = document.createElement("select");
+    colorPicker.setAttribute("aria-label", status.name + " color");
+    for (const paletteColor of statusColors) {
+      const option = document.createElement("option");
+      option.value = paletteColor.name;
+      option.textContent = paletteColor.name;
+      option.selected = paletteColor.name === status.color;
+      colorPicker.append(option);
+    }
+    colorPicker.addEventListener("change", () => {
+      preview.style.color = statusColorVariable(colorPicker.value);
+      saveStatuses(withStatusChange(index, { color: colorPicker.value }));
+    });
+    const colorCell = document.createElement("span");
+    colorCell.append(colorPicker);
+
+    const iconField = document.createElement("input");
+    iconField.type = "text";
+    iconField.value = status.icon;
+    iconField.setAttribute("list", "icon-suggestions");
+    iconField.setAttribute("aria-label", status.name + " icon");
+    iconField.spellcheck = false;
+    const showIcon = () => {
+      const isKnown = isKnownCodicon(iconField.value.trim());
+      iconField.classList.toggle("invalid", !isKnown);
+      if (isKnown) {
+        setCodiconClass(preview, iconField.value.trim());
+      }
+      return isKnown;
+    };
+    iconField.addEventListener("input", showIcon);
+    iconField.addEventListener("change", () => {
+      if (showIcon()) {
+        saveStatuses(withStatusChange(index, { icon: iconField.value.trim() }));
+      }
+    });
+    const iconCell = document.createElement("span");
+    iconCell.append(iconField);
+
+    const badgeField = document.createElement("input");
+    badgeField.type = "text";
+    badgeField.value = status.badge;
+    badgeField.maxLength = 2;
+    badgeField.placeholder = "none";
+    badgeField.setAttribute("aria-label", status.name + " badge");
+    badgeField.addEventListener("change", () => saveStatuses(withStatusChange(index, { badge: badgeField.value.trim() })));
+    const badgeCell = document.createElement("span");
+    badgeCell.append(badgeField);
+
+    const moveStatus = (offset) => {
+      const reordered = [...shownStatuses];
+      const [moved] = reordered.splice(index, 1);
+      reordered.splice(index + offset, 0, moved);
+      saveStatuses(reordered);
+    };
+    const actionsCell = document.createElement("span");
+    actionsCell.className = "status-actions";
+    actionsCell.append(
+      iconButton("arrow-up", "Move " + status.name + " up", index === 0, () => moveStatus(-1)),
+      iconButton("arrow-down", "Move " + status.name + " down", index === shownStatuses.length - 1, () => moveStatus(1)),
+      iconButton("trash", "Delete " + status.name, false, () =>
+        saveStatuses(shownStatuses.filter((_status, statusIndex) => statusIndex !== index)),
+      ),
+    );
+    return [preview, nameCell, colorCell, iconCell, badgeCell, actionsCell];
+  }
+
+  function renderSessionStatuses(sessionStatuses, paletteColors) {
+    shownStatuses = sessionStatuses;
+    statusColors = paletteColors;
+    const grid = document.getElementById("status-rows");
+    const headings = ["", "Name", "Color", "Icon", "Badge", ""].map((text) => textSpan("heading", text));
+    const rows = sessionStatuses.flatMap(statusEditorRow);
+    grid.replaceChildren(...headings, ...rows);
+    if (sessionStatuses.length === 0) {
+      grid.append(textSpan("empty muted", "No statuses. Add one, or reset to the defaults."));
+    }
+  }
+
+  document.getElementById("add-status").addEventListener("click", () =>
+    saveStatuses([...shownStatuses, { name: "New status", color: "gray", icon: "circle-filled", badge: "" }]),
+  );
+  document.getElementById("reset-statuses").addEventListener("click", () =>
+    vscodeApi.postMessage({ type: "resetSessionStatuses" }),
+  );
+
   const refreshButton = document.getElementById("refresh-projects");
   refreshButton.addEventListener("click", () => {
     refreshButton.disabled = true;
@@ -725,6 +931,8 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     refreshButton.textContent = "Refresh statuses";
     renderSessionIcons(state.sessionIcons);
     renderLinkSettings(state.linkSettings);
+    renderVisibleViews(state.visibleViews);
+    renderSessionStatuses(state.sessionStatuses, state.statusColors);
     renderProjects(state.projects);
     renderPrStatuses(state.prStatuses);
     markActiveSection();

@@ -32,6 +32,7 @@ const EXPANDED_SESSIONS_KEY = "overseer.expandedSessionIds";
 const COLLAPSED_GROUPS_KEY = "overseer.collapsedGroupRefs";
 const RESOURCE_SESSIONS_KEY = "overseer.resourceSessionIds";
 const TERMINAL_SESSIONS_KEY = "overseer.terminalSessions";
+const SESSION_STATUS_KEY = "overseer.sessionStatusIds";
 
 export type LinkMark = "pinned" | "removed";
 export type LinkMarks = Record<string, LinkMark>;
@@ -224,6 +225,23 @@ export class Registry {
     if (!this.hasFoundResources(sessionId)) {
       await this.write(RESOURCE_SESSIONS_KEY, [...this.resourceSessionIds(), sessionId]);
     }
+  }
+
+  sessionStatusIds(): Record<string, string> {
+    return this.store.get<Record<string, string>>(SESSION_STATUS_KEY) ?? {};
+  }
+
+  // An undefined status clears it.
+  async setSessionStatus(sessionIds: string[], statusId: string | undefined): Promise<void> {
+    const statusIdBySession = { ...this.sessionStatusIds() };
+    for (const sessionId of sessionIds) {
+      if (statusId === undefined) {
+        delete statusIdBySession[sessionId];
+      } else {
+        statusIdBySession[sessionId] = statusId;
+      }
+    }
+    await this.write(SESSION_STATUS_KEY, statusIdBySession);
   }
 
   isSessionExpanded(sessionId: string): boolean {

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { registerCommands } from "./commands";
 import { CompactMonitor, registerCompactHookCommands } from "./compactMonitor";
+import { PinnedSession, SessionSection } from "./grouping";
 import { displayTitle, SessionMeta } from "./indexer";
 import { LiveSessionMonitor } from "./liveSessions";
 import { defaultClaudeHome } from "./paths";
@@ -23,7 +24,8 @@ import { resolveRepos } from "./repoSet";
 import { COMMIT_DOCUMENT_SCHEME, CommitDocumentProvider, RepoTreeProvider } from "./repoTree";
 import { CommitAuthorship, indexCommitAuthorship } from "./gitStatus";
 import { ResourcesPanel } from "./resourcesPanel";
-import { SessionTreeProvider, TreeNode } from "./tree";
+import { SessionTreeProvider } from "./tree";
+import { SessionStatusDecorations } from "./sessionStatusView";
 
 const INDEX_REFRESH_INTERVAL_MS = 60_000;
 
@@ -48,20 +50,22 @@ export function activate(context: vscode.ExtensionContext): void {
   const linkStatusService = new LinkStatusService(log, jiraService, statusConfig, new StoredStatusCache(context.globalState));
   const summaryService = new SessionSummaryService(context.globalStorageUri.fsPath, log);
   const compactMonitor = new CompactMonitor(claudeHome, log);
-  const treeProvider = new SessionTreeProvider(
-    sessionIndex,
-    liveMonitor,
-    registry,
-    linkService,
-    summaryService,
-    compactMonitor,
-  );
-  const treeView = vscode.window.createTreeView("overseer.sessions", {
-    treeDataProvider: treeProvider,
-    dragAndDropController: treeProvider,
-    canSelectMany: true,
-    showCollapseAll: true,
-  });
+  const createSectionTree = (section: SessionSection, viewId: string) => {
+    const provider = new SessionTreeProvider(section, sessionIndex, liveMonitor, registry, linkService, summaryService, compactMonitor);
+    const view = vscode.window.createTreeView(viewId, {
+      treeDataProvider: provider,
+      dragAndDropController: provider,
+      canSelectMany: true,
+      showCollapseAll: true,
+    });
+    view.onDidExpandElement(({ element }) => void provider.saveExpansion(element, true));
+    view.onDidCollapseElement(({ element }) => void provider.saveExpansion(element, false));
+    return { provider, view };
+  };
+  const { provider: treeProvider, view: treeView } = createSectionTree("claude", "overseer.sessions");
+  const { provider: terminalTreeProvider, view: terminalTreeView } = createSectionTree("terminal", "overseer.terminals");
+  const pinnedSessions = (): PinnedSession[] => [...treeProvider.pinnedSessions(), ...terminalTreeProvider.pinnedSessions()];
+  const statusDecorations = new SessionStatusDecorations(registry);
   const repoService = new RepoService(log);
   let authorshipSource: SessionMeta[] | undefined;
   let authorshipByPrefix = new Map<string, CommitAuthorship[]>();
@@ -84,13 +88,12 @@ export function activate(context: vscode.ExtensionContext): void {
   repoService.setVisible(repoTreeView.visible);
   // A new resolver each time, so a folder that became a repo since the last update is found.
   const updateRepos = async (): Promise<void> => {
-    repoService.setRepos(await resolveRepos(treeProvider.pinnedSessions(), createGitRootResolver()));
+    repoService.setRepos(await resolveRepos(pinnedSessions(), createGitRootResolver()));
   };
-  treeView.onDidExpandElement(({ element }) => void saveExpansion(registry, element, true));
-  treeView.onDidCollapseElement(({ element }) => void saveExpansion(registry, element, false));
 
   const refreshTree = (): void => {
     treeProvider.refresh();
+    terminalTreeProvider.refresh();
     void updateRepos();
   };
   const adoptRevivedTerminals = async (): Promise<void> => {
@@ -115,6 +118,10 @@ export function activate(context: vscode.ExtensionContext): void {
     summaryService,
     treeProvider,
     treeView,
+    terminalTreeProvider,
+    terminalTreeView,
+    statusDecorations,
+    vscode.window.registerFileDecorationProvider(statusDecorations),
     { dispose: () => clearInterval(indexRefreshTimer) },
     repoService,
     repoTreeProvider,
@@ -182,7 +189,7 @@ export function activate(context: vscode.ExtensionContext): void {
       linkService,
       linkStatusService,
       summaryService,
-      treeView,
+      sessionViews: [treeView, terminalTreeView],
       showResources: (sessionId) =>
         ResourcesPanel.show(
           {
@@ -196,7 +203,7 @@ export function activate(context: vscode.ExtensionContext): void {
           },
           sessionId,
         ),
-      pinnedSessions: () => treeProvider.pinnedSessions(),
+      pinnedSessions,
       log,
     }),
     ...registerStatusCommands({ jiraService, linkStatusService, statusConfig }),
@@ -217,15 +224,6 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {}
-
-async function saveExpansion(registry: Registry, node: TreeNode, isExpanded: boolean): Promise<void> {
-  if (node.kind === "session") {
-    await registry.setSessionExpanded(node.pinned.sessionId, isExpanded);
-
-  } else if (node.kind === "group") {
-    await registry.setGroupCollapsed(node.group.ref, !isExpanded);
-  }
-}
 
 function sessionTitle(
   sessionId: string,

@@ -13,6 +13,8 @@ import { extractTicketKey } from "./ticket";
 
 export type GroupKind = "user" | "auto" | "ungrouped";
 
+export type SessionSection = "claude" | "terminal";
+
 export interface PinnedSession {
   sessionId: string;
   meta: SessionMeta | undefined;
@@ -111,6 +113,17 @@ export function buildGroups(input: GroupingInput): SessionGroup[] {
       : [];
 
   return sortBySavedOrder([...userGroups, ...autoGroups, ...ungroupedGroups], input.groupOrder, (group) => group.ref);
+}
+
+// Only the Sessions view keeps empty user groups; the Terminals view lists the groups that hold a terminal.
+export function buildSectionGroups(input: GroupingInput, section: SessionSection): SessionGroup[] {
+  const terminalSessions = input.terminalSessions ?? {};
+  const wantsTerminals = section === "terminal";
+  const sectionSessionIds = input.pinnedSessionIds.filter(
+    (sessionId) => (terminalSessions[sessionId] !== undefined) === wantsTerminals,
+  );
+  const sectionGroups = buildGroups({ ...input, pinnedSessionIds: sectionSessionIds });
+  return wantsTerminals ? sectionGroups.filter((group) => group.sessions.length > 0) : sectionGroups;
 }
 
 // An explicit drag wins, unless it points at a user group that was since deleted.

@@ -9,6 +9,7 @@ interface SectionCommand {
 const SECTION_COMMANDS: SectionCommand[] = [
   { command: "overseer.openSettings", section: undefined },
   { command: "overseer.openSessionSettings", section: "sessions" },
+  { command: "overseer.openStatusSettings", section: "statuses" },
   { command: "overseer.openJiraSettings", section: "jira" },
   { command: "overseer.openGithubSettings", section: "github" },
 ];

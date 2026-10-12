@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildGroups, GroupingInput, pinnedSessionTitle } from "../../src/grouping";
+import { buildGroups, buildSectionGroups, GroupingInput, pinnedSessionTitle } from "../../src/grouping";
 import { SessionMeta } from "../../src/indexer";
 import { autoGroupRef, UNGROUPED_REF, userGroupRef } from "../../src/registry";
 
@@ -185,5 +185,39 @@ describe("buildGroups", () => {
         ["PROJ-7", ["a"]],
       ]),
     );
+  });
+});
+
+describe("buildSectionGroups", () => {
+  const sessions = [
+    sessionMeta("claude-a", { customTitle: "PROJ-1 fix", lastActivityMs: 20 }),
+    sessionMeta("claude-b", { customTitle: "chat", lastActivityMs: 10 }),
+  ];
+  const input = groupingInput(sessions, {
+    pinnedSessionIds: ["claude-a", "claude-b", "term-a", "term-b"],
+    userGroups: [
+      { id: "g1", name: "Empty" },
+      { id: "g2", name: "Mixed" },
+    ],
+    assignments: { "claude-b": userGroupRef("g2"), "term-b": userGroupRef("g2") },
+    labels: { "term-a": "PROJ-1 logs" },
+    terminalSessions: { "term-a": { cwd: "/repo", createdAtMs: 5 }, "term-b": { cwd: "/repo", createdAtMs: 6 } },
+  });
+  const summarizeSection = (section: "claude" | "terminal") =>
+    buildSectionGroups(input, section).map((group) => [group.label, group.sessions.map((pinned) => pinned.sessionId)]);
+
+  it("keeps terminals out of the Sessions view, and keeps its empty user groups", () => {
+    expect(summarizeSection("claude")).toEqual([
+      ["Empty", []],
+      ["Mixed", ["claude-b"]],
+      ["PROJ-1", ["claude-a"]],
+    ]);
+  });
+
+  it("shows only terminals in the Terminals view, in the groups that hold one", () => {
+    expect(summarizeSection("terminal")).toEqual([
+      ["Mixed", ["term-b"]],
+      ["PROJ-1", ["term-a"]],
+    ]);
   });
 });

@@ -12,6 +12,16 @@ function memoryStore(): KeyValueStore {
 }
 
 describe("Registry", () => {
+  it("sets and clears session statuses for several sessions at once", async () => {
+    const registry = new Registry(memoryStore());
+
+    await registry.setSessionStatus(["a", "b"], "triage");
+    await registry.setSessionStatus(["b"], "in-progress");
+    expect(registry.sessionStatusIds()).toEqual({ a: "triage", b: "in-progress" });
+    await registry.setSessionStatus(["a"], undefined);
+    expect(registry.sessionStatusIds()).toEqual({ b: "in-progress" });
+  });
+
   it("keeps link marks per session and drops cleared ones", async () => {
     const registry = new Registry(memoryStore());
 

@@ -1,7 +1,7 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { formatAge } from "./format";
-import { buildGroups, PinnedSession, pinnedSessionTitle, SessionGroup } from "./grouping";
+import { buildSectionGroups, PinnedSession, pinnedSessionTitle, SessionGroup, SessionSection } from "./grouping";
 import { displayTitle, SessionMeta } from "./indexer";
 import { linkCountBadge, MarkedLink } from "./linkView";
 import { LiveSession } from "./liveParse";
@@ -15,6 +15,8 @@ import { CompactMonitor } from "./compactMonitor";
 import { SessionIndex } from "./sessionIndex";
 import { SessionLinkService } from "./sessionLinks";
 import { SessionSummaryService } from "./sessionSummaries";
+import { sessionStatusFor, sessionStatusUri } from "./sessionStatusView";
+import { SessionStatus } from "./sessionStatuses";
 import { HoverSummary, pickHoverSummary } from "./sessionSummary";
 import { findSessionTerminal } from "./terminals";
 
@@ -48,6 +50,7 @@ export class SessionTreeProvider
   readonly onDidChangeTreeData = this.treeChangeEmitter.event;
 
   constructor(
+    private readonly section: SessionSection,
     private readonly sessionIndex: SessionIndex,
     private readonly liveMonitor: LiveSessionMonitor,
     private readonly registry: Registry,
@@ -80,13 +83,14 @@ export class SessionTreeProvider
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
     if (node.kind === "group") {
-      return groupTreeItem(node.group, this.registry.isGroupCollapsed(node.group.ref));
+      return groupTreeItem(node.group, this.registry.isGroupCollapsed(this.collapseKey(node.group.ref)));
     }
     if (node.kind === "resources") {
       return resourcesTreeItem(node.sessionId, this.resourceLinks(node.sessionId), this.linkService.isFinding(node.sessionId));
     }
+    const status = sessionStatusFor(this.registry, node.pinned.sessionId);
     if (node.pinned.terminal !== undefined) {
-      return terminalTreeItem(node.pinned, node.pinned.terminal);
+      return terminalTreeItem(node.pinned, node.pinned.terminal, status);
     }
     const meta = node.pinned.meta;
     const hasFoundResources = this.registry.hasFoundResources(node.pinned.sessionId);
@@ -102,6 +106,7 @@ export class SessionTreeProvider
       summaryState,
       isExpanded,
       this.compactMonitor.isCompacting(node.pinned.sessionId),
+      status,
     );
   }
 
@@ -161,7 +166,22 @@ export class SessionTreeProvider
   private async dropGroups(draggedGroupRefs: GroupRef[], targetNode: TreeNode | undefined): Promise<void> {
     const targetGroupRef = targetNode === undefined ? undefined : nodeGroupRef(targetNode);
     const displayedGroupRefs = this.currentGroups().map((group) => group.ref);
-    await this.registry.setGroupOrder(moveBeside(displayedGroupRefs, draggedGroupRefs, targetGroupRef));
+    const reorderedGroupRefs = moveBeside(displayedGroupRefs, draggedGroupRefs, targetGroupRef);
+    const otherGroupRefs = this.registry.groupOrder().filter((groupRef) => !reorderedGroupRefs.includes(groupRef));
+    await this.registry.setGroupOrder([...reorderedGroupRefs, ...otherGroupRefs]);
+  }
+
+  async saveExpansion(node: TreeNode, isExpanded: boolean): Promise<void> {
+    if (node.kind === "session") {
+      await this.registry.setSessionExpanded(node.pinned.sessionId, isExpanded);
+    } else if (node.kind === "group") {
+      await this.registry.setGroupCollapsed(this.collapseKey(node.group.ref), !isExpanded);
+    }
+  }
+
+  // A group can show in both views, and each view keeps its own collapsed state for it.
+  private collapseKey(groupRef: GroupRef): string {
+    return this.section === "terminal" ? `terminal|${groupRef}` : groupRef;
   }
 
   // TreeView.reveal walks up from the node it shows, so every node needs its parent.
@@ -195,20 +215,23 @@ export class SessionTreeProvider
       this.sessionIndex.currentSessions.map((meta) => [meta.sessionId, meta]),
     );
     const pinnedSessionIds = this.registry.pinnedSessionIds();
-    return buildGroups({
-      pinnedSessionIds,
-      sessionsById,
-      userGroups: this.registry.userGroups(),
-      assignments: this.registry.assignments(),
-      labels: this.registry.labels(),
-      pendingSessions: this.registry.pendingSessions(),
-      terminalSessions: this.registry.terminalSessions(),
-      groupOrder: this.registry.groupOrder(),
-      sessionOrder: this.registry.sessionOrder(),
-      linkedTicketKeys: this.linkService.ownedTicketKeys(
-        pinnedSessionIds.filter((sessionId) => this.registry.hasFoundResources(sessionId)),
-      ),
-    });
+    return buildSectionGroups(
+      {
+        pinnedSessionIds,
+        sessionsById,
+        userGroups: this.registry.userGroups(),
+        assignments: this.registry.assignments(),
+        labels: this.registry.labels(),
+        pendingSessions: this.registry.pendingSessions(),
+        terminalSessions: this.registry.terminalSessions(),
+        groupOrder: this.registry.groupOrder(),
+        sessionOrder: this.registry.sessionOrder(),
+        linkedTicketKeys: this.linkService.ownedTicketKeys(
+          pinnedSessionIds.filter((sessionId) => this.registry.hasFoundResources(sessionId)),
+        ),
+      },
+      this.section,
+    );
   }
 
   dispose(): void {
@@ -268,14 +291,16 @@ function sessionTreeItem(
   summaryState: SummaryState,
   isExpanded: boolean,
   isCompacting: boolean,
+  status: SessionStatus | undefined,
 ): vscode.TreeItem {
   const state = sessionState(pinned.sessionId, liveSession);
   // The menu still follows the running state; only the icon and tooltip say compacting.
   const iconState: SessionIconState = isCompacting && liveSession !== undefined ? "compacting" : state;
   const treeItem = new vscode.TreeItem(pinnedSessionTitle(pinned), expandableState(hasFoundResources, isExpanded));
   treeItem.id = `session:${pinned.sessionId}`;
+  treeItem.resourceUri = sessionStatusUri(pinned.sessionId);
   treeItem.description = sessionDescription(pinned);
-  treeItem.tooltip = sessionTooltip(pinned, sessionIconSpec(iconState).label, summaryState);
+  treeItem.tooltip = sessionTooltip(pinned, sessionIconSpec(iconState).label, summaryState, status);
   treeItem.iconPath = sessionStateIcon(iconState);
   treeItem.contextValue = `session.${state}`;
   const copyCount = liveSession?.processCount ?? 0;
@@ -287,16 +312,20 @@ function sessionTreeItem(
   return treeItem;
 }
 
-function terminalTreeItem(pinned: PinnedSession, terminalSession: TerminalSession): vscode.TreeItem {
+function terminalTreeItem(pinned: PinnedSession, terminalSession: TerminalSession, status: SessionStatus | undefined): vscode.TreeItem {
   const isOpen = findSessionTerminal(pinned.sessionId) !== undefined;
   const treeItem = new vscode.TreeItem(pinnedSessionTitle(pinned), vscode.TreeItemCollapsibleState.None);
   treeItem.id = `session:${pinned.sessionId}`;
+  treeItem.resourceUri = sessionStatusUri(pinned.sessionId);
   treeItem.description = `${path.basename(terminalSession.cwd)} · terminal`;
   const iconColorId = sessionIconSpec(isOpen ? "running" : "suspended").colorId;
   treeItem.iconPath = new vscode.ThemeIcon("terminal-bash", new vscode.ThemeColor(iconColorId));
-  treeItem.tooltip = new vscode.MarkdownString(
+  const tooltip = new vscode.MarkdownString(
     `**${escapeMarkdown(pinnedSessionTitle(pinned))}**\n\nTerminal · ${isOpen ? "open" : "closed"} · \`${tildePath(terminalSession.cwd)}\``,
   );
+  tooltip.supportThemeIcons = true;
+  tooltip.appendMarkdown(statusMarkdown(status));
+  treeItem.tooltip = tooltip;
   treeItem.contextValue = `terminal.${isOpen ? "open" : "closed"}`;
   treeItem.command = { command: "overseer.clickSession", title: "Open", arguments: [pinned.sessionId] };
   return treeItem;
@@ -341,7 +370,16 @@ function sessionDescription(pinned: PinnedSession): string {
     .join(" · ");
 }
 
-function sessionTooltip(pinned: PinnedSession, stateLabel: string, summaryState: SummaryState): vscode.MarkdownString {
+function statusMarkdown(status: SessionStatus | undefined): string {
+  return status === undefined ? "" : `\n\nStatus: $(${status.icon}) ${escapeMarkdown(status.name)}`;
+}
+
+function sessionTooltip(
+  pinned: PinnedSession,
+  stateLabel: string,
+  summaryState: SummaryState,
+  status: SessionStatus | undefined,
+): vscode.MarkdownString {
   const tooltip = new vscode.MarkdownString();
   tooltip.isTrusted = { enabledCommands: ["overseer.summarizeSession"] };
   tooltip.supportThemeIcons = true;
@@ -349,9 +387,11 @@ function sessionTooltip(pinned: PinnedSession, stateLabel: string, summaryState:
   tooltip.appendMarkdown(`**${escapeMarkdown(pinnedSessionTitle(pinned))}**\n\n`);
   if (meta === undefined) {
     tooltip.appendMarkdown(`${stateLabel} · \`${pinned.pending ? tildePath(pinned.pending.cwd) : pinned.sessionId}\``);
+    tooltip.appendMarkdown(statusMarkdown(status));
     return tooltip;
   }
-  tooltip.appendMarkdown(`${stateLabel} · last active ${formatAge(meta.lastActivityMs)}\n\n`);
+  tooltip.appendMarkdown(`${stateLabel} · last active ${formatAge(meta.lastActivityMs)}`);
+  tooltip.appendMarkdown(`${statusMarkdown(status)}\n\n`);
   tooltip.appendMarkdown(`\`${tildePath(meta.resumeCwd ?? meta.startCwd)}\``);
   if (meta.gitBranch) {
     tooltip.appendMarkdown(` on \`${meta.gitBranch}\``);
