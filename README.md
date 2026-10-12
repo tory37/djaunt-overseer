@@ -69,7 +69,7 @@ Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:
 - **Session Icon Settings…**, **Jira Settings…**, and **GitHub Settings…** open the panel at that section.
 - **Enable/Disable Jira Integration**, **Enable/Disable GitHub Integration**, and **Enable/Disable Artifact Links** turn a link source on or off. The palette shows only the one that applies.
 - **All Settings (Settings Editor)** opens every `overseer.*` setting in the native editor.
-- Session icons take any [Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) name and any color. Colors save to `workbench.colorCustomizations` as `overseer.sessionWorking`, `overseer.sessionRunning`, `overseer.sessionElsewhere`, `overseer.sessionSuspended`, and `overseer.sessionDuplicate`.
+- Session icons take any [Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) name and any color. Colors save to `workbench.colorCustomizations` as `overseer.sessionWorking`, `overseer.sessionRunning`, `overseer.sessionElsewhere`, `overseer.sessionSuspended`, `overseer.sessionDuplicate`, and `overseer.sessionCompacting`.
 
 ### Hover
 - Hovering over a session shows its state, folder, branch, other repos, and first and last prompt.
@@ -83,8 +83,8 @@ Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:
 ## Install
 
 ```bash
-curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.4.vsix
-code --install-extension djaunt-overseer-0.0.4.vsix
+curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.5.vsix
+code --install-extension djaunt-overseer-0.0.5.vsix
 ```
 
 If `code` isn't on your PATH, use `"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"`.
@@ -118,6 +118,7 @@ Then run **Developer: Reload Window**. Cmd+R only reloads in the F5 development 
 | `overseer.sessionIcons.elsewhere` | `window` | Icon for a session running in another window. |
 | `overseer.sessionIcons.suspended` | `debug-pause` | Icon for a suspended session. |
 | `overseer.sessionIcons.duplicate` | `warning` | Icon for a session with more than one copy running. |
+| `overseer.sessionIcons.compacting` | `sync~spin` | Icon for a session that is compacting. |
 
 Link sorting and Summarize with Haiku run through your `claude` CLI, so they count against your Claude usage. Everything else makes no model calls.
 
@@ -127,7 +128,7 @@ Link sorting and Summarize with Haiku run through your `claude` CLI, so they cou
 npm install
 npm test
 npm run package
-code --install-extension djaunt-overseer-0.0.4.vsix --force
+code --install-extension djaunt-overseer-0.0.5.vsix --force
 ```
 
 Not affiliated with Anthropic.
