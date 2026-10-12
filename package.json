@@ -346,6 +346,11 @@
         "command": "overseer.removeCompactHooks",
         "title": "Remove Compact Hooks",
         "category": "Overseer"
+      },
+      {
+        "command": "overseer.runSessionCommand",
+        "title": "Commands…",
+        "category": "Overseer"
       }
     ],
     "menus": {
@@ -566,6 +571,11 @@
           "command": "overseer.copyCommitHash",
           "when": "view == overseer.repos && viewItem =~ /^commit/",
           "group": "2_copy@1"
+        },
+        {
+          "command": "overseer.runSessionCommand",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == session.running",
+          "group": "2_claude@5"
         }
       ],
       "commandPalette": [
@@ -703,6 +713,10 @@
         },
         {
           "command": "overseer.openCommitOnGitHub",
+          "when": "false"
+        },
+        {
+          "command": "overseer.runSessionCommand",
           "when": "false"
         }
       ]
@@ -922,6 +936,41 @@
           "default": "warning",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$",
           "markdownDescription": "[Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) for a session that is more than one copy running. Set its color with `overseer.sessionDuplicate` in `workbench.colorCustomizations`, or in **Overseer: Session Icon Settings…**."
+        },
+        "overseer.sessionCommands": {
+          "type": "array",
+          "default": [
+            {
+              "name": "Check PR Reviews",
+              "prompt": "Latest reviews are in on the PR. Pull them and evaluate."
+            },
+            {
+              "name": "Monitor AI Code Reviews",
+              "prompt": "Start monitoring for new AI code reviews, address them as they land."
+            },
+            {
+              "name": "Triage",
+              "prompt": "Start triage for: {ticket link}"
+            }
+          ],
+          "markdownDescription": "Prompts you can send to an idle session with **Commands…** (right-click a session). Write `{name}` in a prompt to be asked for that value first, like `Start triage for: {ticket link}`.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Shown in the picker."
+              },
+              "prompt": {
+                "type": "string",
+                "description": "Sent to the session. Use {name} for a value to ask for."
+              }
+            },
+            "required": [
+              "name",
+              "prompt"
+            ]
+          }
         }
       }
     },

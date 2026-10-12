@@ -24,6 +24,7 @@ import {
   suspendTerminal,
 } from "./terminals";
 import { RepoTreeNode } from "./repoTree";
+import { fillPrompt, parseSessionCommands, promptParameters } from "./sessionCommands";
 import { askStatusReason, configuredStatuses, pickSessionStatus } from "./sessionStatusView";
 import { TreeNode } from "./tree";
 
@@ -252,6 +253,31 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
   const pickModel = async (): Promise<string | undefined> => {
     const pickedModel = await vscode.window.showQuickPick(MODEL_ALIASES, { placeHolder: "Switch the session's model" });
     return pickedModel?.label;
+  };
+
+  // Returns the prompt ready to send, or undefined when the user backs out of the picker or any question.
+  const pickSessionPrompt = async (): Promise<string | undefined> => {
+    const commands = parseSessionCommands(vscode.workspace.getConfiguration("overseer").get<unknown>("sessionCommands"));
+    if (commands.length === 0) {
+      void vscode.window.showInformationMessage("Overseer: no commands set up yet. Add some to overseer.sessionCommands.");
+      return undefined;
+    }
+    const picked = await vscode.window.showQuickPick(
+      commands.map((command) => ({ label: command.name, detail: command.prompt, command })),
+      { placeHolder: "Send a command to the session", matchOnDetail: true },
+    );
+    if (picked === undefined) {
+      return undefined;
+    }
+    const valuesByParameter: Record<string, string> = {};
+    for (const parameterName of promptParameters(picked.command.prompt)) {
+      const value = await vscode.window.showInputBox({ title: picked.command.name, prompt: parameterName });
+      if (value === undefined) {
+        return undefined;
+      }
+      valuesByParameter[parameterName] = value;
+    }
+    return fillPrompt(picked.command.prompt, valuesByParameter);
   };
 
   const findPinnedSession = (sessionId: string): PinnedSession | undefined => {
@@ -486,6 +512,13 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       const modelAlias = await pickModel();
       if (modelAlias !== undefined) {
         sendToIdleSessions(sessionNodes, `/model ${modelAlias}`);
+      }
+    }),
+    vscode.commands.registerCommand("overseer.runSessionCommand", async (clickedNode?: TreeNode) => {
+      const sessionNodes = selectedSessionNodes(clickedNode);
+      const prompt = await pickSessionPrompt();
+      if (prompt !== undefined) {
+        sendToIdleSessions(sessionNodes, prompt);
       }
     }),
     // The resources panel passes a session ID; the context menu passes the clicked node.

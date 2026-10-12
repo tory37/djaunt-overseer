@@ -40,6 +40,7 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - **Rename** (F2 or double-click) renames the row and its tab. When the session is idle in this window, it also sends `/rename`. A tab that comes back from a reload without its name gets it again when you focus it.
 - **Kill and Remove** (right-click) closes the terminal, ends the process, and unpins it. The transcript stays, so All Sessions can still resume it.
 - **Remove from Sidebar** only unpins.
+- **Commands…** (right-click) sends one of your saved prompts to an idle session, like "Latest reviews are in on the PR. Pull them and evaluate." The list is the `overseer.sessionCommands` setting, as `{name, prompt}` entries. A `{ticket link}` in a prompt asks for that value first.
 - **Compact**, **Switch Model…**, **Clear Context**, and **Show Cost** (right-click) send `/compact`, `/model`, `/clear`, and `/cost`. They show only on idle sessions running in this window.
 
 ### Statuses
@@ -133,6 +134,7 @@ Then run **Developer: Reload Window**. Cmd+R only reloads in the F5 development 
 | `overseer.links.showRemoved` | `false` | Also show links you removed, dimmed. |
 | `overseer.links.liveStatus` | `true` | Show PR and ticket status through `gh` and your Jira MCP server. |
 | `overseer.summary.model` | `haiku` | Model for Summarize with Haiku. |
+| `overseer.sessionCommands` | three starters | Prompts the **Commands…** picker sends. `{name}` in a prompt asks for a value. |
 | `overseer.sessionIcons.working` | `loading~spin` | Icon for a session working in this window. |
 | `overseer.sessionIcons.running` | `terminal` | Icon for a session running in this window. |
 | `overseer.sessionIcons.elsewhere` | `window` | Icon for a session running in another window. |
