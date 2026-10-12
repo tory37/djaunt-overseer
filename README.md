@@ -35,6 +35,7 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 ### Run
 - **New Session** (+) asks for a folder and an optional name, then runs `claude --session-id <id> -n <name>` in an editor terminal.
 - **New Terminal** asks the same questions, then opens a plain shell in that folder. It sits in the Terminals view, under the same groups as your sessions. It acts like a session: click to focus, drag into a group, Rename, Remove, Kill. When it is closed, **Open** starts a new shell in the same folder. Claude-only actions do not show on it.
+- Clicking a terminal tab selects that session's row in the sidebar. A row that is already selected stays, so a multi-select survives.
 - **Suspend** (pause) sends `/exit`, so the process and its memory go away. It warns first when Claude is mid-task.
 - **Resume** (play) brings the session back with its history.
 - **Rename** (F2 or double-click) renames the row and its tab. When the session is idle in this window, it also sends `/rename`. A tab that comes back from a reload without its name gets it again when you focus it.
@@ -104,8 +105,8 @@ Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:
 ## Install
 
 ```bash
-curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.8.vsix
-code --install-extension djaunt-overseer-0.0.8.vsix
+curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.9.vsix
+code --install-extension djaunt-overseer-0.0.9.vsix
 ```
 
 If `code` isn't on your PATH, use `"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"`.
@@ -150,7 +151,7 @@ Link sorting and Summarize with Haiku run through your `claude` CLI, so they cou
 npm install
 npm test
 npm run package
-code --install-extension djaunt-overseer-0.0.8.vsix --force
+code --install-extension djaunt-overseer-0.0.9.vsix --force
 ```
 
 Not affiliated with Anthropic.

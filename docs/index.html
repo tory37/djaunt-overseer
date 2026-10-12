@@ -76,7 +76,7 @@
         const { useState, useEffect, useRef } = React;
 
         const REPO_URL = 'https://github.com/tory37/djaunt-overseer';
-        const VSIX_NAME = 'djaunt-overseer-0.0.8.vsix';
+        const VSIX_NAME = 'djaunt-overseer-0.0.9.vsix';
         const VSIX_URL = `${REPO_URL}/releases/latest/download/${VSIX_NAME}`;
 
         const Icon = ({ name, className = 'w-4 h-4' }) => {
@@ -121,6 +121,44 @@
             { name: 'Waiting on review', icon: 'Folder' },
             { name: 'Ungrouped', icon: 'Folder' },
         ];
+
+        const INITIAL_TERMINALS = [
+            { id: 't-dev', title: 'api dev server', group: 'OPS-4410', folder: 'api', isOpen: true, lines: [
+                { kind: 'prompt', text: '~/src/api $ npm run dev' },
+                { kind: 'out', text: '> api@1.4.0 dev' },
+                { kind: 'out', text: '> tsx watch src/server.ts' },
+                { kind: 'system', text: 'listening on http://localhost:3000' },
+                { kind: 'muted', text: 'GET /health 200 4ms' },
+            ] },
+            { id: 't-tests', title: 'api test watcher', group: 'OPS-4410', folder: 'api', isOpen: true, lines: [
+                { kind: 'prompt', text: '~/src/api $ npm test -- --watch' },
+                { kind: 'out', text: ' ✓ billing.export (12 tests)' },
+                { kind: 'out', text: ' ✓ rate-limit (8 tests)' },
+                { kind: 'muted', text: 'Watching for file changes…' },
+            ] },
+            { id: 't-docs', title: 'docs preview', group: 'Ungrouped', folder: 'docs', isOpen: false, lines: [
+                { kind: 'prompt', text: '~/src/docs $ npm run preview' },
+                { kind: 'system', text: 'preview at http://localhost:4173' },
+            ] },
+        ];
+
+        const TERMINAL_GROUPS = [
+            { name: 'OPS-4410', icon: 'Tag' },
+            { name: 'Ungrouped', icon: 'Folder' },
+        ];
+
+        const TerminalRow = ({ terminal, isSelected, onSelect }) => (
+            <div
+                onClick={() => onSelect(terminal.id)}
+                className={`flex items-center gap-2 h-6 pl-8 pr-2 cursor-pointer border transition-colors duration-200 ease-dj ${isSelected ? 'bg-raised border-accent-deep' : 'border-transparent hover:bg-surface'}`}
+            >
+                <Icon name="Terminal" className={`w-4 h-4 ${terminal.isOpen ? 'text-success' : 'text-muted'}`} />
+                <span className="flex-1 min-w-0 truncate text-xs">
+                    <span className="text-bone">{terminal.title}</span>
+                    <span className="text-muted ml-2">{terminal.folder} · {terminal.isOpen ? 'open' : 'closed'}</span>
+                </span>
+            </div>
+        );
 
         const STATE_ICONS = {
             running: { name: 'SquareTerminal', className: 'text-success' },
@@ -221,8 +259,15 @@
                 return initialLines;
             });
 
+            const [terminals, setTerminals] = useState(INITIAL_TERMINALS);
             const selectedSession = sessions.find((session) => session.id === selectedId);
+            const selectedTerminal = terminals.find((terminal) => terminal.id === selectedId);
             const openTabs = sessions.filter(isLiveHere);
+            const openTerminals = terminals.filter((terminal) => terminal.isOpen);
+            const openTerminal = (terminalId) => {
+                setTerminals((previous) => previous.map((terminal) => (terminal.id === terminalId ? { ...terminal, isOpen: true } : terminal)));
+                setSelectedId(terminalId);
+            };
 
             const appendLines = (sessionId, newLines) =>
                 setTerminalLines((previous) => ({ ...previous, [sessionId]: [...previous[sessionId], ...newLines] }));
@@ -248,7 +293,7 @@
                 setSelectedId(sessionId);
             };
 
-            const isSelectedLive = selectedSession && isLiveHere(selectedSession);
+            const isSelectedLive = selectedSession !== undefined && isLiveHere(selectedSession);
 
             return (
                 <div className="border border-line bg-bg font-mono text-xs shadow-float">
@@ -309,6 +354,31 @@
                                     );
                                 })}
                             </div>
+                            <div className="pb-3 border-t border-line">
+                                <div className="flex items-center justify-between h-8 px-3 text-muted">
+                                    <span className="flex items-center gap-1">
+                                        <Icon name="ChevronDown" className="w-4 h-4" />
+                                        <span className="uppercase tracking-label">Terminals</span>
+                                    </span>
+                                    <Icon name="Plus" className="w-4 h-4" />
+                                </div>
+                                {TERMINAL_GROUPS.map((group) => {
+                                    const groupTerminals = terminals.filter((terminal) => terminal.group === group.name);
+                                    return (
+                                        <div key={group.name}>
+                                            <div className="flex items-center gap-1 h-6 px-2 text-bone">
+                                                <Icon name="ChevronDown" className="w-4 h-4 text-muted" />
+                                                <Icon name={group.icon} className="w-4 h-4 text-muted" />
+                                                <span className="font-medium">{group.name}</span>
+                                                <span className="text-muted ml-1">{groupTerminals.length}</span>
+                                            </div>
+                                            {groupTerminals.map((terminal) => (
+                                                <TerminalRow key={terminal.id} terminal={terminal} isSelected={terminal.id === selectedId} onSelect={setSelectedId} />
+                                            ))}
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
                         <div className="flex flex-col min-w-0 min-h-72">
                             <div className="flex h-8 border-b border-line bg-surface overflow-hidden">
@@ -322,9 +392,34 @@
                                         <span className="truncate">{session.title}</span>
                                     </button>
                                 ))}
+                                {openTerminals.map((terminal) => (
+                                    <button
+                                        key={terminal.id}
+                                        onClick={() => setSelectedId(terminal.id)}
+                                        className={`flex items-center gap-2 px-3 border-r border-line max-w-48 ${terminal.id === selectedId ? 'bg-bg text-bone border-t border-t-accent' : 'text-muted hover:text-bone'}`}
+                                    >
+                                        <Icon name="Terminal" className="w-4 h-4" />
+                                        <span className="truncate">{terminal.title}</span>
+                                    </button>
+                                ))}
                             </div>
                             <div className="flex-1 p-4 space-y-1 leading-relaxed">
-                                {isSelectedLive ? (
+                                {selectedTerminal !== undefined ? (
+                                    selectedTerminal.isOpen ? (
+                                        selectedTerminal.lines.map((line, lineIndex) => <TerminalLine key={lineIndex} line={line} />)
+                                    ) : (
+                                        <div className="flex flex-col items-start gap-3 text-muted">
+                                            <span>Closed. Open starts a new shell in ~/src/{selectedTerminal.folder}.</span>
+                                            <button
+                                                onClick={() => openTerminal(selectedTerminal.id)}
+                                                className="flex items-center gap-2 px-3 h-7 border border-line text-bone hover:border-accent hover:text-accent transition-colors duration-200 ease-dj"
+                                            >
+                                                <Icon name="Play" className="w-4 h-4" />
+                                                Open
+                                            </button>
+                                        </div>
+                                    )
+                                ) : isSelectedLive ? (
                                     terminalLines[selectedId].map((line, lineIndex) => <TerminalLine key={lineIndex} line={line} />)
                                 ) : (
                                     <div className="flex flex-col items-start gap-3 text-muted">
@@ -648,6 +743,25 @@
             </div>
         );
 
+        const CommandsVisual = () => (
+            <div className="font-mono text-xs border border-line bg-surface">
+                <div className="flex items-center gap-2 h-8 px-3 border-b border-line">
+                    <Icon name="Search" className="w-4 h-4 text-muted" />
+                    <span className="text-muted">Send a command to the session</span>
+                </div>
+                {[
+                    { name: 'Check PR Reviews', detail: 'Latest reviews are in on the PR. Pull them and evaluate.', isPicked: false },
+                    { name: 'Monitor AI Code Reviews', detail: 'Start monitoring for new AI code reviews, address them as they land.', isPicked: false },
+                    { name: 'Triage', detail: 'Start triage for: {ticket link}', isPicked: true },
+                ].map((command) => (
+                    <div key={command.name} className={`px-3 py-2 ${command.isPicked ? 'bg-raised' : ''}`}>
+                        <div className="text-bone">{command.name}</div>
+                        <div className="text-muted truncate">{command.detail}</div>
+                    </div>
+                ))}
+            </div>
+        );
+
         const CompactVisual = () => (
             <div className="font-mono text-xs space-y-3">
                 <div className="flex items-center gap-2 h-7 px-3 border border-line bg-surface">
@@ -707,12 +821,13 @@
             { title: 'Pick your own icons and colors', body: 'The Settings panel sets the icon and color for each session state, a color for every status in each Jira project, a color for each PR state, and which views show. Type Overseer in the Command Palette to reach every setting.', Visual: SettingsVisual },
             { title: 'Keep plain terminals in their own view', body: 'New Terminal opens a shell in a folder you pick. Terminals get their own Terminals view, apart from your Claude sessions, with the same ticket and custom groups. Click one to bring it forward, and reopen it in the same folder after you close it. Settings can hide the Sessions, Terminals, and Repos views.', Visual: TerminalVisual },
             { title: 'Mark where each session stands', body: 'Set Status puts a session or terminal in Todo, Triage, In Progress, Blocked, AI Review, Human Review, or Ready to Ship. The status tints the row and adds a short badge. Blocked asks why, and the reason shows in the row\'s tooltip. Statuses do not follow Jira, so a status like Triage works. The Settings panel adds, renames, reorders, and recolors them.', Visual: StatusMarkVisual },
+            { title: 'Send your usual prompts in two clicks', body: 'Right-click an idle session and choose Commands. Pick a saved prompt, like Check PR Reviews, and Overseer types it into the session. Write {ticket link} in a prompt and Overseer asks for that value first. The list is the overseer.sessionCommands setting.', Visual: CommandsVisual },
             { title: 'Watch every repo from a window with no folder open', body: 'The Repos view lists the repos your pinned sessions and terminals work in. Each row shows the branch, ahead and behind counts, and uncommitted changes, and updates when the repo changes. Expand a repo for its last 20 commits. A commit a session made shows that session. Click a commit to read its diff, or open the repo in Source Control.', Visual: RepoHistoryVisual },
             { title: 'See when a session is compacting', body: 'A compacting session shows a spinning icon until it finishes. Claude Code does not report compaction, so Overseer offers to install a PreCompact and a PostCompact hook. Skip the prompt and install them later from the Command Palette.', Visual: CompactVisual },
             { title: 'Read a summary when you hover over a session', body: 'The hover shows the folder, branch, first and last prompt, and a short summary. The summary is the recap Claude Code wrote when it has one. Summarize with Haiku writes a new one from the end of the transcript, and it runs only when you click it.', Visual: HoverVisual },
             { title: 'Group sessions by ticket', body: 'Overseer reads the ticket key from the title, branch, or first prompt and puts the session in that ticket\'s group. Drag a session to put it somewhere else.', Visual: GroupVisual },
             { title: 'Rename a session in one step', body: 'Double-click or F2 renames the row and the tab, even while Claude is busy. When the session is idle, Overseer also sends /rename, so the tree, the tab, and Claude all use the same name.', Visual: RenameVisual },
-            { title: 'See which sessions are running', body: 'Status comes from claude agents --json and updates each time a session goes busy or idle.', Visual: StatusVisual },
+            { title: 'See which sessions are running', body: 'Status comes from claude agents --json and updates each time a session goes busy or idle. Click a terminal tab and its row in the sidebar is selected, so you can see where you are.', Visual: StatusVisual },
             { title: 'Stop a session from running twice', body: 'Two processes writing to one transcript corrupt it. Overseer marks duplicates and offers to fork a copy instead of resuming a second time.', Visual: DuplicateVisual },
             { title: 'Find a session from any repo it edited', body: 'A session that starts in one repo and edits another shows +N repos. Type repo:<name> in All Sessions to find it from the repo it edited.', Visual: ReposVisual },
             { title: 'Arrange groups and send slash commands', body: 'Each group has a + button for a new session and a search button to add an existing one. Drag groups and sessions to reorder them. Right-click a session to compact it, switch its model, or kill it.', Visual: OrganizeVisual },
@@ -785,7 +900,7 @@
                             <p className="text-lg text-bone leading-relaxed">
                                 Overseer is a VS Code extension that keeps every Claude CLI session in a sidebar tree, grouped by ticket. For any session, it finds the PRs, tickets, and artifacts that session worked on. You can suspend the sessions you are waiting on and resume any of them from any repo, without remembering an ID.
                             </p>
-                            <p className="text-muted">Each session runs in a normal VS Code terminal.</p>
+                            <p className="text-muted">Each session runs in a normal VS Code terminal. Plain terminals, like a dev server or a test watcher, get their own view with the same groups.</p>
                             <div className="flex flex-wrap gap-3 pt-2">
                                 <a href={VSIX_URL} className="flex items-center gap-2 h-11 px-5 bg-accent text-on-accent font-medium shadow-glow transition-transform duration-200 ease-dj hover:scale-[1.02]">
                                     <Icon name="Download" className="w-4 h-4" />Download .vsix
@@ -798,7 +913,7 @@
                         </div>
                         <div className="xl:-mr-32 space-y-3">
                             <OverseerMock />
-                            <p className="font-mono text-xs text-muted">This is a live demo. Click the pause or play icon on a row, or double-click a title to rename it.</p>
+                            <p className="font-mono text-xs text-muted">This is a live demo. Click a row to see its terminal, click the pause or play icon on a session, or double-click a title to rename it.</p>
                         </div>
                     </div>
                 </section>
