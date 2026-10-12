@@ -16,6 +16,11 @@ import { SettingsPanel } from "./settingsPanel";
 import { jiraProjectRefresher, registerStatusCommands } from "./statusCommands";
 import { StatusConfig } from "./statusConfig";
 import { adoptTerminalsByPid, sessionIdOfTerminal } from "./terminals";
+import { createGitRootResolver } from "./gitRoots";
+import { registerRepoCommands } from "./repoCommands";
+import { RepoService } from "./repoService";
+import { resolveRepos } from "./repoSet";
+import { RepoTreeProvider } from "./repoTree";
 import { ResourcesPanel } from "./resourcesPanel";
 import { SessionTreeProvider, TreeNode } from "./tree";
 
@@ -56,10 +61,21 @@ export function activate(context: vscode.ExtensionContext): void {
     canSelectMany: true,
     showCollapseAll: true,
   });
+  const repoService = new RepoService(log);
+  const repoTreeProvider = new RepoTreeProvider(repoService, (sessionId) => sessionTitle(sessionId, registry, findIndexedSession));
+  const repoTreeView = vscode.window.createTreeView("overseer.repos", { treeDataProvider: repoTreeProvider });
+  repoService.setVisible(repoTreeView.visible);
+  // A new resolver each time, so a folder that became a repo since the last update is found.
+  const updateRepos = async (): Promise<void> => {
+    repoService.setRepos(await resolveRepos(treeProvider.pinnedSessions(), createGitRootResolver()));
+  };
   treeView.onDidExpandElement(({ element }) => void saveExpansion(registry, element, true));
   treeView.onDidCollapseElement(({ element }) => void saveExpansion(registry, element, false));
 
-  const refreshTree = (): void => treeProvider.refresh();
+  const refreshTree = (): void => {
+    treeProvider.refresh();
+    void updateRepos();
+  };
   const adoptRevivedTerminals = async (): Promise<void> => {
     if (await adoptTerminalsByPid(await liveMonitor.refresh(), shellPidsBySessionId(registry))) {
       refreshTree();
@@ -83,6 +99,11 @@ export function activate(context: vscode.ExtensionContext): void {
     treeProvider,
     treeView,
     { dispose: () => clearInterval(indexRefreshTimer) },
+    repoService,
+    repoTreeProvider,
+    repoTreeView,
+    repoTreeView.onDidChangeVisibility(({ visible }) => repoService.setVisible(visible)),
+    ...registerRepoCommands(repoService),
     sessionIndex.onDidChange(refreshTree),
     linkService.onDidChange(refreshTree),
     summaryService.onDidChange(refreshTree),
@@ -119,6 +140,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (windowState.focused) {
         registry.notifyExternalChange();
         statusConfig.notifyExternalChange();
+        repoService.refreshAll();
         void sessionIndex.refresh();
         void liveMonitor.refresh();
       }

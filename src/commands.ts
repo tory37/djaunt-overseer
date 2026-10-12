@@ -23,6 +23,7 @@ import {
   startNewSession,
   suspendTerminal,
 } from "./terminals";
+import { RepoTreeNode } from "./repoTree";
 import { TreeNode } from "./tree";
 
 export interface CommandDependencies {
@@ -514,9 +515,9 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         .filter(isDefined);
       await Promise.all(sessionMetas.map((meta) => summaryService.summarize(meta)));
     }),
-    // The Repos view passes a repo root; the session context menu passes the clicked node.
-    vscode.commands.registerCommand("overseer.openRepoInScm", async (clicked?: TreeNode | string) => {
-      const repoRoot = typeof clicked === "string" ? clicked : await pickRepo(clicked);
+    // The Repos view passes a repo row; the session context menu passes the clicked session.
+    vscode.commands.registerCommand("overseer.openRepoInScm", async (clicked?: TreeNode | RepoTreeNode) => {
+      const repoRoot = clicked?.kind === "repo" ? clicked.repo.root : await pickRepo(clicked);
       if (repoRoot !== undefined) {
         await openRepoInSourceControl(repoRoot, log);
       }
@@ -530,7 +531,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
   ];
 }
 
-async function openRepoInSourceControl(repoRoot: string, log: vscode.OutputChannel): Promise<void> {
+export async function openRepoInSourceControl(repoRoot: string, log: vscode.OutputChannel): Promise<void> {
   try {
     await vscode.commands.executeCommand("git.openRepository", repoRoot);
     await vscode.commands.executeCommand("workbench.view.scm");

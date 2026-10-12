@@ -38,6 +38,9 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `sessionLinks.ts` | Scans on first view and 60s after busy-to-idle. Judges on expand, at most 2 at once. |
 | `sessionSummary.ts` / `sessionSummaries.ts` | Hover summary: newest of Claude Code's recap (`away_summary`) and an on-click Haiku summary of the transcript tail. |
 | `linkStatus.ts` / `linkStatusService.ts` | PR state via `gh`, ticket status via `acli`. Five-minute cache, at most 4 calls at once, on-screen links only. |
+| `repoSet.ts` | Pure: the repos of the pinned sessions and terminals, newest first. |
+| `gitStatus.ts` | Pure: git arguments and parsers for status, log, and commit hashes in transcripts. |
+| `repoService.ts` / `repoTree.ts` | Repos view. Runs git (at most 4 at once), watches each `.git` folder, and builds the rows. |
 | `quickPick.ts` / `repoFilter.ts` | All Sessions picker and the `repo:` filter. |
 
 ## Rules

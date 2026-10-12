@@ -49,7 +49,11 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 
 ### Repos
 - Overseer works in a window with no folder open. It reads git straight from the repos your sessions use.
-- **Open Repo in Source Control** (right-click a session or terminal, or the palette) adds that repo to VS Code's Source Control view, so its graph, changes, and diffs work there. A session that touched more than one repo asks which.
+- The **Repos** view, under Sessions, lists every repo a pinned session or terminal works in. The most recently active repo is on top.
+- Each row shows the branch, commits ahead and behind its upstream, and the count of changed files, like `main · ↑2 ↓1 · 5 changed`. The icon turns amber when there are uncommitted changes.
+- Rows update a second after anything changes in the repo's `.git` folder, and when the window gets focus. Git runs only while the view is open.
+- **Open Repo in Source Control** (the inline icon, a right-click on a session or terminal, or the palette) adds that repo to VS Code's Source Control view, so its graph, changes, and diffs work there. A session that touched more than one repo asks which.
+- **Open Repo in New Window** and **Copy Repo Path** are on the right-click menu.
 
 ### Links
 - **Find Resources** (right-click a session) finds the GitHub PRs, Jira tickets, and claude.ai artifacts it worked on. Overseer never scans on its own.
