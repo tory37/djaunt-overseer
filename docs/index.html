@@ -76,7 +76,7 @@
         const { useState, useEffect, useRef } = React;
 
         const REPO_URL = 'https://github.com/tory37/djaunt-overseer';
-        const VSIX_NAME = 'djaunt-overseer-0.0.5.vsix';
+        const VSIX_NAME = 'djaunt-overseer-0.0.6.vsix';
         const VSIX_URL = `${REPO_URL}/releases/latest/download/${VSIX_NAME}`;
 
         const Icon = ({ name, className = 'w-4 h-4' }) => {
@@ -637,6 +637,24 @@
             </div>
         );
 
+        const RepoHistoryVisual = () => (
+            <div className="font-mono text-xs border border-line bg-surface py-1">
+                {[
+                    { indent: false, icon: 'ChevronDown', iconClass: 'text-muted', text: 'web-app', meta: 'fix/proj-2567-login-timeout · ↑2 · 3 changed', isDirty: true },
+                    { indent: true, icon: 'Sparkles', iconClass: 'text-success', text: 'Extend session timeout', meta: 'a1b2c3d · 4m ago · PROJ-2567 login timeout', isSelected: true },
+                    { indent: true, icon: 'GitCommitHorizontal', iconClass: 'text-muted', text: 'Bump eslint config', meta: '9f3e21a · 2h ago' },
+                    { indent: false, icon: 'ChevronRight', iconClass: 'text-muted', text: 'api', meta: 'ops-4410-export · ↓1' },
+                ].map((row) => (
+                    <div key={row.text} className={`flex items-center gap-2 h-6 ${row.indent ? 'pl-8' : 'pl-3'} ${row.isSelected ? 'bg-raised' : ''} text-bone`}>
+                        {!row.indent && <Icon name={row.icon} className={`w-4 h-4 ${row.iconClass}`} />}
+                        <Icon name={row.indent ? row.icon : 'BookMarked'} className={`w-4 h-4 ${row.indent ? row.iconClass : row.isDirty ? 'text-warning' : 'text-muted'}`} />
+                        <span className="truncate shrink-0">{row.text}</span>
+                        <span className="text-muted truncate">{row.meta}</span>
+                    </div>
+                ))}
+            </div>
+        );
+
         const HoverVisual = () => (
             <div className="font-mono text-xs border border-line bg-raised p-3 space-y-2 shadow-float">
                 <p className="text-bone font-medium">Rate limiter refactor</p>
@@ -648,6 +666,9 @@
             </div>
         );
 
+        // A lone last card spans both columns, so the grid never shows an empty cell.
+        const isLastOfOddCount = (index, count) => count % 2 === 1 && index === count - 1;
+
         const FEATURES = [
             { title: 'Resume a session from any repo', body: 'claude --resume lists only the sessions that started in the current directory. All Sessions searches every repo and resumes each session in the directory it started in.', Visual: QuickPickVisual },
             { title: 'Suspend a session and resume it later', body: 'When a session waits on a review for days, Suspend sends /exit so the process and its memory are freed. Resume starts the same session again with its full history.', Visual: SuspendVisual },
@@ -657,6 +678,7 @@
             { title: 'Pin or remove a link', body: 'A pinned link stays at the top, even when the judge thinks it does not matter. A removed link is hidden. Both survive a rescan. Removed in the panel header shows the hidden ones again so you can restore them.', Visual: PinVisual },
             { title: 'Pick your own icons and colors', body: 'The Settings panel sets the icon and color for each session state, a color for every status in each Jira project, and a color for each PR state. Type Overseer in the Command Palette to reach every setting.', Visual: SettingsVisual },
             { title: 'Keep plain terminals next to your sessions', body: 'New Terminal opens a shell in a folder you pick and puts it in the tree. Group it with the sessions for the same ticket, click it to bring it forward, and reopen it in the same folder after you close it.', Visual: TerminalVisual },
+            { title: 'Watch every repo from a window with no folder open', body: 'The Repos view lists the repos your pinned sessions and terminals work in. Each row shows the branch, ahead and behind counts, and uncommitted changes, and updates when the repo changes. Expand a repo for its last 20 commits. A commit a session made shows that session. Click a commit to read its diff, or open the repo in Source Control.', Visual: RepoHistoryVisual },
             { title: 'See when a session is compacting', body: 'A compacting session shows a spinning icon until it finishes. Claude Code does not report compaction, so Overseer offers to install a PreCompact and a PostCompact hook. Skip the prompt and install them later from the Command Palette.', Visual: CompactVisual },
             { title: 'Read a summary when you hover over a session', body: 'The hover shows the folder, branch, first and last prompt, and a short summary. The summary is the recap Claude Code wrote when it has one. Summarize with Haiku writes a new one from the end of the transcript, and it runs only when you click it.', Visual: HoverVisual },
             { title: 'Group sessions by ticket', body: 'Overseer reads the ticket key from the title, branch, or first prompt and puts the session in that ticket\'s group. Drag a session to put it somewhere else.', Visual: GroupVisual },
@@ -673,6 +695,7 @@
             { step: '03', title: 'Launch', body: 'Each session is a terminal that execs claude directly. /exit closes the tab. A window reload reattaches terminals by pid.' },
             { step: '04', title: 'Links', body: 'Find Resources scans one transcript for links. A headless claude -p run with Haiku reads an 8 KB digest of them and sorts them. At most two runs at once, and each result is cached. Status checks run every five minutes while a links panel is open.' },
             { step: '05', title: 'Hooks', body: 'Optional PreCompact and PostCompact hooks in ~/.claude/settings.json write and delete a marker per session in ~/.claude/overseer/compacting. Install backs up the file first and leaves your own hooks alone.' },
+            { step: '06', title: 'Repos', body: 'git status and git log run per repo, at most four at once, only while the Repos view shows. A watch on each .git folder refreshes a repo a second after it changes. The indexer reads commit hashes from transcripts to match commits to sessions.' },
         ];
 
         const INSTALL_COMMANDS = `curl -LO ${VSIX_URL}\ncode --install-extension ${VSIX_NAME}`;
@@ -774,8 +797,8 @@
                 <section id="features" className="max-w-6xl mx-auto px-4 md:px-8 py-24 space-y-12">
                     <h2 className="font-display font-bold tracking-display text-3xl leading-tight max-w-[40rem]">What it does</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-line border border-line">
-                        {FEATURES.map(({ title, body, Visual }) => (
-                            <article key={title} className="bg-bg p-6 md:p-8 flex flex-col gap-6">
+                        {FEATURES.map(({ title, body, Visual }, featureIndex) => (
+                            <article key={title} className={`bg-bg p-6 md:p-8 flex flex-col gap-6 ${isLastOfOddCount(featureIndex, FEATURES.length) ? 'md:col-span-2' : ''}`}>
                                 <div className="space-y-2">
                                     <h3 className="font-display font-semibold tracking-display text-xl">{title}</h3>
                                     <p className="text-muted leading-relaxed">{body}</p>
