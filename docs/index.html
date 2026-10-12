@@ -76,7 +76,7 @@
         const { useState, useEffect, useRef } = React;
 
         const REPO_URL = 'https://github.com/tory37/djaunt-overseer';
-        const VSIX_NAME = 'djaunt-overseer-0.0.6.vsix';
+        const VSIX_NAME = 'djaunt-overseer-0.0.7.vsix';
         const VSIX_URL = `${REPO_URL}/releases/latest/download/${VSIX_NAME}`;
 
         const Icon = ({ name, className = 'w-4 h-4' }) => {
@@ -620,6 +620,23 @@
             </div>
         );
 
+        const StatusVisual = () => (
+            <div className="font-mono text-xs border border-line bg-surface py-1">
+                {[
+                    { icon: 'LoaderCircle', iconClass: 'text-success', text: 'PROJ-2567 login timeout', badge: 'IP', textClass: 'text-accent' },
+                    { icon: 'LoaderCircle', iconClass: 'text-success', text: 'OPS-4410 billing export', badge: 'AI', textClass: 'text-warning' },
+                    { icon: 'Terminal', iconClass: 'text-success', text: 'Triage the flaky deploy', badge: 'TR', textClass: 'text-warning' },
+                    { icon: 'Terminal', iconClass: 'text-success', text: 'Release notes', badge: 'RS', textClass: 'text-success' },
+                ].map((row) => (
+                    <div key={row.text} className="flex items-center gap-2 h-6 pl-3 pr-3 text-bone">
+                        <Icon name={row.icon} className={`w-4 h-4 ${row.iconClass}`} />
+                        <span className={`truncate ${row.textClass}`}>{row.text}</span>
+                        <span className={`ml-auto ${row.textClass}`}>{row.badge}</span>
+                    </div>
+                ))}
+            </div>
+        );
+
         const CompactVisual = () => (
             <div className="font-mono text-xs space-y-3">
                 <div className="flex items-center gap-2 h-7 px-3 border border-line bg-surface">
@@ -677,7 +694,8 @@
             { title: 'Check PR and ticket status at a glance', body: 'Each PR and ticket shows its live status, and its icon takes the color you pick for that status. PR status comes from gh. Ticket status comes from the Jira MCP server Claude Code already uses.', Visual: LinkStatusVisual },
             { title: 'Pin or remove a link', body: 'A pinned link stays at the top, even when the judge thinks it does not matter. A removed link is hidden. Both survive a rescan. Removed in the panel header shows the hidden ones again so you can restore them.', Visual: PinVisual },
             { title: 'Pick your own icons and colors', body: 'The Settings panel sets the icon and color for each session state, a color for every status in each Jira project, and a color for each PR state. Type Overseer in the Command Palette to reach every setting.', Visual: SettingsVisual },
-            { title: 'Keep plain terminals next to your sessions', body: 'New Terminal opens a shell in a folder you pick and puts it in the tree. Group it with the sessions for the same ticket, click it to bring it forward, and reopen it in the same folder after you close it.', Visual: TerminalVisual },
+            { title: 'Keep plain terminals next to your sessions', body: 'New Terminal opens a shell in a folder you pick. Terminals get their own Terminals view, apart from your Claude sessions, and keep the same groups. Click one to bring it forward, and reopen it in the same folder after you close it. Settings can hide the Sessions, Terminals, and Repos views.', Visual: TerminalVisual },
+            { title: 'Mark where each session stands', body: 'Set Status puts a session or terminal in Todo, Triage, In Progress, AI Review, Human Review, or Ready to Ship. The status tints the row and adds a short badge. It does not follow Jira, so a status like Triage works. The Settings panel adds, renames, reorders, and recolors statuses.', Visual: StatusVisual },
             { title: 'Watch every repo from a window with no folder open', body: 'The Repos view lists the repos your pinned sessions and terminals work in. Each row shows the branch, ahead and behind counts, and uncommitted changes, and updates when the repo changes. Expand a repo for its last 20 commits. A commit a session made shows that session. Click a commit to read its diff, or open the repo in Source Control.', Visual: RepoHistoryVisual },
             { title: 'See when a session is compacting', body: 'A compacting session shows a spinning icon until it finishes. Claude Code does not report compaction, so Overseer offers to install a PreCompact and a PostCompact hook. Skip the prompt and install them later from the Command Palette.', Visual: CompactVisual },
             { title: 'Read a summary when you hover over a session', body: 'The hover shows the folder, branch, first and last prompt, and a short summary. The summary is the recap Claude Code wrote when it has one. Summarize with Haiku writes a new one from the end of the transcript, and it runs only when you click it.', Visual: HoverVisual },

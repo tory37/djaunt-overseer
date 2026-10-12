@@ -34,13 +34,21 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 
 ### Run
 - **New Session** (+) asks for a folder and an optional name, then runs `claude --session-id <id> -n <name>` in an editor terminal.
-- **New Terminal** asks the same questions, then opens a plain shell in that folder. It sits in the tree like a session: click to focus, drag into a group, Rename, Remove, Kill. When it is closed, **Open** starts a new shell in the same folder. Claude-only actions do not show on it.
+- **New Terminal** asks the same questions, then opens a plain shell in that folder. It sits in the Terminals view, under the same groups as your sessions. It acts like a session: click to focus, drag into a group, Rename, Remove, Kill. When it is closed, **Open** starts a new shell in the same folder. Claude-only actions do not show on it.
 - **Suspend** (pause) sends `/exit`, so the process and its memory go away. It warns first when Claude is mid-task.
 - **Resume** (play) brings the session back with its history.
 - **Rename** (F2 or double-click) renames the row and its tab. When the session is idle in this window, it also sends `/rename`. A tab that comes back from a reload without its name gets it again when you focus it.
 - **Kill and Remove** (right-click) closes the terminal, ends the process, and unpins it. The transcript stays, so All Sessions can still resume it.
 - **Remove from Sidebar** only unpins.
 - **Compact**, **Switch Model…**, **Clear Context**, and **Show Cost** (right-click) send `/compact`, `/model`, `/clear`, and `/cost`. They show only on idle sessions running in this window.
+
+### Statuses
+- **Set Status…** (right-click a session or terminal, or several at once) marks it with a status. **Clear Status** removes it.
+- The defaults are Todo, Triage, In Progress, AI Review, Human Review, and Ready to Ship. They do not follow Jira, so a status like Triage works.
+- A status tints the row's label and adds a short badge on the right, like `IP`. The icon shows in the picker and the hover, so the row keeps one icon.
+- **Settings…** → **Statuses** adds, renames, reorders, and deletes statuses, and sets each one's color, icon, and badge. Renaming keeps the status on its sessions. **Reset to defaults** restores the six.
+- Colors come from a palette of nine theme colors, because tree labels take only theme colors. They follow your light or dark theme. If a badge shows with no tint, turn on `explorer.decorations.colors`.
+- The list is the `overseer.sessionStatuses` setting. Each session's status is saved in the extension's state.
 
 ### Compacting
 - A session that is compacting shows a spinning sync icon in place of its running icon.
@@ -49,7 +57,7 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 
 ### Repos
 - Overseer works in a window with no folder open. It reads git straight from the repos your sessions use.
-- The **Repos** view, under Sessions, lists every repo a pinned session or terminal works in. The most recently active repo is on top.
+- The **Repos** view, under Terminals, lists every repo a pinned session or terminal works in. The most recently active repo is on top.
 - Each row shows the branch, commits ahead and behind its upstream, and the count of changed files, like `main · ↑2 ↓1 · 5 changed`. The icon turns amber when there are uncommitted changes.
 - Rows update a second after anything changes in the repo's `.git` folder, and when the window gets focus. Git runs only while the view is open.
 - **Open Repo in Source Control** (the inline icon, a right-click on a session or terminal, or the palette) adds that repo to VS Code's Source Control view, so its graph, changes, and diffs work there. A session that touched more than one repo asks which.
@@ -76,7 +84,7 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 ### Settings
 Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:
 
-- **Settings…** opens the Overseer Settings panel. It is also in the sidebar's `...` menu.
+- **Settings…** opens the Overseer Settings panel. Its General section shows or hides the Sessions, Terminals, and Repos views. It is also in the sidebar's `...` menu.
 - **Session Icon Settings…**, **Jira Settings…**, and **GitHub Settings…** open the panel at that section.
 - **Enable/Disable Jira Integration**, **Enable/Disable GitHub Integration**, and **Enable/Disable Artifact Links** turn a link source on or off. The palette shows only the one that applies.
 - **All Settings (Settings Editor)** opens every `overseer.*` setting in the native editor.
@@ -94,8 +102,8 @@ Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:
 ## Install
 
 ```bash
-curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.6.vsix
-code --install-extension djaunt-overseer-0.0.6.vsix
+curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.7.vsix
+code --install-extension djaunt-overseer-0.0.7.vsix
 ```
 
 If `code` isn't on your PATH, use `"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"`.
@@ -139,7 +147,7 @@ Link sorting and Summarize with Haiku run through your `claude` CLI, so they cou
 npm install
 npm test
 npm run package
-code --install-extension djaunt-overseer-0.0.6.vsix --force
+code --install-extension djaunt-overseer-0.0.7.vsix --force
 ```
 
 Not affiliated with Anthropic.
