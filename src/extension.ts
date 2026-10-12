@@ -14,7 +14,7 @@ import { registerSettingsCommands } from "./settingsCommands";
 import { SettingsPanel } from "./settingsPanel";
 import { jiraProjectRefresher, registerStatusCommands } from "./statusCommands";
 import { StatusConfig } from "./statusConfig";
-import { adoptTerminalsByPid } from "./terminals";
+import { adoptTerminalsByPid, sessionIdOfTerminal } from "./terminals";
 import { ResourcesPanel } from "./resourcesPanel";
 import { SessionTreeProvider, TreeNode } from "./tree";
 
@@ -90,6 +90,18 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.onDidOpenTerminal(() => {
       refreshTree();
       void adoptRevivedTerminals();
+    }),
+    // A reload can bring a tab back without its name; renaming needs the tab active, so it waits for focus.
+    vscode.window.onDidChangeActiveTerminal((activeTerminal) => {
+      const sessionId = activeTerminal === undefined ? undefined : sessionIdOfTerminal(activeTerminal);
+      if (activeTerminal === undefined || sessionId === undefined) {
+        return;
+      }
+      const meta = findIndexedSession(sessionId);
+      const expectedName = registry.labels()[sessionId] ?? (meta === undefined ? undefined : displayTitle(meta));
+      if (expectedName !== undefined && activeTerminal.name !== expectedName) {
+        void vscode.commands.executeCommand("workbench.action.terminal.renameWithArg", { name: expectedName });
+      }
     }),
     vscode.window.onDidCloseTerminal(() => {
       refreshTree();

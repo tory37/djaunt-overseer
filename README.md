@@ -37,7 +37,7 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - **New Terminal** asks the same questions, then opens a plain shell in that folder. It sits in the tree like a session: click to focus, drag into a group, Rename, Remove, Kill. When it is closed, **Open** starts a new shell in the same folder. Claude-only actions do not show on it.
 - **Suspend** (pause) sends `/exit`, so the process and its memory go away. It warns first when Claude is mid-task.
 - **Resume** (play) brings the session back with its history.
-- **Rename** (F2 or double-click) renames the row. When the session is idle in this window, it also sends `/rename` and renames the tab.
+- **Rename** (F2 or double-click) renames the row and its tab. When the session is idle in this window, it also sends `/rename`. A tab that comes back from a reload without its name gets it again when you focus it.
 - **Kill and Remove** (right-click) closes the terminal, ends the process, and unpins it. The transcript stays, so All Sessions can still resume it.
 - **Remove from Sidebar** only unpins.
 - **Compact**, **Switch Model…**, **Clear Context**, and **Show Cost** (right-click) send `/compact`, `/model`, `/clear`, and `/cost`. They show only on idle sessions running in this window.

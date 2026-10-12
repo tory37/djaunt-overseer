@@ -174,20 +174,18 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     if (terminal === undefined) {
       return;
     }
+    terminal.show();
+    await vscode.commands.executeCommand("workbench.action.terminal.renameWithArg", { name: newName });
     if (pinned.terminal !== undefined) {
-      terminal.show();
-      await vscode.commands.executeCommand("workbench.action.terminal.renameWithArg", { name: newName });
       return;
     }
     if (liveMonitor.get(pinned.sessionId)?.status === "busy") {
       void vscode.window.showInformationMessage(
-        "Overseer: renamed in the sidebar. Claude is mid-task, so run /rename yourself once it finishes to update its own title.",
+        "Overseer: renamed the row and the tab. Claude is mid-task, so run /rename yourself once it finishes to update its own title.",
       );
       return;
     }
     sendSlashCommand(terminal, `/rename ${newName.replace(/[\r\n]+/g, " ")}`);
-    terminal.show();
-    await vscode.commands.executeCommand("workbench.action.terminal.renameWithArg", { name: newName });
   };
 
   // Busy sessions are skipped because Claude drops input typed while it works.
