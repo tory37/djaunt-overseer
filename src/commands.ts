@@ -7,11 +7,9 @@ import { displayTitle, SessionMeta } from "./indexer";
 import { tildePath } from "./paths";
 import { LiveSessionMonitor } from "./liveSessions";
 import { pickSession } from "./quickPick";
-import { LinkMark, Registry, userGroupRef } from "./registry";
+import { Registry, userGroupRef } from "./registry";
 import { SessionIndex } from "./sessionIndex";
-import { readLinkSettings, SessionLinkService } from "./sessionLinks";
-import { linkKey, ResolvedLink } from "./linkJudge";
-import { linkUrl } from "./linkView";
+import { SessionLinkService } from "./sessionLinks";
 import { LinkStatusService } from "./linkStatusService";
 import { SessionSummaryService } from "./sessionSummaries";
 import {
@@ -32,38 +30,18 @@ export interface CommandDependencies {
   linkStatusService: LinkStatusService;
   summaryService: SessionSummaryService;
   treeView: vscode.TreeView<TreeNode>;
+  showResources: (sessionId: string) => void;
   log: vscode.OutputChannel;
 }
 
 type SessionNode = Extract<TreeNode, { kind: "session" }>;
 type GroupNode = Extract<TreeNode, { kind: "group" }>;
-type LinkNode = Extract<TreeNode, { kind: "link" }>;
 
 const FORK_CHOICE = "Fork a Copy Here";
 const ATTACH_CHOICE = "Attach Here";
 const SUSPEND_ANYWAY_CHOICE = "Suspend Anyway";
 const DOUBLE_CLICK_WINDOW_MS = 400;
 const RECENT_DIRECTORY_LIMIT = 12;
-
-// The integrated browser arrived in newer VS Code; Simple Browser covers older builds.
-const VSCODE_BROWSER_COMMANDS = ["workbench.action.browser.open", "simpleBrowser.show"];
-
-interface LinkMarkCommand {
-  command: string;
-  mark: LinkMark | undefined;
-}
-
-const LINK_MARK_COMMANDS: LinkMarkCommand[] = [
-  { command: "overseer.pinLink", mark: "pinned" },
-  { command: "overseer.removeLink", mark: "removed" },
-  { command: "overseer.unpinLink", mark: undefined },
-  { command: "overseer.restoreLink", mark: undefined },
-];
-
-const LINK_BROWSER_NAMES: Record<string, string> = {
-  external: "your default browser",
-  vscode: "the VS Code browser",
-};
 
 // Claude resolves each alias to the latest model in that family.
 const MODEL_ALIASES: vscode.QuickPickItem[] = [
@@ -78,17 +56,12 @@ interface DirectoryPickItem extends vscode.QuickPickItem {
 }
 
 export function registerCommands(dependencies: CommandDependencies): vscode.Disposable[] {
-  const { sessionIndex, liveMonitor, registry, linkService, linkStatusService, summaryService, treeView, log } =
+  const { sessionIndex, liveMonitor, registry, linkService, linkStatusService, summaryService, treeView, showResources, log } =
     dependencies;
 
   const selectedSessionNodes = (clickedNode?: TreeNode): SessionNode[] => {
     const candidateNodes = clickedNode && !treeView.selection.includes(clickedNode) ? [clickedNode] : treeView.selection;
     return candidateNodes.filter((node): node is SessionNode => node.kind === "session");
-  };
-
-  const selectedLinkNodes = (clickedNode?: TreeNode): LinkNode[] => {
-    const candidateNodes = clickedNode && !treeView.selection.includes(clickedNode) ? [clickedNode] : treeView.selection;
-    return candidateNodes.filter((node): node is LinkNode => node.kind === "link");
   };
 
   const findSessionMeta = async (sessionId: string): Promise<SessionMeta | undefined> => {
@@ -402,25 +375,14 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         sendToIdleSessions(sessionNodes, `/model ${modelAlias}`);
       }
     }),
-    vscode.commands.registerCommand("overseer.openLink", async (clicked?: ResolvedLink | LinkNode) => {
-      const link = clickedLink(clicked);
-      const url = link === undefined ? undefined : linkUrl(link, readLinkSettings().jiraBaseUrl);
-      if (url === undefined) {
-        void vscode.window.showInformationMessage("Set overseer.links.jira.baseUrl to open Jira tickets.");
-        return;
-      }
-      await openUrl(url);
-    }),
-    vscode.commands.registerCommand("overseer.copyLink", async (clicked?: ResolvedLink | LinkNode) => {
-      const link = clickedLink(clicked);
-      if (link !== undefined) {
-        await vscode.env.clipboard.writeText(linkUrl(link, readLinkSettings().jiraBaseUrl) ?? link.id);
-      }
-    }),
-    vscode.commands.registerCommand("overseer.findResources", async (clickedNode?: TreeNode) => {
-      const sessionMetas = selectedSessionNodes(clickedNode)
-        .map((node) => node.pinned.meta)
-        .filter(isDefined);
+    // The resources panel passes a session ID; the context menu passes the clicked node.
+    vscode.commands.registerCommand("overseer.findResources", async (clicked?: TreeNode | string) => {
+      const sessionMetas =
+        typeof clicked === "string"
+          ? [await findSessionMeta(clicked)].filter(isDefined)
+          : selectedSessionNodes(clicked)
+              .map((node) => node.pinned.meta)
+              .filter(isDefined);
       linkStatusService.clear();
       for (const meta of sessionMetas) {
         await registry.setSessionExpanded(meta.sessionId, true);
@@ -431,29 +393,16 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         () => Promise.all(sessionMetas.map((meta) => linkService.findResources(meta))),
       );
     }),
-    ...LINK_MARK_COMMANDS.map((markCommand) =>
-      vscode.commands.registerCommand(markCommand.command, async (clickedNode?: TreeNode) => {
-        const linkKeysBySession = new Map<string, string[]>();
-        for (const linkNode of selectedLinkNodes(clickedNode)) {
-          const sessionLinkKeys = linkKeysBySession.get(linkNode.sessionId) ?? [];
-          linkKeysBySession.set(linkNode.sessionId, [...sessionLinkKeys, linkKey(linkNode.link)]);
-        }
-        for (const [sessionId, linkKeys] of linkKeysBySession) {
-          await registry.setLinkMark(sessionId, linkKeys, markCommand.mark);
-        }
-      }),
-    ),
     vscode.commands.registerCommand("overseer.toggleRemovedLinks", async () => {
       const linksConfig = vscode.workspace.getConfiguration("overseer.links");
       const isShown = !linksConfig.get<boolean>("showRemoved", false);
       await linksConfig.update("showRemoved", isShown, vscode.ConfigurationTarget.Global);
       void vscode.window.showInformationMessage(`Removed links ${isShown ? "shown" : "hidden"}.`);
     }),
-    vscode.commands.registerCommand("overseer.toggleLinkBrowser", async () => {
-      const linksConfig = vscode.workspace.getConfiguration("overseer.links");
-      const nextTarget = linksConfig.get<string>("openIn", "external") === "external" ? "vscode" : "external";
-      await linksConfig.update("openIn", nextTarget, vscode.ConfigurationTarget.Global);
-      void vscode.window.showInformationMessage(`Links open in ${LINK_BROWSER_NAMES[nextTarget]}.`);
+    vscode.commands.registerCommand("overseer.openResources", (sessionId?: string) => {
+      if (typeof sessionId === "string") {
+        showResources(sessionId);
+      }
     }),
     // The hover link passes a session ID; the context menu passes the clicked node.
     vscode.commands.registerCommand("overseer.summarizeSession", async (clicked?: TreeNode | string) => {
@@ -476,26 +425,6 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       }
     }),
   ];
-}
-
-async function openUrl(url: string): Promise<void> {
-  const opensInVscode = vscode.workspace.getConfiguration("overseer.links").get<string>("openIn") === "vscode";
-  if (opensInVscode) {
-    const availableCommands = new Set(await vscode.commands.getCommands(true));
-    const browserCommand = VSCODE_BROWSER_COMMANDS.find((command) => availableCommands.has(command));
-    if (browserCommand !== undefined) {
-      await vscode.commands.executeCommand(browserCommand, url);
-      return;
-    }
-  }
-  await vscode.env.openExternal(vscode.Uri.parse(url));
-}
-
-function clickedLink(clicked: ResolvedLink | LinkNode | undefined): ResolvedLink | undefined {
-  if (clicked === undefined) {
-    return undefined;
-  }
-  return "link" in clicked ? clicked.link : clicked;
 }
 
 function pinnedSessionDirectory(pinned: PinnedSession): string | undefined {

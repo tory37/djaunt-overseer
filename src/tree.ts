@@ -3,11 +3,7 @@ import * as vscode from "vscode";
 import { formatAge } from "./format";
 import { buildGroups, PinnedSession, pinnedSessionTitle, SessionGroup } from "./grouping";
 import { displayTitle, SessionMeta } from "./indexer";
-import { linkKey } from "./linkJudge";
-import { projectKeyOf } from "./jira";
-import { LinkStatus, statusGlyph } from "./linkStatus";
-import { LinkStatusService } from "./linkStatusService";
-import { linkCountBadge, linkDisplayId, linkUrl, MarkedLink, staticLinkIconName } from "./linkView";
+import { linkCountBadge, MarkedLink } from "./linkView";
 import { LiveSession } from "./liveParse";
 import { LiveSessionMonitor } from "./liveSessions";
 import { tildePath } from "./paths";
@@ -16,48 +12,31 @@ import { moveBeside } from "./reorder";
 import { otherReposLabel } from "./repoFilter";
 import { SessionIconState, sessionIconName, sessionIconSpec } from "./sessionIcons";
 import { SessionIndex } from "./sessionIndex";
-import { readLinkSettings, SessionLinkService } from "./sessionLinks";
+import { SessionLinkService } from "./sessionLinks";
 import { SessionSummaryService } from "./sessionSummaries";
 import { HoverSummary, pickHoverSummary } from "./sessionSummary";
-import { StatusConfig } from "./statusConfig";
-import { StatusIconWriter } from "./statusIcons";
 import { findSessionTerminal } from "./terminals";
 
 export type TreeNode =
   | { kind: "group"; group: SessionGroup }
   | { kind: "session"; pinned: PinnedSession; groupRef: GroupRef }
-  | { kind: "resources"; sessionId: string; groupRef: GroupRef }
-  | { kind: "link"; link: MarkedLink; sessionId: string; groupRef: GroupRef };
+  | { kind: "resources"; sessionId: string; groupRef: GroupRef };
 
 type SessionNode = Extract<TreeNode, { kind: "session" }>;
 type GroupNode = Extract<TreeNode, { kind: "group" }>;
 type ResourcesNode = Extract<TreeNode, { kind: "resources" }>;
-type LinkNode = Extract<TreeNode, { kind: "link" }>;
-type SessionChildNode = SessionNode | ResourcesNode | LinkNode;
 
 interface DraggedSession {
   sessionId: string;
   groupRef: GroupRef;
 }
 
-interface DraggedLink {
-  sessionId: string;
-  linkKey: string;
-}
-
 interface DragPayload {
   draggedSessions: DraggedSession[];
   draggedGroupRefs: GroupRef[];
-  draggedLinks: DraggedLink[];
 }
 
 const TREE_DRAG_MIME = "application/vnd.code.tree.overseer.sessions";
-const RESOURCES_EXPANSION_PREFIX = "resources:";
-
-// The resources row saves its expansion beside the session's, under its own key.
-export function resourcesExpansionKey(sessionId: string): string {
-  return `${RESOURCES_EXPANSION_PREFIX}${sessionId}`;
-}
 
 export class SessionTreeProvider
   implements vscode.TreeDataProvider<TreeNode>, vscode.TreeDragAndDropController<TreeNode>
@@ -72,11 +51,7 @@ export class SessionTreeProvider
     private readonly liveMonitor: LiveSessionMonitor,
     private readonly registry: Registry,
     private readonly linkService: SessionLinkService,
-    private readonly linkStatusService: LinkStatusService,
-    private readonly extensionUri: vscode.Uri,
     private readonly summaryService: SessionSummaryService,
-    private readonly statusConfig: StatusConfig,
-    private readonly statusIconWriter: StatusIconWriter,
   ) {}
 
   refresh(): void {
@@ -98,14 +73,6 @@ export class SessionTreeProvider
       const sessionId = parentNode.pinned.sessionId;
       return this.registry.hasFoundResources(sessionId) ? [{ kind: "resources", sessionId, groupRef: parentNode.groupRef }] : [];
     }
-    if (parentNode.kind === "resources") {
-      return (this.resourceLinks(parentNode.sessionId) ?? []).map((link) => ({
-        kind: "link",
-        link,
-        sessionId: parentNode.sessionId,
-        groupRef: parentNode.groupRef,
-      }));
-    }
     return [];
   }
 
@@ -113,17 +80,8 @@ export class SessionTreeProvider
     if (node.kind === "group") {
       return groupTreeItem(node.group, this.registry.isGroupCollapsed(node.group.ref));
     }
-    if (node.kind === "link") {
-      const status = this.linkStatusService.statusFor(node.link);
-      return linkTreeItem(node.link, node.sessionId, status, this.linkIconPath(node.link, status));
-    }
     if (node.kind === "resources") {
-      return resourcesTreeItem(
-        node.sessionId,
-        this.resourceLinks(node.sessionId),
-        this.linkService.isFinding(node.sessionId),
-        this.registry.isSessionExpanded(resourcesExpansionKey(node.sessionId)),
-      );
+      return resourcesTreeItem(node.sessionId, this.resourceLinks(node.sessionId), this.linkService.isFinding(node.sessionId));
     }
     const meta = node.pinned.meta;
     const hasFoundResources = this.registry.hasFoundResources(node.pinned.sessionId);
@@ -153,10 +111,7 @@ export class SessionTreeProvider
     const draggedGroupRefs = sourceNodes
       .filter((node): node is GroupNode => node.kind === "group")
       .map((node) => node.group.ref);
-    const draggedLinks = sourceNodes
-      .filter((node): node is LinkNode => node.kind === "link")
-      .map((node) => ({ sessionId: node.sessionId, linkKey: linkKey(node.link) }));
-    const payload: DragPayload = { draggedSessions, draggedGroupRefs, draggedLinks };
+    const payload: DragPayload = { draggedSessions, draggedGroupRefs };
     dataTransfer.set(TREE_DRAG_MIME, new vscode.DataTransferItem(payload));
   }
 
@@ -169,33 +124,7 @@ export class SessionTreeProvider
       await this.dropSessions(payload.draggedSessions, targetNode);
     } else if (payload.draggedGroupRefs.length > 0) {
       await this.dropGroups(payload.draggedGroupRefs, targetNode);
-    } else if (payload.draggedLinks.length > 0) {
-      await this.dropLinks(payload.draggedLinks, targetNode);
     }
-  }
-
-  // Links reorder only within their own session; a drop on the Associated Links row moves them to the top.
-  private async dropLinks(draggedLinks: DraggedLink[], targetNode: TreeNode | undefined): Promise<void> {
-    if (targetNode === undefined || targetNode.kind === "group" || targetNode.kind === "session") {
-      return;
-    }
-    const targetSessionId = nodeSessionId(targetNode);
-    const meta = this.sessionIndex.currentSessions.find((session) => session.sessionId === targetSessionId);
-    if (meta === undefined) {
-      return;
-    }
-    const draggedLinkKeys = draggedLinks
-      .filter((dragged) => dragged.sessionId === targetSessionId)
-      .map((dragged) => dragged.linkKey);
-    if (draggedLinkKeys.length === 0) {
-      return;
-    }
-    const displayedLinkKeys = (this.linkService.linksFor(meta) ?? []).map(linkKey);
-    const reorderedLinkKeys =
-      targetNode.kind === "resources"
-        ? [...draggedLinkKeys, ...displayedLinkKeys.filter((key) => !draggedLinkKeys.includes(key))]
-        : moveBeside(displayedLinkKeys, draggedLinkKeys, linkKey(targetNode.link));
-    await this.registry.setLinkOrder(targetSessionId, reorderedLinkKeys);
   }
 
   private async dropSessions(draggedSessions: DraggedSession[], targetNode: TreeNode | undefined): Promise<void> {
@@ -229,23 +158,6 @@ export class SessionTreeProvider
     await this.registry.setGroupOrder(moveBeside(displayedGroupRefs, draggedGroupRefs, targetGroupRef));
   }
 
-  private linkIconPath(link: MarkedLink, status: LinkStatus | undefined): vscode.TreeItem["iconPath"] {
-    const staticIconName = staticLinkIconName(link, status);
-    if (staticIconName !== undefined || status === undefined || link.kind === "artifact") {
-      const iconName = staticIconName ?? link.kind;
-      return {
-        light: vscode.Uri.joinPath(this.extensionUri, "media", "links", `${iconName}-light.svg`),
-        dark: vscode.Uri.joinPath(this.extensionUri, "media", "links", `${iconName}-dark.svg`),
-      };
-    }
-    const color =
-      link.kind === "pr"
-        ? this.statusConfig.prColor(status.colorKey)
-        : this.statusConfig.jiraColor(projectKeyOf(link.id) ?? "", status.colorKey);
-    const iconFile = this.statusIconWriter.iconFile(statusGlyph(link.kind, status), color);
-    return iconFile === undefined ? new vscode.ThemeIcon("circle-filled") : vscode.Uri.file(iconFile);
-  }
-
   private currentGroups(): SessionGroup[] {
     const sessionsById = new Map<string, SessionMeta>(
       this.sessionIndex.currentSessions.map((meta) => [meta.sessionId, meta]),
@@ -275,7 +187,7 @@ function nodeGroupRef(node: TreeNode): GroupRef {
   return node.kind === "group" ? node.group.ref : node.groupRef;
 }
 
-function nodeSessionId(node: SessionChildNode): string {
+function nodeSessionId(node: SessionNode | ResourcesNode): string {
   return node.kind === "session" ? node.pinned.sessionId : node.sessionId;
 }
 
@@ -346,18 +258,14 @@ function expandableState(hasChildren: boolean, isExpanded: boolean): vscode.Tree
   return isExpanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
 }
 
-function resourcesTreeItem(
-  sessionId: string,
-  links: MarkedLink[] | undefined,
-  isFinding: boolean,
-  isExpanded: boolean,
-): vscode.TreeItem {
-  const hasLinks = links !== undefined && links.length > 0;
-  const treeItem = new vscode.TreeItem("Associated Links", expandableState(hasLinks, isExpanded));
+function resourcesTreeItem(sessionId: string, links: MarkedLink[] | undefined, isFinding: boolean): vscode.TreeItem {
+  const treeItem = new vscode.TreeItem("Associated Links", vscode.TreeItemCollapsibleState.None);
   treeItem.id = `resources:${sessionId}`;
   treeItem.iconPath = new vscode.ThemeIcon(isFinding ? "loading~spin" : "references");
   treeItem.description = resourcesDescription(links, isFinding);
   treeItem.contextValue = "resources";
+  treeItem.tooltip = "Open this session's links";
+  treeItem.command = { command: "overseer.openResources", title: "Open Links", arguments: [sessionId] };
   return treeItem;
 }
 
@@ -369,57 +277,6 @@ function resourcesDescription(links: MarkedLink[] | undefined, isFinding: boolea
     return "none found";
   }
   return linkCountBadge(links) || `${links.length} hidden`;
-}
-
-const LINK_KIND_NAMES: Record<MarkedLink["kind"], string> = {
-  pr: "Pull request",
-  ticket: "Jira ticket",
-  artifact: "Artifact",
-};
-
-function linkTreeItem(
-  link: MarkedLink,
-  sessionId: string,
-  status: LinkStatus | undefined,
-  iconPath: vscode.TreeItem["iconPath"],
-): vscode.TreeItem {
-  const displayId = linkDisplayId(link);
-  const treeItem = new vscode.TreeItem(link.label ?? displayId, vscode.TreeItemCollapsibleState.None);
-  treeItem.id = `link:${sessionId}:${link.kind}:${link.id}`;
-  treeItem.description = [
-    status?.text ?? "",
-    link.mark ?? "",
-    link.label === undefined ? "" : displayId,
-    link.role === "owned" ? "" : link.role,
-  ]
-    .filter((part) => part !== "")
-    .join(" · ");
-  treeItem.iconPath = iconPath;
-  treeItem.contextValue = `link.${link.kind}.${link.mark ?? "unmarked"}`;
-  treeItem.tooltip = linkTooltip(link, status);
-  treeItem.command = { command: "overseer.openLink", title: "Open Link", arguments: [link] };
-  return treeItem;
-}
-
-function linkTooltip(link: MarkedLink, status: LinkStatus | undefined): vscode.MarkdownString {
-  const tooltip = new vscode.MarkdownString();
-  tooltip.appendMarkdown(`**${escapeMarkdown(link.label ?? linkDisplayId(link))}**\n\n`);
-  const roleSource = link.judged ? "judged" : "from transcript signals";
-  tooltip.appendMarkdown(`${LINK_KIND_NAMES[link.kind]} · ${link.role} (${roleSource})`);
-  if (!link.stillRelevant) {
-    tooltip.appendMarkdown(" · no longer active");
-  }
-  if (link.mark !== undefined) {
-    tooltip.appendMarkdown(` · ${link.mark} by you`);
-  }
-  if (status !== undefined) {
-    const projectKey = link.kind === "ticket" ? projectKeyOf(link.id) : undefined;
-    const projectSuffix = projectKey === undefined ? "" : ` · project ${projectKey}`;
-    tooltip.appendMarkdown(`\n\nStatus: **${escapeMarkdown(status.text)}**${projectSuffix}`);
-  }
-  const url = linkUrl(link, readLinkSettings().jiraBaseUrl);
-  tooltip.appendMarkdown(url === undefined ? "\n\nSet `overseer.links.jira.baseUrl` to open tickets." : `\n\n${url}`);
-  return tooltip;
 }
 
 function sessionDescription(pinned: PinnedSession): string {

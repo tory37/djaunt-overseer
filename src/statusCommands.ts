@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 import { JiraService } from "./jiraService";
 import { LinkStatusService } from "./linkStatusService";
 import { StatusConfig } from "./statusConfig";
-import { TreeNode } from "./tree";
 
 interface StatusCommandDependencies {
   jiraService: JiraService;
@@ -33,11 +32,11 @@ export function registerStatusCommands(dependencies: StatusCommandDependencies):
         refreshProjects,
       );
     }),
-    vscode.commands.registerCommand("overseer.moveTicketStatus", async (clickedNode?: TreeNode) => {
-      if (clickedNode?.kind !== "link" || clickedNode.link.kind !== "ticket") {
-        return;
+    // The resources panel passes the ticket key.
+    vscode.commands.registerCommand("overseer.moveTicketStatus", async (ticketKey?: string) => {
+      if (typeof ticketKey === "string") {
+        await moveTicket(ticketKey, jiraService, linkStatusService);
       }
-      await moveTicket(clickedNode.link.id, jiraService, linkStatusService);
     }),
   ];
 }
@@ -46,7 +45,7 @@ async function moveTicket(ticketKey: string, jiraService: JiraService, linkStatu
   let workflow;
   try {
     workflow = await vscode.window.withProgress(
-      { location: { viewId: "overseer.sessions" }, title: `Loading ${ticketKey} transitions` },
+      { location: vscode.ProgressLocation.Window, title: `Loading ${ticketKey} transitions` },
       () => jiraService.workflow(ticketKey),
     );
   } catch (error) {
@@ -72,7 +71,7 @@ async function moveTicket(ticketKey: string, jiraService: JiraService, linkStatu
   }
   try {
     await vscode.window.withProgress(
-      { location: { viewId: "overseer.sessions" }, title: `Moving ${ticketKey} to ${picked.label}` },
+      { location: vscode.ProgressLocation.Window, title: `Moving ${ticketKey} to ${picked.label}` },
       () => jiraService.transition(ticketKey, picked.transitionName),
     );
   } catch (error) {

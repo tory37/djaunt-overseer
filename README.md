@@ -43,17 +43,17 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 
 ### Links
 - **Find Resources** (right-click a session) finds the GitHub PRs, Jira tickets, and claude.ai artifacts it worked on. Overseer never scans on its own.
-- The session then shows one **Associated Links** row with a count like `3 links`. Run Find Resources again to pick up new links.
-- A headless `claude -p` run with Haiku sorts the links into owned, touched, and seen in passing. Passing links stay hidden unless `overseer.links.showIrrelevant` is on.
+- The session then shows one **Associated Links** row with a count like `3 links`. Click it to open that session's links panel. A second click brings the open panel forward.
+- A headless `claude -p` run with Haiku sorts the links into owned, touched, and seen in passing.
 - An owned ticket names the auto-group, for sessions you ran Find Resources on, when the title and branch have no ticket key.
-- Each PR and ticket shows its live status first in the row, and its icon takes that status's color. Overseer checks every five minutes, only for expanded sessions.
+- Clicking a row only selects it. Each row has buttons: **Open in VS Code**, **Open in Browser**, **Copy Link**, **Move to Status…** (tickets), **Pin**, and **Remove**.
+- **Open in VS Code** always opens a new browser tab. VS Code gives extensions no way to find an open one.
+- Drag rows to reorder them. Pinned links stay above the rest.
+- **Passing** and **Removed** in the panel header show those links again, dimmed. **Find again** rescans the session.
+- Each PR and ticket shows its live status, and its icon takes that status's color. Overseer checks every five minutes while a panel is open.
 - PR status comes from `gh`. Ticket status comes from the Jira MCP server in your `~/.claude.json`, the same one Claude Code uses. Overseer starts it on its own and reads all visible tickets in one call.
-- **Move to Status…** (right-click a ticket) lists the moves the ticket's workflow allows.
 - **Jira Settings…** lists each Jira project Overseer has seen, like ASSMNT or CR, with its full status list and a color for each status. Turn a project off to stop its status lookups.
 - **GitHub Settings…** sets one color per PR state: draft, open, review required, approved, changes requested, merged, and closed.
-- **Pin** keeps a link at the top and counts it, even when the judge called it irrelevant. **Remove** hides it. Both survive a rescan.
-- **Toggle Removed Links** shows removed links again, dimmed, so you can **Restore** them.
-- **Toggle Link Browser** switches between your browser and the VS Code browser.
 
 ### Settings
 Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:
@@ -105,7 +105,6 @@ Then run **Developer: Reload Window**. Cmd+R only reloads in the F5 development 
 | `overseer.links.showIrrelevant` | `false` | Also show links seen in passing, dimmed. |
 | `overseer.links.showRemoved` | `false` | Also show links you removed, dimmed. |
 | `overseer.links.liveStatus` | `true` | Show PR and ticket status through `gh` and your Jira MCP server. |
-| `overseer.links.openIn` | `external` | Open links in your browser or in VS Code. |
 | `overseer.summary.model` | `haiku` | Model for Summarize with Haiku. |
 | `overseer.sessionIcons.working` | `loading~spin` | Icon for a session working in this window. |
 | `overseer.sessionIcons.running` | `terminal` | Icon for a session running in this window. |

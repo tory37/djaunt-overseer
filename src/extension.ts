@@ -1,6 +1,6 @@
-import * as path from "path";
 import * as vscode from "vscode";
 import { registerCommands } from "./commands";
+import { displayTitle, SessionMeta } from "./indexer";
 import { LiveSessionMonitor } from "./liveSessions";
 import { defaultClaudeHome } from "./paths";
 import { Registry } from "./registry";
@@ -14,9 +14,9 @@ import { registerSettingsCommands } from "./settingsCommands";
 import { SettingsPanel } from "./settingsPanel";
 import { jiraProjectRefresher, registerStatusCommands } from "./statusCommands";
 import { StatusConfig } from "./statusConfig";
-import { StatusIconWriter } from "./statusIcons";
 import { adoptTerminalsByPid } from "./terminals";
-import { resourcesExpansionKey, SessionTreeProvider, TreeNode } from "./tree";
+import { ResourcesPanel } from "./resourcesPanel";
+import { SessionTreeProvider, TreeNode } from "./tree";
 
 const INDEX_REFRESH_INTERVAL_MS = 60_000;
 
@@ -45,11 +45,7 @@ export function activate(context: vscode.ExtensionContext): void {
     liveMonitor,
     registry,
     linkService,
-    linkStatusService,
-    context.extensionUri,
     summaryService,
-    statusConfig,
-    new StatusIconWriter(path.join(context.globalStorageUri.fsPath, "status-icons")),
   );
   const treeView = vscode.window.createTreeView("overseer.sessions", {
     treeDataProvider: treeProvider,
@@ -86,7 +82,6 @@ export function activate(context: vscode.ExtensionContext): void {
     { dispose: () => clearInterval(indexRefreshTimer) },
     sessionIndex.onDidChange(refreshTree),
     linkService.onDidChange(refreshTree),
-    linkStatusService.onDidChange(refreshTree),
     summaryService.onDidChange(refreshTree),
     liveMonitor.onDidChange(() => {
       refreshTree();
@@ -115,6 +110,19 @@ export function activate(context: vscode.ExtensionContext): void {
       linkStatusService,
       summaryService,
       treeView,
+      showResources: (sessionId) =>
+        ResourcesPanel.show(
+          {
+            extensionUri: context.extensionUri,
+            registry,
+            linkService,
+            linkStatusService,
+            statusConfig,
+            findSessionMeta: findIndexedSession,
+            sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
+          },
+          sessionId,
+        ),
       log,
     }),
     ...registerStatusCommands({ jiraService, linkStatusService, statusConfig }),
@@ -139,9 +147,17 @@ export function deactivate(): void {}
 async function saveExpansion(registry: Registry, node: TreeNode, isExpanded: boolean): Promise<void> {
   if (node.kind === "session") {
     await registry.setSessionExpanded(node.pinned.sessionId, isExpanded);
-  } else if (node.kind === "resources") {
-    await registry.setSessionExpanded(resourcesExpansionKey(node.sessionId), isExpanded);
+
   } else if (node.kind === "group") {
     await registry.setGroupCollapsed(node.group.ref, !isExpanded);
   }
+}
+
+function sessionTitle(
+  sessionId: string,
+  registry: Registry,
+  findIndexedSession: (sessionId: string) => SessionMeta | undefined,
+): string {
+  const meta = findIndexedSession(sessionId);
+  return registry.labels()[sessionId] ?? (meta === undefined ? sessionId : displayTitle(meta));
 }

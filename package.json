@@ -158,17 +158,6 @@
         "category": "Overseer"
       },
       {
-        "command": "overseer.openLink",
-        "title": "Open Link",
-        "category": "Overseer",
-        "icon": "$(link-external)"
-      },
-      {
-        "command": "overseer.copyLink",
-        "title": "Copy Link",
-        "category": "Overseer"
-      },
-      {
         "command": "overseer.findResources",
         "title": "Find Resources",
         "category": "Overseer",
@@ -181,37 +170,8 @@
         "icon": "$(sparkle)"
       },
       {
-        "command": "overseer.pinLink",
-        "title": "Pin Link",
-        "category": "Overseer",
-        "icon": "$(pin)"
-      },
-      {
-        "command": "overseer.unpinLink",
-        "title": "Unpin Link",
-        "category": "Overseer",
-        "icon": "$(pinned)"
-      },
-      {
-        "command": "overseer.removeLink",
-        "title": "Remove Link",
-        "category": "Overseer",
-        "icon": "$(close)"
-      },
-      {
-        "command": "overseer.restoreLink",
-        "title": "Restore Link",
-        "category": "Overseer",
-        "icon": "$(discard)"
-      },
-      {
         "command": "overseer.toggleRemovedLinks",
         "title": "Toggle Removed Links",
-        "category": "Overseer"
-      },
-      {
-        "command": "overseer.toggleLinkBrowser",
-        "title": "Toggle Link Browser (External / VS Code)",
         "category": "Overseer"
       },
       {
@@ -279,6 +239,11 @@
       {
         "command": "overseer.disableArtifacts",
         "title": "Disable Artifact Links",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.openResources",
+        "title": "Open Links",
         "category": "Overseer"
       }
     ],
@@ -402,61 +367,6 @@
           "group": "2_claude@4"
         },
         {
-          "command": "overseer.pinLink",
-          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.unmarked$/",
-          "group": "inline@0"
-        },
-        {
-          "command": "overseer.unpinLink",
-          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.pinned$/",
-          "group": "inline@0"
-        },
-        {
-          "command": "overseer.removeLink",
-          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.(unmarked|pinned)$/",
-          "group": "inline@2"
-        },
-        {
-          "command": "overseer.restoreLink",
-          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.removed$/",
-          "group": "inline@2"
-        },
-        {
-          "command": "overseer.pinLink",
-          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.(unmarked|removed)$/",
-          "group": "2_mark@1"
-        },
-        {
-          "command": "overseer.unpinLink",
-          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.pinned$/",
-          "group": "2_mark@1"
-        },
-        {
-          "command": "overseer.removeLink",
-          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.(unmarked|pinned)$/",
-          "group": "2_mark@2"
-        },
-        {
-          "command": "overseer.restoreLink",
-          "when": "view == overseer.sessions && viewItem =~ /^link\\.[a-z]+\\.removed$/",
-          "group": "2_mark@2"
-        },
-        {
-          "command": "overseer.openLink",
-          "when": "view == overseer.sessions && viewItem =~ /^link\\./",
-          "group": "inline@1"
-        },
-        {
-          "command": "overseer.openLink",
-          "when": "view == overseer.sessions && viewItem =~ /^link\\./",
-          "group": "1_link@1"
-        },
-        {
-          "command": "overseer.copyLink",
-          "when": "view == overseer.sessions && viewItem =~ /^link\\./",
-          "group": "1_link@2"
-        },
-        {
           "command": "overseer.findResources",
           "when": "view == overseer.sessions && viewItem =~ /^session\\./",
           "group": "3_links@1"
@@ -465,30 +375,9 @@
           "command": "overseer.summarizeSession",
           "when": "view == overseer.sessions && viewItem =~ /^session\\./",
           "group": "3_links@2"
-        },
-        {
-          "command": "overseer.moveTicketStatus",
-          "when": "view == overseer.sessions && viewItem =~ /^link\\.ticket\\./",
-          "group": "1_link@0"
         }
       ],
       "commandPalette": [
-        {
-          "command": "overseer.pinLink",
-          "when": "false"
-        },
-        {
-          "command": "overseer.unpinLink",
-          "when": "false"
-        },
-        {
-          "command": "overseer.removeLink",
-          "when": "false"
-        },
-        {
-          "command": "overseer.restoreLink",
-          "when": "false"
-        },
         {
           "command": "overseer.resumeSession",
           "when": "false"
@@ -554,14 +443,6 @@
           "when": "false"
         },
         {
-          "command": "overseer.openLink",
-          "when": "false"
-        },
-        {
-          "command": "overseer.copyLink",
-          "when": "false"
-        },
-        {
           "command": "overseer.findResources",
           "when": "false"
         },
@@ -596,6 +477,10 @@
         {
           "command": "overseer.disableArtifacts",
           "when": "config.overseer.links.artifacts.enabled"
+        },
+        {
+          "command": "overseer.openResources",
+          "when": "false"
         }
       ]
     },
@@ -651,19 +536,6 @@
           "type": "boolean",
           "default": true,
           "description": "Show live PR state through gh and Jira status through your Jira MCP server. Checked every five minutes for expanded sessions."
-        },
-        "overseer.links.openIn": {
-          "type": "string",
-          "enum": [
-            "external",
-            "vscode"
-          ],
-          "enumDescriptions": [
-            "Your default browser.",
-            "The browser built into VS Code."
-          ],
-          "default": "external",
-          "description": "Where clicked links open."
         },
         "overseer.summary.model": {
           "type": "string",

@@ -22,8 +22,16 @@ export class StatusConfig {
 
   constructor(private readonly store: KeyValueStore) {}
 
-  onDidChange(listener: () => void): void {
+  onDidChange(listener: () => void): { dispose(): void } {
     this.changeListeners.push(listener);
+    return {
+      dispose: () => {
+        const listenerIndex = this.changeListeners.indexOf(listener);
+        if (listenerIndex !== -1) {
+          this.changeListeners.splice(listenerIndex, 1);
+        }
+      },
+    };
   }
 
   projects(): JiraProject[] {

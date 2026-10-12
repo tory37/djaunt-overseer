@@ -1,11 +1,7 @@
-import * as fs from "fs";
-import * as os from "os";
-import * as path from "path";
 import { describe, expect, it } from "vitest";
 import { KeyValueStore } from "../../src/registry";
 import { StoredStatusCache } from "../../src/statusCache";
 import { StatusConfig } from "../../src/statusConfig";
-import { StatusIconWriter } from "../../src/statusIcons";
 
 function memoryStore(): KeyValueStore {
   const values = new Map<string, unknown>();
@@ -60,22 +56,6 @@ describe("StatusConfig", () => {
     await statusConfig.resetPrColors();
     expect(statusConfig.jiraColor("ASSMNT", "Done")).toBe(defaultDone);
     expect(statusConfig.prColor("merged")).not.toBe("#445566");
-  });
-});
-
-describe("StatusIconWriter", () => {
-  it("writes one SVG per glyph and color, and refuses a non-hex color", () => {
-    const iconDir = fs.mkdtempSync(path.join(os.tmpdir(), "overseer-icons-"));
-    try {
-      const iconWriter = new StatusIconWriter(iconDir);
-      const iconFile = iconWriter.iconFile("ticket", "#A371F7");
-
-      expect(iconFile).toBe(path.join(iconDir, "ticket-a371f7.svg"));
-      expect(fs.readFileSync(iconFile!, "utf8")).toContain('stroke="#A371F7"');
-      expect(iconWriter.iconFile("ticket", 'red" onload="x')).toBeUndefined();
-    } finally {
-      fs.rmSync(iconDir, { recursive: true, force: true });
-    }
   });
 });
 

@@ -1,6 +1,5 @@
 import { LinkKind } from "./linkCandidates";
 import { linkKey, ResolvedLink } from "./linkJudge";
-import { LinkStatus } from "./linkStatus";
 import { LinkMark, LinkMarks } from "./registry";
 import { sortBySavedOrder } from "./reorder";
 
@@ -60,16 +59,8 @@ export function linkDisplayId(link: ResolvedLink): string {
   return owner !== undefined && repo !== undefined && number !== undefined ? `${repo}#${number}` : link.id;
 }
 
-// Names a file in media/links, without the theme suffix, or returns undefined when the status color draws the icon.
-export function staticLinkIconName(link: MarkedLink, status: LinkStatus | undefined): string | undefined {
-  const isDimmed = link.mark === "removed" || (link.mark !== "pinned" && (link.role === "irrelevant" || !link.stillRelevant));
-  if (isDimmed) {
-    return `${link.kind}-dim`;
-  }
-  if (link.kind === "artifact" || status === undefined) {
-    return link.kind;
-  }
-  return undefined;
+export function isDimmedLink(link: MarkedLink): boolean {
+  return link.mark === "removed" || (link.mark !== "pinned" && (link.role === "irrelevant" || !link.stillRelevant));
 }
 
 export function linkCountBadge(links: MarkedLink[]): string {

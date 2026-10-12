@@ -41,7 +41,6 @@ interface LinkSettings {
   "github.enabled": boolean;
   "artifacts.enabled": boolean;
   liveStatus: boolean;
-  openIn: string;
 }
 
 interface PanelState {
@@ -53,7 +52,7 @@ interface PanelState {
 
 type PanelMessage =
   | { type: "ready" }
-  | { type: "setLinkSetting"; settingKey: keyof LinkSettings; value: boolean | string }
+  | { type: "setLinkSetting"; settingKey: keyof LinkSettings; value: boolean }
   | { type: "setSessionIcon"; state: SessionIconState; iconName: string }
   | { type: "setSessionColor"; state: SessionIconState; color: string | undefined }
   | { type: "setProjectEnabled"; projectKey: string; isEnabled: boolean }
@@ -66,8 +65,7 @@ type PanelMessage =
   | { type: "openIconReference" };
 
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
-const LINK_SETTING_KEYS: Array<keyof LinkSettings> = ["jira.enabled", "github.enabled", "artifacts.enabled", "liveStatus", "openIn"];
-const OPEN_IN_TARGETS = ["external", "vscode"];
+const LINK_SETTING_KEYS: Array<keyof LinkSettings> = ["jira.enabled", "github.enabled", "artifacts.enabled", "liveStatus"];
 const CODICON_REFERENCE_URL = "https://microsoft.github.io/vscode-codicons/dist/codicon.html";
 const EXTENSION_SETTINGS_QUERY = "@ext:djaunt.djaunt-overseer";
 
@@ -148,7 +146,6 @@ export class SettingsPanel {
       "github.enabled": linksConfig.get<boolean>("github.enabled", true),
       "artifacts.enabled": linksConfig.get<boolean>("artifacts.enabled", true),
       liveStatus: linksConfig.get<boolean>("liveStatus", true),
-      openIn: linksConfig.get<string>("openIn", "external"),
     };
     const projects = statusConfig.projects().map((project) => ({
       key: project.key,
@@ -221,13 +218,8 @@ function readColorCustomizations(): Record<string, unknown> | undefined {
   return vscode.workspace.getConfiguration("workbench").get<Record<string, unknown>>("colorCustomizations");
 }
 
-async function updateLinkSetting(settingKey: keyof LinkSettings, value: boolean | string): Promise<void> {
-  if (!LINK_SETTING_KEYS.includes(settingKey)) {
-    return;
-  }
-  const isValidOpenIn = settingKey === "openIn" && typeof value === "string" && OPEN_IN_TARGETS.includes(value);
-  const isValidToggle = settingKey !== "openIn" && typeof value === "boolean";
-  if (isValidOpenIn || isValidToggle) {
+async function updateLinkSetting(settingKey: keyof LinkSettings, value: boolean): Promise<void> {
+  if (LINK_SETTING_KEYS.includes(settingKey) && typeof value === "boolean") {
     await vscode.workspace.getConfiguration("overseer.links").update(settingKey, value, vscode.ConfigurationTarget.Global);
   }
 }
@@ -438,13 +430,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       <div class="section-head"><h2>General</h2></div>
       <label class="switch"><input type="checkbox" id="live-status"> Fetch live ticket and PR status</label>
       <label class="switch"><input type="checkbox" id="artifacts-enabled"> Artifact links</label>
-      <div class="general-row">
-        <label for="open-in">Open links in</label>
-        <select id="open-in">
-          <option value="external">Default browser</option>
-          <option value="vscode">VS Code browser</option>
-        </select>
-      </div>
       <div class="general-row"><button id="all-settings">All settings…</button><span class="muted">Every <code>overseer.*</code> setting in the Settings editor.</span></div>
     </section>
   </main>
@@ -678,7 +663,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     document.getElementById("github-enabled").checked = linkSettings["github.enabled"];
     document.getElementById("artifacts-enabled").checked = linkSettings["artifacts.enabled"];
     document.getElementById("live-status").checked = linkSettings.liveStatus;
-    document.getElementById("open-in").value = linkSettings.openIn;
     setSectionEnabled("jira-body", linkSettings["jira.enabled"]);
     setSectionEnabled("github-body", linkSettings["github.enabled"]);
   }
@@ -695,10 +679,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       vscodeApi.postMessage({ type: "setLinkSetting", settingKey, value: checkbox.checked }),
     );
   }
-  const openInSelect = document.getElementById("open-in");
-  openInSelect.addEventListener("change", () =>
-    vscodeApi.postMessage({ type: "setLinkSetting", settingKey: "openIn", value: openInSelect.value }),
-  );
 
   const refreshButton = document.getElementById("refresh-projects");
   refreshButton.addEventListener("click", () => {

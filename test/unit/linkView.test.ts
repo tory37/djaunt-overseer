@@ -1,10 +1,9 @@
-import { existsSync } from "fs";
 import { describe, expect, it } from "vitest";
 import {
   ConcurrencyLimiter,
   linkCountBadge,
   linkDisplayId,
-  staticLinkIconName,
+  isDimmedLink,
   LinkViewSettings,
   linkUrl,
   MarkedLink,
@@ -12,6 +11,8 @@ import {
   ownedTicketKey,
   visibleLinks,
 } from "../../src/linkView";
+import { acceptedOrder, resourceRow } from "../../src/resourceRows";
+import { statusGlyphMarkup } from "../../src/statusIcons";
 
 function resolvedLink(overrides: Partial<MarkedLink> & Pick<MarkedLink, "kind" | "id" | "role">): MarkedLink {
   return {
@@ -138,35 +139,50 @@ describe("ConcurrencyLimiter", () => {
   });
 });
 
-describe("staticLinkIconName", () => {
-  it("leaves a link with a live status to the status color", () => {
-    expect(staticLinkIconName(OWNED_PR, { text: "merged", colorKey: "merged" })).toBeUndefined();
-    expect(staticLinkIconName(OWNED_PR, undefined)).toBe("pr");
-  });
-
-  it("uses one icon for artifacts whatever the status", () => {
-    const artifact = resolvedLink({ kind: "artifact", id: "abc", role: "owned" });
-    expect(staticLinkIconName(artifact, undefined)).toBe("artifact");
-  });
-
-  it("dims irrelevant and inactive links even with a status", () => {
+describe("isDimmedLink", () => {
+  it("dims removed, irrelevant, and inactive links, unless pinned", () => {
     const irrelevantTicket = resolvedLink({ kind: "ticket", id: "ABC-1", role: "irrelevant" });
     const inactivePr = { ...OWNED_PR, stillRelevant: false };
-    expect(staticLinkIconName(irrelevantTicket, { text: "Done", colorKey: "Done" })).toBe("ticket-dim");
-    expect(staticLinkIconName(inactivePr, { text: "open", colorKey: "open" })).toBe("pr-dim");
-    expect(staticLinkIconName({ ...OWNED_PR, mark: "removed" }, { text: "open", colorKey: "open" })).toBe("pr-dim");
-    expect(staticLinkIconName({ ...inactivePr, mark: "pinned" }, { text: "open", colorKey: "open" })).toBeUndefined();
+    expect(isDimmedLink(OWNED_PR)).toBe(false);
+    expect(isDimmedLink(irrelevantTicket)).toBe(true);
+    expect(isDimmedLink(inactivePr)).toBe(true);
+    expect(isDimmedLink({ ...OWNED_PR, mark: "removed" })).toBe(true);
+    expect(isDimmedLink({ ...inactivePr, mark: "pinned" })).toBe(false);
+  });
+});
+
+describe("resourceRow", () => {
+  it("draws the status glyph in the status color once a status loads", () => {
+    const mergedRow = resourceRow(OWNED_PR, { text: "merged", colorKey: "merged" }, "#a371f7", "");
+    expect(mergedRow).toMatchObject({
+      key: "pr:acme/web-app/pull/2384",
+      displayId: "web-app#2384",
+      statusText: "merged",
+      statusColor: "#a371f7",
+    });
+    expect(mergedRow.glyph).toBe(statusGlyphMarkup("git-merge"));
   });
 
-  it("has a light and dark file for every static icon", () => {
-    const iconNames = (["pr", "ticket", "artifact"] as const).flatMap((kind) => {
-      const link = resolvedLink({ kind, id: "x", role: "owned" });
-      const dimmedLink = { ...link, role: "irrelevant" as const };
-      return [staticLinkIconName(link, undefined), staticLinkIconName(dimmedLink, undefined)];
-    });
-    for (const iconName of iconNames) {
-      expect(existsSync(`media/links/${iconName}-light.svg`), iconName).toBe(true);
-      expect(existsSync(`media/links/${iconName}-dark.svg`), iconName).toBe(true);
-    }
+  it("draws the plain kind glyph with no color before a status loads, and always for artifacts", () => {
+    expect(resourceRow(OWNED_PR, undefined, undefined, "")).toMatchObject({ statusColor: undefined });
+    const artifactRow = resourceRow(NOISE_ARTIFACT, { text: "x", colorKey: "x" }, "#ffffff", "");
+    expect(artifactRow.statusColor).toBeUndefined();
+    expect(artifactRow.glyph).toBe(statusGlyphMarkup("sparkles"));
+  });
+
+  it("builds a ticket URL only when the Jira base URL is set", () => {
+    expect(resourceRow(OWNED_TICKET, undefined, undefined, "").url).toBeUndefined();
+    expect(resourceRow(OWNED_TICKET, undefined, undefined, "https://acme.atlassian.net/").url).toBe(
+      "https://acme.atlassian.net/browse/PROJ-9",
+    );
+  });
+});
+
+describe("acceptedOrder", () => {
+  it("accepts a reorder of exactly the shown keys and rejects a stale one", () => {
+    expect(acceptedOrder(["a", "b", "c"], ["c", "a", "b"])).toEqual(["c", "a", "b"]);
+    expect(acceptedOrder(["a", "b", "c"], ["c", "a"])).toBeUndefined();
+    expect(acceptedOrder(["a", "b", "c"], ["c", "a", "a"])).toBeUndefined();
+    expect(acceptedOrder(["a", "b"], ["a", "x"])).toBeUndefined();
   });
 });
