@@ -55,6 +55,18 @@ describe("Registry", () => {
     expect(registry.isSessionExpanded("a")).toBe(false);
   });
 
+  it("stores a terminal session with its shell pid and forgets it on unpin", async () => {
+    const registry = new Registry(memoryStore());
+    await registry.addTerminalSession("t", { cwd: "/repo", createdAtMs: 1 });
+    await registry.setTerminalShellPid("t", 4242);
+    await registry.setTerminalShellPid("missing", 1);
+
+    expect(registry.terminalSessions()).toEqual({ t: { cwd: "/repo", createdAtMs: 1, shellPid: 4242 } });
+    await registry.pin("t");
+    await registry.unpin("t");
+    expect(registry.terminalSessions()).toEqual({});
+  });
+
   it("pins once and unpins", async () => {
     const registry = new Registry(memoryStore());
 

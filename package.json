@@ -116,6 +116,23 @@
         "icon": "$(add)"
       },
       {
+        "command": "overseer.newTerminal",
+        "title": "New Terminal…",
+        "category": "Overseer",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "overseer.openTerminal",
+        "title": "Open Terminal",
+        "category": "Overseer",
+        "icon": "$(play)"
+      },
+      {
+        "command": "overseer.renameTerminal",
+        "title": "Rename Terminal",
+        "category": "Overseer"
+      },
+      {
         "command": "overseer.suspendSession",
         "title": "Suspend",
         "category": "Overseer",
@@ -255,6 +272,11 @@
           "group": "navigation@0"
         },
         {
+          "command": "overseer.newTerminal",
+          "when": "view == overseer.sessions",
+          "group": "navigation@0"
+        },
+        {
           "command": "overseer.allSessions",
           "when": "view == overseer.sessions",
           "group": "navigation@1"
@@ -375,6 +397,36 @@
           "command": "overseer.summarizeSession",
           "when": "view == overseer.sessions && viewItem =~ /^session\\./",
           "group": "3_links@2"
+        },
+        {
+          "command": "overseer.openTerminal",
+          "when": "view == overseer.sessions && viewItem == terminal.closed",
+          "group": "inline@1"
+        },
+        {
+          "command": "overseer.openTerminal",
+          "when": "view == overseer.sessions && viewItem == terminal.closed",
+          "group": "1_session@1"
+        },
+        {
+          "command": "overseer.renameTerminal",
+          "when": "view == overseer.sessions && viewItem =~ /^terminal\\./",
+          "group": "1_session@3"
+        },
+        {
+          "command": "overseer.unpinSession",
+          "when": "view == overseer.sessions && viewItem =~ /^terminal\\./",
+          "group": "9_remove@1"
+        },
+        {
+          "command": "overseer.killSession",
+          "when": "view == overseer.sessions && viewItem =~ /^terminal\\./",
+          "group": "9_remove@2"
+        },
+        {
+          "command": "overseer.newTerminal",
+          "when": "view == overseer.sessions && viewItem =~ /^group\\./",
+          "group": "1_group@1"
         }
       ],
       "commandPalette": [
@@ -480,6 +532,14 @@
         },
         {
           "command": "overseer.openResources",
+          "when": "false"
+        },
+        {
+          "command": "overseer.openTerminal",
+          "when": "false"
+        },
+        {
+          "command": "overseer.renameTerminal",
           "when": "false"
         }
       ]

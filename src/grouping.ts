@@ -1,5 +1,13 @@
 import { displayTitle, SessionMeta } from "./indexer";
-import { autoGroupRef, GroupRef, PendingSession, UNGROUPED_REF, UserGroup, userGroupRef } from "./registry";
+import {
+  autoGroupRef,
+  GroupRef,
+  PendingSession,
+  TerminalSession,
+  UNGROUPED_REF,
+  UserGroup,
+  userGroupRef,
+} from "./registry";
 import { sortBySavedOrder } from "./reorder";
 import { extractTicketKey } from "./ticket";
 
@@ -10,6 +18,7 @@ export interface PinnedSession {
   meta: SessionMeta | undefined;
   label: string | undefined;
   pending: PendingSession | undefined;
+  terminal?: TerminalSession;
 }
 
 const SHORT_ID_LENGTH = 8;
@@ -20,6 +29,9 @@ export function pinnedSessionTitle(pinned: PinnedSession): string {
   }
   if (pinned.meta !== undefined) {
     return displayTitle(pinned.meta);
+  }
+  if (pinned.terminal !== undefined) {
+    return "Terminal";
   }
   return pinned.pending !== undefined ? "New session" : `Session ${pinned.sessionId.slice(0, SHORT_ID_LENGTH)}`;
 }
@@ -38,6 +50,7 @@ export interface GroupingInput {
   assignments: Record<string, GroupRef>;
   labels: Record<string, string>;
   pendingSessions: Record<string, PendingSession>;
+  terminalSessions?: Record<string, TerminalSession>;
   groupOrder: GroupRef[];
   sessionOrder: string[];
   linkedTicketKeys?: Record<string, string>;
@@ -63,6 +76,7 @@ export function buildGroups(input: GroupingInput): SessionGroup[] {
       meta: input.sessionsById.get(sessionId),
       label: input.labels[sessionId],
       pending: input.pendingSessions[sessionId],
+      terminal: input.terminalSessions?.[sessionId],
     };
     const linkedTicketKey = input.linkedTicketKeys?.[sessionId];
     const groupRef = resolveGroupRef(input.assignments[sessionId], pinnedSession, userGroupRefs, linkedTicketKey);
@@ -118,5 +132,5 @@ function byMostRecentActivity(left: PinnedSession, right: PinnedSession): number
 }
 
 function lastActivityMs(pinned: PinnedSession): number {
-  return pinned.meta?.lastActivityMs ?? pinned.pending?.createdAtMs ?? 0;
+  return pinned.meta?.lastActivityMs ?? pinned.pending?.createdAtMs ?? pinned.terminal?.createdAtMs ?? 0;
 }

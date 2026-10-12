@@ -7,7 +7,7 @@ import { linkCountBadge, MarkedLink } from "./linkView";
 import { LiveSession } from "./liveParse";
 import { LiveSessionMonitor } from "./liveSessions";
 import { tildePath } from "./paths";
-import { GroupRef, Registry } from "./registry";
+import { GroupRef, Registry, TerminalSession } from "./registry";
 import { moveBeside } from "./reorder";
 import { otherReposLabel } from "./repoFilter";
 import { SessionIconState, sessionIconName, sessionIconSpec } from "./sessionIcons";
@@ -69,7 +69,7 @@ export class SessionTreeProvider
         groupRef: parentNode.group.ref,
       }));
     }
-    if (parentNode.kind === "session") {
+    if (parentNode.kind === "session" && parentNode.pinned.terminal === undefined) {
       const sessionId = parentNode.pinned.sessionId;
       return this.registry.hasFoundResources(sessionId) ? [{ kind: "resources", sessionId, groupRef: parentNode.groupRef }] : [];
     }
@@ -82,6 +82,9 @@ export class SessionTreeProvider
     }
     if (node.kind === "resources") {
       return resourcesTreeItem(node.sessionId, this.resourceLinks(node.sessionId), this.linkService.isFinding(node.sessionId));
+    }
+    if (node.pinned.terminal !== undefined) {
+      return terminalTreeItem(node.pinned, node.pinned.terminal);
     }
     const meta = node.pinned.meta;
     const hasFoundResources = this.registry.hasFoundResources(node.pinned.sessionId);
@@ -170,6 +173,7 @@ export class SessionTreeProvider
       assignments: this.registry.assignments(),
       labels: this.registry.labels(),
       pendingSessions: this.registry.pendingSessions(),
+      terminalSessions: this.registry.terminalSessions(),
       groupOrder: this.registry.groupOrder(),
       sessionOrder: this.registry.sessionOrder(),
       linkedTicketKeys: this.linkService.ownedTicketKeys(
@@ -247,6 +251,21 @@ function sessionTreeItem(
     treeItem.iconPath = sessionStateIcon("duplicate");
     treeItem.description = `${copyCount} copies running · ${treeItem.description}`;
   }
+  treeItem.command = { command: "overseer.clickSession", title: "Open", arguments: [pinned.sessionId] };
+  return treeItem;
+}
+
+function terminalTreeItem(pinned: PinnedSession, terminalSession: TerminalSession): vscode.TreeItem {
+  const isOpen = findSessionTerminal(pinned.sessionId) !== undefined;
+  const treeItem = new vscode.TreeItem(pinnedSessionTitle(pinned), vscode.TreeItemCollapsibleState.None);
+  treeItem.id = `session:${pinned.sessionId}`;
+  treeItem.description = `${path.basename(terminalSession.cwd)} · terminal`;
+  const iconColorId = sessionIconSpec(isOpen ? "running" : "suspended").colorId;
+  treeItem.iconPath = new vscode.ThemeIcon("terminal-bash", new vscode.ThemeColor(iconColorId));
+  treeItem.tooltip = new vscode.MarkdownString(
+    `**${escapeMarkdown(pinnedSessionTitle(pinned))}**\n\nTerminal · ${isOpen ? "open" : "closed"} · \`${tildePath(terminalSession.cwd)}\``,
+  );
+  treeItem.contextValue = `terminal.${isOpen ? "open" : "closed"}`;
   treeItem.command = { command: "overseer.clickSession", title: "Open", arguments: [pinned.sessionId] };
   return treeItem;
 }

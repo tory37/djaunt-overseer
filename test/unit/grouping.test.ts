@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildGroups, GroupingInput } from "../../src/grouping";
+import { buildGroups, GroupingInput, pinnedSessionTitle } from "../../src/grouping";
 import { SessionMeta } from "../../src/indexer";
 import { autoGroupRef, UNGROUPED_REF, userGroupRef } from "../../src/registry";
 
@@ -113,6 +113,25 @@ describe("buildGroups", () => {
     });
 
     expect(summarize(input)).toEqual([["CR-5", ["new"]]]);
+  });
+
+  it("titles a terminal session, files it by a ticket key in its label, and sorts it by creation time", () => {
+    const olderClaude = sessionMeta("claude", { lastActivityMs: 1_000 });
+    const groups = buildGroups(
+      groupingInput([olderClaude], {
+        pinnedSessionIds: ["claude", "shell", "ticket-shell"],
+        labels: { "ticket-shell": "PROJ-12 logs" },
+        terminalSessions: {
+          shell: { cwd: "/repo", createdAtMs: 2_000 },
+          "ticket-shell": { cwd: "/repo", createdAtMs: 3_000 },
+        },
+      }),
+    );
+
+    const ungrouped = groups.find((group) => group.ref === UNGROUPED_REF);
+    expect(ungrouped?.sessions.map((pinned) => pinned.sessionId)).toEqual(["shell", "claude"]);
+    expect(pinnedSessionTitle(ungrouped!.sessions[0])).toBe("Terminal");
+    expect(groups.find((group) => group.ref === autoGroupRef("PROJ-12"))?.sessions[0].terminal?.cwd).toBe("/repo");
   });
 
   it("keeps pinned sessions missing from the index under Ungrouped", () => {

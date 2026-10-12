@@ -22,11 +22,20 @@ export function findSessionTerminal(sessionId: string): vscode.Terminal | undefi
 }
 
 // Overseer terminals exec claude directly, so the terminal's process ID is Claude's own pid.
-export async function adoptTerminalsByPid(liveSessions: Map<string, LiveSession>): Promise<boolean> {
+// A plain shell has no Claude pid, so its pid is saved at launch and matched here.
+export async function adoptTerminalsByPid(
+  liveSessions: Map<string, LiveSession>,
+  shellPidsBySessionId: Record<string, number | undefined>,
+): Promise<boolean> {
   const sessionIdsByPid = new Map<number, string>();
   for (const liveSession of liveSessions.values()) {
     if (liveSession.pid !== undefined) {
       sessionIdsByPid.set(liveSession.pid, liveSession.sessionId);
+    }
+  }
+  for (const [sessionId, shellPid] of Object.entries(shellPidsBySessionId)) {
+    if (shellPid !== undefined) {
+      sessionIdsByPid.set(shellPid, sessionId);
     }
   }
   let adoptedAny = false;
@@ -95,6 +104,29 @@ export function startNewSession(
   const nameArgument = sessionName === undefined ? "" : ` -n ${quoteForShell(sessionName)}`;
   log.appendLine(`Starting new session ${sessionId} in ${cwd}`);
   return launchClaudeTerminal(sessionName ?? "New session", cwd, sessionId, `claude --session-id ${sessionId}${nameArgument}`);
+}
+
+// Uses the user's default terminal profile, so it is the same shell as any other VS Code terminal.
+export function openShellTerminal(sessionId: string, title: string, cwd: string, log: vscode.OutputChannel): vscode.Terminal | undefined {
+  const openTerminal = findSessionTerminal(sessionId);
+  if (openTerminal) {
+    openTerminal.show();
+    return openTerminal;
+  }
+  if (!fs.existsSync(cwd)) {
+    void vscode.window.showErrorMessage(`Overseer: ${cwd} no longer exists, so the terminal can't open there.`);
+    return undefined;
+  }
+  log.appendLine(`Opening terminal ${sessionId} in ${cwd}`);
+  const terminal = vscode.window.createTerminal({
+    name: title,
+    cwd,
+    env: { [SESSION_ID_ENV_VAR]: sessionId },
+    location: vscode.TerminalLocation.Editor,
+    iconPath: new vscode.ThemeIcon("terminal-bash"),
+  });
+  terminal.show();
+  return terminal;
 }
 
 export function attachBackgroundSession(

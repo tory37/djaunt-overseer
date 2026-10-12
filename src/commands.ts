@@ -15,6 +15,7 @@ import { SessionSummaryService } from "./sessionSummaries";
 import {
   attachBackgroundSession,
   findSessionTerminal,
+  openShellTerminal,
   resumeSession,
   sendSlashCommand,
   startNewSession,
@@ -111,7 +112,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     }
   };
 
-  const pickDirectory = async (groupDirectories: string[]): Promise<string | undefined> => {
+  const pickDirectory = async (groupDirectories: string[], pickTitle: string): Promise<string | undefined> => {
     const workspaceDirectories = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
     const recentDirectories = sessionIndex.currentSessions
       .map((session) => session.resumeCwd ?? session.startCwd)
@@ -127,7 +128,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     }));
     const browseItem: DirectoryPickItem = { label: "$(folder-opened) Browse…", directory: undefined };
     const pickedItem = await vscode.window.showQuickPick([...directoryItems, browseItem], {
-      title: "New Claude session: where should it start?",
+      title: pickTitle,
       matchOnDescription: true,
     });
     if (pickedItem === undefined || pickedItem.directory !== undefined) {
@@ -138,7 +139,9 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
   };
 
   const suspendSessions = async (pinnedSessions: PinnedSession[]): Promise<void> => {
-    const runningSessions = pinnedSessions.filter((pinned) => findSessionTerminal(pinned.sessionId) !== undefined);
+    const runningSessions = pinnedSessions.filter(
+      (pinned) => pinned.terminal === undefined && findSessionTerminal(pinned.sessionId) !== undefined,
+    );
     const busySessions = runningSessions.filter((pinned) => liveMonitor.get(pinned.sessionId)?.status === "busy");
     if (busySessions.length > 0) {
       const busyTitles = busySessions.map(pinnedSessionTitle).join(", ");
@@ -161,13 +164,19 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
 
   const renameSession = async (pinned: PinnedSession): Promise<void> => {
     const currentTitle = pinnedSessionTitle(pinned);
-    const newName = (await vscode.window.showInputBox({ prompt: "Rename session", value: currentTitle }))?.trim();
+    const renamePrompt = pinned.terminal === undefined ? "Rename session" : "Rename terminal";
+    const newName = (await vscode.window.showInputBox({ prompt: renamePrompt, value: currentTitle }))?.trim();
     if (!newName || newName === currentTitle) {
       return;
     }
     await registry.setLabel(pinned.sessionId, newName);
     const terminal = findSessionTerminal(pinned.sessionId);
     if (terminal === undefined) {
+      return;
+    }
+    if (pinned.terminal !== undefined) {
+      terminal.show();
+      await vscode.commands.executeCommand("workbench.action.terminal.renameWithArg", { name: newName });
       return;
     }
     if (liveMonitor.get(pinned.sessionId)?.status === "busy") {
@@ -184,6 +193,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
   // Busy sessions are skipped because Claude drops input typed while it works.
   const sendToIdleSessions = (sessionNodes: SessionNode[], slashCommand: string): void => {
     const idleTerminals = sessionNodes
+      .filter((node) => node.pinned.terminal === undefined)
       .filter((node) => liveMonitor.get(node.pinned.sessionId)?.status !== "busy")
       .map((node) => findSessionTerminal(node.pinned.sessionId))
       .filter(isDefined);
@@ -203,6 +213,19 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       (node): node is SessionNode => node.kind === "session" && node.pinned.sessionId === sessionId,
     );
     return sessionNode?.pinned;
+  };
+
+  const openTerminalSession = async (pinned: PinnedSession): Promise<void> => {
+    if (pinned.terminal === undefined) {
+      return;
+    }
+    const openTerminal = findSessionTerminal(pinned.sessionId);
+    if (openTerminal !== undefined) {
+      openTerminal.show();
+      return;
+    }
+    const terminal = openShellTerminal(pinned.sessionId, pinnedSessionTitle(pinned), pinned.terminal.cwd, log);
+    await registry.setTerminalShellPid(pinned.sessionId, await terminal?.processId);
   };
 
   let lastClick: { sessionId: string; atMs: number } | undefined;
@@ -255,6 +278,10 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     }),
     vscode.commands.registerCommand("overseer.resumeSession", async (clickedNode?: TreeNode) => {
       for (const sessionNode of selectedSessionNodes(clickedNode)) {
+        if (sessionNode.pinned.terminal !== undefined) {
+          await openTerminalSession(sessionNode.pinned);
+          continue;
+        }
         const sessionId = sessionNode.pinned.sessionId;
         const meta = sessionNode.pinned.meta ?? (await findSessionMeta(sessionId));
         if (meta === undefined) {
@@ -316,6 +343,12 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         await renameSession(sessionNode.pinned);
       }
     }),
+    vscode.commands.registerCommand("overseer.renameTerminal", async (clickedNode?: TreeNode) => {
+      const sessionNode = selectedSessionNodes(clickedNode)[0];
+      if (sessionNode) {
+        await renameSession(sessionNode.pinned);
+      }
+    }),
     // Tree items have no double-click event, so two clicks on the same session in quick succession count as one.
     vscode.commands.registerCommand("overseer.clickSession", async (sessionId: string) => {
       const nowMs = Date.now();
@@ -331,7 +364,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     vscode.commands.registerCommand("overseer.newSession", async (clickedNode?: TreeNode) => {
       const groupDirectories =
         clickedNode?.kind === "group" ? clickedNode.group.sessions.map(pinnedSessionDirectory).filter(isDefined) : [];
-      const startDirectory = await pickDirectory(groupDirectories);
+      const startDirectory = await pickDirectory(groupDirectories, "New Claude session: where should it start?");
       if (startDirectory === undefined) {
         return;
       }
@@ -355,6 +388,39 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       }
       await registry.pin(sessionId);
       startNewSession(sessionId, sessionName === "" ? undefined : sessionName, startDirectory, log);
+    }),
+    vscode.commands.registerCommand("overseer.newTerminal", async (clickedNode?: TreeNode) => {
+      const groupDirectories =
+        clickedNode?.kind === "group" ? clickedNode.group.sessions.map(pinnedSessionDirectory).filter(isDefined) : [];
+      const startDirectory = await pickDirectory(groupDirectories, "New terminal: where should it open?");
+      if (startDirectory === undefined) {
+        return;
+      }
+      const terminalName = (
+        await vscode.window.showInputBox({
+          title: `New terminal in ${tildePath(startDirectory)}`,
+          prompt: "Name (optional). A ticket key like PROJ-2567 files it under that ticket.",
+        })
+      )?.trim();
+      if (terminalName === undefined) {
+        return;
+      }
+      const sessionId = randomUUID();
+      await registry.addTerminalSession(sessionId, { cwd: startDirectory, createdAtMs: Date.now() });
+      if (terminalName !== "") {
+        await registry.setLabel(sessionId, terminalName);
+      }
+      if (clickedNode?.kind === "group" && clickedNode.group.kind !== "ungrouped") {
+        await registry.assign([sessionId], clickedNode.group.ref);
+      }
+      await registry.pin(sessionId);
+      const terminal = openShellTerminal(sessionId, terminalName === "" ? "Terminal" : terminalName, startDirectory, log);
+      await registry.setTerminalShellPid(sessionId, await terminal?.processId);
+    }),
+    vscode.commands.registerCommand("overseer.openTerminal", async (clickedNode?: TreeNode) => {
+      for (const sessionNode of selectedSessionNodes(clickedNode)) {
+        await openTerminalSession(sessionNode.pinned);
+      }
     }),
     vscode.commands.registerCommand("overseer.suspendSession", async (clickedNode?: TreeNode) => {
       await suspendSessions(selectedSessionNodes(clickedNode).map((node) => node.pinned));
@@ -428,7 +494,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
 }
 
 function pinnedSessionDirectory(pinned: PinnedSession): string | undefined {
-  return pinned.meta?.resumeCwd ?? pinned.meta?.startCwd ?? pinned.pending?.cwd;
+  return pinned.meta?.resumeCwd ?? pinned.meta?.startCwd ?? pinned.pending?.cwd ?? pinned.terminal?.cwd;
 }
 
 function isDefined<Value>(value: Value | undefined): value is Value {

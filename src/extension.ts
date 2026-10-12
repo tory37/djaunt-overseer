@@ -58,7 +58,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const refreshTree = (): void => treeProvider.refresh();
   const adoptRevivedTerminals = async (): Promise<void> => {
-    if (await adoptTerminalsByPid(await liveMonitor.refresh())) {
+    if (await adoptTerminalsByPid(await liveMonitor.refresh(), shellPidsBySessionId(registry))) {
       refreshTree();
     }
   };
@@ -87,7 +87,10 @@ export function activate(context: vscode.ExtensionContext): void {
       refreshTree();
       void adoptRevivedTerminals();
     }),
-    vscode.window.onDidOpenTerminal(refreshTree),
+    vscode.window.onDidOpenTerminal(() => {
+      refreshTree();
+      void adoptRevivedTerminals();
+    }),
     vscode.window.onDidCloseTerminal(() => {
       refreshTree();
       void sessionIndex.refresh();
@@ -137,9 +140,9 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
   );
+  void adoptRevivedTerminals();
 
   void sessionIndex.refresh();
-  void adoptRevivedTerminals();
 }
 
 export function deactivate(): void {}
@@ -160,4 +163,10 @@ function sessionTitle(
 ): string {
   const meta = findIndexedSession(sessionId);
   return registry.labels()[sessionId] ?? (meta === undefined ? sessionId : displayTitle(meta));
+}
+
+function shellPidsBySessionId(registry: Registry): Record<string, number | undefined> {
+  return Object.fromEntries(
+    Object.entries(registry.terminalSessions()).map(([sessionId, terminalSession]) => [sessionId, terminalSession.shellPid]),
+  );
 }

@@ -31,6 +31,7 @@ const LINK_ORDER_KEY = "overseer.linkOrder";
 const EXPANDED_SESSIONS_KEY = "overseer.expandedSessionIds";
 const COLLAPSED_GROUPS_KEY = "overseer.collapsedGroupRefs";
 const RESOURCE_SESSIONS_KEY = "overseer.resourceSessionIds";
+const TERMINAL_SESSIONS_KEY = "overseer.terminalSessions";
 
 export type LinkMark = "pinned" | "removed";
 export type LinkMarks = Record<string, LinkMark>;
@@ -38,6 +39,12 @@ export type LinkMarks = Record<string, LinkMark>;
 export interface PendingSession {
   cwd: string;
   createdAtMs: number;
+}
+
+export interface TerminalSession {
+  cwd: string;
+  createdAtMs: number;
+  shellPid?: number;
 }
 
 // Each field lives under its own key so two windows writing different fields don't clobber each other.
@@ -79,6 +86,8 @@ export class Registry {
     await this.write(RESOURCE_SESSIONS_KEY, this.resourceSessionIds().filter((foundId) => foundId !== sessionId));
     const { [sessionId]: _removedPending, ...remainingPending } = this.pendingSessions();
     await this.write(PENDING_KEY, remainingPending);
+    const { [sessionId]: _removedTerminal, ...remainingTerminals } = this.terminalSessions();
+    await this.write(TERMINAL_SESSIONS_KEY, remainingTerminals);
   }
 
   userGroups(): UserGroup[] {
@@ -158,6 +167,22 @@ export class Registry {
 
   async addPendingSession(sessionId: string, pendingSession: PendingSession): Promise<void> {
     await this.write(PENDING_KEY, { ...this.pendingSessions(), [sessionId]: pendingSession });
+  }
+
+  // A plain shell has no transcript, so the registry is the only record of it.
+  terminalSessions(): Record<string, TerminalSession> {
+    return this.store.get<Record<string, TerminalSession>>(TERMINAL_SESSIONS_KEY) ?? {};
+  }
+
+  async addTerminalSession(sessionId: string, terminalSession: TerminalSession): Promise<void> {
+    await this.write(TERMINAL_SESSIONS_KEY, { ...this.terminalSessions(), [sessionId]: terminalSession });
+  }
+
+  async setTerminalShellPid(sessionId: string, shellPid: number | undefined): Promise<void> {
+    const terminalSession = this.terminalSessions()[sessionId];
+    if (terminalSession !== undefined) {
+      await this.write(TERMINAL_SESSIONS_KEY, { ...this.terminalSessions(), [sessionId]: { ...terminalSession, shellPid } });
+    }
   }
 
   // Marks are keyed by link, not by scan, so a rescan or a new judge verdict keeps them.
