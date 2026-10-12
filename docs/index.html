@@ -602,35 +602,46 @@
 
         const TerminalVisual = () => (
             <div className="font-mono text-xs border border-line bg-surface py-1">
-                <div className="flex items-center gap-2 h-6 pl-3 text-bone">
+                <div className="flex items-center gap-2 h-6 pl-3 text-muted uppercase tracking-label">
+                    <Icon name="ChevronDown" className="w-4 h-4" />
+                    <span>Terminals</span>
+                </div>
+                <div className="flex items-center gap-2 h-6 pl-6 text-bone">
                     <Icon name="Tag" className="w-4 h-4 text-muted" />
                     <span>OPS-4410</span>
                     <span className="text-muted">2</span>
                 </div>
-                <div className="flex items-center gap-2 h-6 pl-8 text-bone">
-                    <Icon name="LoaderCircle" className="w-4 h-4 text-success animate-spin motion-reduce:animate-none" />
-                    <span className="truncate">OPS-4410 billing export</span>
-                    <span className="text-muted truncate">api · ops-4410-export</span>
-                </div>
-                <div className="flex items-center gap-2 h-6 pl-8 bg-raised text-bone">
+                <div className="flex items-center gap-2 h-6 pl-10 bg-raised text-bone">
                     <Icon name="Terminal" className="w-4 h-4 text-success" />
                     <span className="truncate">OPS-4410 dev server</span>
                     <span className="text-muted truncate">api · terminal</span>
                 </div>
+                <div className="flex items-center gap-2 h-6 pl-10 text-bone">
+                    <Icon name="Terminal" className="w-4 h-4 text-muted" />
+                    <span className="truncate">OPS-4410 logs</span>
+                    <span className="text-muted truncate">api · closed</span>
+                </div>
+                <div className="flex items-center gap-2 h-6 pl-6 text-bone">
+                    <Icon name="Folder" className="w-4 h-4 text-muted" />
+                    <span>Ungrouped</span>
+                    <span className="text-muted">1</span>
+                </div>
             </div>
         );
 
-        const StatusVisual = () => (
+        const StatusMarkVisual = () => (
             <div className="font-mono text-xs border border-line bg-surface py-1">
                 {[
                     { icon: 'LoaderCircle', iconClass: 'text-success', text: 'PROJ-2567 login timeout', badge: 'IP', textClass: 'text-accent' },
                     { icon: 'LoaderCircle', iconClass: 'text-success', text: 'OPS-4410 billing export', badge: 'AI', textClass: 'text-warning' },
                     { icon: 'Terminal', iconClass: 'text-success', text: 'Triage the flaky deploy', badge: 'TR', textClass: 'text-warning' },
+                    { icon: 'LoaderCircle', iconClass: 'text-success', text: 'Rate limiter refactor', badge: 'BL', textClass: 'text-warning', reason: 'Waiting on the infra team' },
                     { icon: 'Terminal', iconClass: 'text-success', text: 'Release notes', badge: 'RS', textClass: 'text-success' },
                 ].map((row) => (
                     <div key={row.text} className="flex items-center gap-2 h-6 pl-3 pr-3 text-bone">
                         <Icon name={row.icon} className={`w-4 h-4 ${row.iconClass}`} />
                         <span className={`truncate ${row.textClass}`}>{row.text}</span>
+                        {row.reason && <span className="text-muted truncate">{row.reason}</span>}
                         <span className={`ml-auto ${row.textClass}`}>{row.badge}</span>
                     </div>
                 ))}
@@ -693,9 +704,9 @@
             { title: 'Open all of a session\'s links in one panel', body: 'Click Associated Links to open a panel for that session. Links nest as parent ticket, sub-tickets, then the PRs for each ticket. Each row has buttons to open it in VS Code or your browser, copy it, move a ticket to another status, pin it, or remove it. Drag rows to reorder them.', Visual: LinksPanelVisual },
             { title: 'Check PR and ticket status at a glance', body: 'Each PR and ticket shows its live status, and its icon takes the color you pick for that status. PR status comes from gh. Ticket status comes from the Jira MCP server Claude Code already uses.', Visual: LinkStatusVisual },
             { title: 'Pin or remove a link', body: 'A pinned link stays at the top, even when the judge thinks it does not matter. A removed link is hidden. Both survive a rescan. Removed in the panel header shows the hidden ones again so you can restore them.', Visual: PinVisual },
-            { title: 'Pick your own icons and colors', body: 'The Settings panel sets the icon and color for each session state, a color for every status in each Jira project, and a color for each PR state. Type Overseer in the Command Palette to reach every setting.', Visual: SettingsVisual },
-            { title: 'Keep plain terminals next to your sessions', body: 'New Terminal opens a shell in a folder you pick. Terminals get their own Terminals view, apart from your Claude sessions, and keep the same groups. Click one to bring it forward, and reopen it in the same folder after you close it. Settings can hide the Sessions, Terminals, and Repos views.', Visual: TerminalVisual },
-            { title: 'Mark where each session stands', body: 'Set Status puts a session or terminal in Todo, Triage, In Progress, AI Review, Human Review, or Ready to Ship. The status tints the row and adds a short badge. It does not follow Jira, so a status like Triage works. The Settings panel adds, renames, reorders, and recolors statuses.', Visual: StatusVisual },
+            { title: 'Pick your own icons and colors', body: 'The Settings panel sets the icon and color for each session state, a color for every status in each Jira project, a color for each PR state, and which views show. Type Overseer in the Command Palette to reach every setting.', Visual: SettingsVisual },
+            { title: 'Keep plain terminals in their own view', body: 'New Terminal opens a shell in a folder you pick. Terminals get their own Terminals view, apart from your Claude sessions, with the same ticket and custom groups. Click one to bring it forward, and reopen it in the same folder after you close it. Settings can hide the Sessions, Terminals, and Repos views.', Visual: TerminalVisual },
+            { title: 'Mark where each session stands', body: 'Set Status puts a session or terminal in Todo, Triage, In Progress, Blocked, AI Review, Human Review, or Ready to Ship. The status tints the row and adds a short badge. Blocked asks why, and the reason shows in the row\'s tooltip. Statuses do not follow Jira, so a status like Triage works. The Settings panel adds, renames, reorders, and recolors them.', Visual: StatusMarkVisual },
             { title: 'Watch every repo from a window with no folder open', body: 'The Repos view lists the repos your pinned sessions and terminals work in. Each row shows the branch, ahead and behind counts, and uncommitted changes, and updates when the repo changes. Expand a repo for its last 20 commits. A commit a session made shows that session. Click a commit to read its diff, or open the repo in Source Control.', Visual: RepoHistoryVisual },
             { title: 'See when a session is compacting', body: 'A compacting session shows a spinning icon until it finishes. Claude Code does not report compaction, so Overseer offers to install a PreCompact and a PostCompact hook. Skip the prompt and install them later from the Command Palette.', Visual: CompactVisual },
             { title: 'Read a summary when you hover over a session', body: 'The hover shows the folder, branch, first and last prompt, and a short summary. The summary is the recap Claude Code wrote when it has one. Summarize with Haiku writes a new one from the end of the transcript, and it runs only when you click it.', Visual: HoverVisual },
@@ -714,6 +725,7 @@
             { step: '04', title: 'Links', body: 'Find Resources scans one transcript for links. A headless claude -p run with Haiku reads an 8 KB digest of them and sorts them. At most two runs at once, and each result is cached. Status checks run every five minutes while a links panel is open.' },
             { step: '05', title: 'Hooks', body: 'Optional PreCompact and PostCompact hooks in ~/.claude/settings.json write and delete a marker per session in ~/.claude/overseer/compacting. Install backs up the file first and leaves your own hooks alone.' },
             { step: '06', title: 'Repos', body: 'git status and git log run per repo, at most four at once, only while the Repos view shows. A watch on each .git folder refreshes a repo a second after it changes. The indexer reads commit hashes from transcripts to match commits to sessions.' },
+            { step: '07', title: 'Statuses', body: 'The list lives in the overseer.sessionStatuses setting. Each session\'s status and reason are saved in the extension\'s state, and a file decoration tints the row. None of it calls a model.' },
         ];
 
         const INSTALL_COMMANDS = `curl -LO ${VSIX_URL}\ncode --install-extension ${VSIX_NAME}`;
