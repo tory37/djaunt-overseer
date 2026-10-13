@@ -2,7 +2,7 @@
   "name": "djaunt-overseer",
   "displayName": "Overseer",
   "description": "Vertical tabs for Claude CLI sessions: group by ticket, suspend, and resume from any repo.",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "publisher": "djaunt",
   "private": true,
   "license": "UNLICENSED",
@@ -1086,10 +1086,10 @@
         "id": "overseer.statusPink",
         "description": "Overseer session status color: pink.",
         "defaults": {
-          "dark": "terminal.ansiMagenta",
-          "light": "terminal.ansiMagenta",
-          "highContrast": "terminal.ansiMagenta",
-          "highContrastLight": "terminal.ansiMagenta"
+          "dark": "#FF79B0",
+          "light": "#D6336C",
+          "highContrast": "#FF79B0",
+          "highContrastLight": "#B0124F"
         }
       },
       {
