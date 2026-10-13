@@ -384,6 +384,12 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         await registry.unpin(sessionId);
       }
     }),
+    // The row stays, now closed, so Open Terminal can start the shell again.
+    vscode.commands.registerCommand("overseer.killTerminal", (clickedNode?: TreeNode) => {
+      for (const sessionNode of selectedSessionNodes(clickedNode)) {
+        findSessionTerminal(sessionNode.pinned.sessionId)?.dispose();
+      }
+    }),
     vscode.commands.registerCommand("overseer.newGroup", async () => {
       const groupName = await vscode.window.showInputBox({ prompt: "New group name", placeHolder: "PROJ-2567 login timeout" });
       if (groupName) {

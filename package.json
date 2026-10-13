@@ -158,6 +158,12 @@
         "icon": "$(debug-pause)"
       },
       {
+        "command": "overseer.killTerminal",
+        "title": "Kill Terminal",
+        "category": "Overseer",
+        "icon": "$(close)"
+      },
+      {
         "command": "overseer.suspendGroup",
         "title": "Suspend All in Group",
         "category": "Overseer",
@@ -513,6 +519,16 @@
           "group": "1_session@1"
         },
         {
+          "command": "overseer.killTerminal",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == terminal.open",
+          "group": "inline@1"
+        },
+        {
+          "command": "overseer.killTerminal",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == terminal.open",
+          "group": "1_session@2"
+        },
+        {
           "command": "overseer.renameTerminal",
           "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^terminal\\./",
           "group": "1_session@3"
@@ -579,6 +595,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "overseer.killTerminal",
+          "when": "false"
+        },
         {
           "command": "overseer.resumeSession",
           "when": "false"
