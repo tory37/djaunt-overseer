@@ -26,6 +26,7 @@ import { CommitAuthorship, indexCommitAuthorship } from "./gitStatus";
 import { ResourcesPanel } from "./resourcesPanel";
 import { SessionTreeProvider } from "./tree";
 import { SessionStatusDecorations } from "./sessionStatusView";
+import { registerWorkspaceCommands } from "./workspaceCommands";
 
 const INDEX_REFRESH_INTERVAL_MS = 60_000;
 
@@ -221,6 +222,7 @@ export function activate(context: vscode.ExtensionContext): void {
       pinnedSessions,
       log,
     }),
+    ...registerWorkspaceCommands({ registry }),
     ...registerStatusCommands({ jiraService, linkStatusService, statusConfig }),
     ...registerSettingsCommands({
       extensionUri: context.extensionUri,

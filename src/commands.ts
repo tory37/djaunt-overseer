@@ -27,6 +27,7 @@ import { RepoTreeNode } from "./repoTree";
 import { fillPrompt, parseSessionCommands, promptParameters } from "./sessionCommands";
 import { askStatusReason, configuredStatuses, pickSessionStatus } from "./sessionStatusView";
 import { TreeNode } from "./tree";
+import { pickTargetWorkspace } from "./workspaceCommands";
 
 export interface CommandDependencies {
   sessionIndex: SessionIndex;
@@ -389,6 +390,25 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       for (const sessionNode of selectedSessionNodes(clickedNode)) {
         findSessionTerminal(sessionNode.pinned.sessionId)?.dispose();
       }
+    }),
+    // A user group moves as a whole. Auto and Ungrouped groups only move their sessions.
+    vscode.commands.registerCommand("overseer.moveToWorkspace", async (clickedNode?: TreeNode) => {
+      const groupNode = clickedNode?.kind === "group" ? clickedNode : undefined;
+      const sessionIds =
+        groupNode === undefined
+          ? selectedSessionNodes(clickedNode).map((node) => node.pinned.sessionId)
+          : groupNode.group.sessions.map((pinned) => pinned.sessionId);
+      if (groupNode === undefined && sessionIds.length === 0) {
+        return;
+      }
+      const targetWorkspaceId = await pickTargetWorkspace(registry);
+      if (targetWorkspaceId === undefined) {
+        return;
+      }
+      if (groupNode?.group.kind === "user") {
+        await registry.moveGroupToWorkspace(groupNode.group.ref.slice("user:".length), targetWorkspaceId);
+      }
+      await registry.moveToWorkspace(sessionIds, targetWorkspaceId);
     }),
     vscode.commands.registerCommand("overseer.newGroup", async () => {
       const groupName = await vscode.window.showInputBox({ prompt: "New group name", placeHolder: "PROJ-2567 login timeout" });

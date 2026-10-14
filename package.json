@@ -357,6 +357,32 @@
         "command": "overseer.runSessionCommand",
         "title": "Commands…",
         "category": "Overseer"
+      },
+      {
+        "command": "overseer.switchWorkspace",
+        "title": "Switch Workspace…",
+        "category": "Overseer",
+        "icon": "$(layers)"
+      },
+      {
+        "command": "overseer.newWorkspace",
+        "title": "New Workspace…",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.renameWorkspace",
+        "title": "Rename Workspace…",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.deleteWorkspace",
+        "title": "Delete Workspace…",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.moveToWorkspace",
+        "title": "Move to Workspace…",
+        "category": "Overseer"
       }
     ],
     "menus": {
@@ -387,6 +413,11 @@
           "group": "navigation@9"
         },
         {
+          "command": "overseer.switchWorkspace",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/",
+          "group": "navigation@8"
+        },
+        {
           "command": "overseer.openSettings",
           "when": "view =~ /^overseer\\.(sessions|terminals)$/",
           "group": "9_settings@1"
@@ -412,6 +443,11 @@
           "command": "overseer.resumeSession",
           "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\.(suspended|elsewhere)$/",
           "group": "1_session@1"
+        },
+        {
+          "command": "overseer.moveToWorkspace",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^(session|terminal|group)\\./",
+          "group": "8_workspace@1"
         },
         {
           "command": "overseer.unpinSession",
@@ -737,6 +773,10 @@
         },
         {
           "command": "overseer.runSessionCommand",
+          "when": "false"
+        },
+        {
+          "command": "overseer.moveToWorkspace",
           "when": "false"
         }
       ]

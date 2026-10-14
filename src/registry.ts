@@ -1,3 +1,14 @@
+import {
+  assignWorkspace,
+  DEFAULT_WORKSPACE_ID,
+  dropWorkspace,
+  idsInWorkspace,
+  withDefaultWorkspace,
+  Workspace,
+  WorkspaceByItem,
+  workspaceOf,
+} from "./workspaces";
+
 export interface KeyValueStore {
   get<Value>(key: string): Value | undefined;
   update(key: string, value: unknown): Thenable<void>;
@@ -34,6 +45,10 @@ const RESOURCE_SESSIONS_KEY = "overseer.resourceSessionIds";
 const TERMINAL_SESSIONS_KEY = "overseer.terminalSessions";
 const SESSION_STATUS_KEY = "overseer.sessionStatusIds";
 const SESSION_STATUS_REASON_KEY = "overseer.sessionStatusReasons";
+const WORKSPACES_KEY = "overseer.workspaces";
+const ACTIVE_WORKSPACE_KEY = "overseer.activeWorkspaceId";
+const SESSION_WORKSPACE_KEY = "overseer.workspaceOfSession";
+const GROUP_WORKSPACE_KEY = "overseer.workspaceOfGroup";
 
 export type LinkMark = "pinned" | "removed";
 export type LinkMarks = Record<string, LinkMark>;
@@ -75,10 +90,22 @@ export class Registry {
     return this.pinnedSessionIds().includes(sessionId);
   }
 
+  // Pinning a session from another workspace brings it into the active one, so it shows up where it was opened.
   async pin(sessionId: string): Promise<void> {
     if (!this.isPinned(sessionId)) {
       await this.write(PINNED_KEY, [...this.pinnedSessionIds(), sessionId]);
     }
+    if (workspaceOf(sessionId, this.sessionWorkspaces()) !== this.activeWorkspaceId()) {
+      await this.moveToWorkspace([sessionId], this.activeWorkspaceId());
+    }
+  }
+
+  pinnedSessionIdsInWorkspace(workspaceId: string): string[] {
+    return idsInWorkspace(this.pinnedSessionIds(), this.sessionWorkspaces(), workspaceId);
+  }
+
+  pinnedSessionIdsInActiveWorkspace(): string[] {
+    return this.pinnedSessionIdsInWorkspace(this.activeWorkspaceId());
   }
 
   async unpin(sessionId: string): Promise<void> {
@@ -90,15 +117,28 @@ export class Registry {
     await this.write(PENDING_KEY, remainingPending);
     const { [sessionId]: _removedTerminal, ...remainingTerminals } = this.terminalSessions();
     await this.write(TERMINAL_SESSIONS_KEY, remainingTerminals);
+    await this.write(SESSION_WORKSPACE_KEY, assignWorkspace(this.sessionWorkspaces(), [sessionId], DEFAULT_WORKSPACE_ID));
   }
 
   userGroups(): UserGroup[] {
     return this.store.get<UserGroup[]>(GROUPS_KEY) ?? [];
   }
 
+  userGroupsInActiveWorkspace(): UserGroup[] {
+    const groupIds = idsInWorkspace(
+      this.userGroups().map((group) => group.id),
+      this.groupWorkspaces(),
+      this.activeWorkspaceId(),
+    );
+    return this.userGroups().filter((group) => groupIds.includes(group.id));
+  }
+
   async createGroup(name: string, groupId: string): Promise<UserGroup> {
     const newGroup = { id: groupId, name };
     await this.write(GROUPS_KEY, [...this.userGroups(), newGroup]);
+    if (this.activeWorkspaceId() !== DEFAULT_WORKSPACE_ID) {
+      await this.write(GROUP_WORKSPACE_KEY, assignWorkspace(this.groupWorkspaces(), [groupId], this.activeWorkspaceId()));
+    }
     return newGroup;
   }
 
@@ -117,6 +157,7 @@ export class Registry {
       GROUPS_KEY,
       this.userGroups().filter((group) => group.id !== groupId),
     );
+    await this.write(GROUP_WORKSPACE_KEY, assignWorkspace(this.groupWorkspaces(), [groupId], DEFAULT_WORKSPACE_ID));
   }
 
   assignments(): Record<string, GroupRef> {
@@ -255,6 +296,68 @@ export class Registry {
     await this.write(SESSION_STATUS_REASON_KEY, reasonBySession);
   }
 
+  workspaces(): Workspace[] {
+    return withDefaultWorkspace(this.store.get<Workspace[]>(WORKSPACES_KEY) ?? []);
+  }
+
+  // A stored id whose workspace was deleted, maybe from another window, falls back to Default.
+  activeWorkspaceId(): string {
+    const storedId = this.store.get<string>(ACTIVE_WORKSPACE_KEY);
+    const isKnown = this.workspaces().some((workspace) => workspace.id === storedId);
+    return isKnown && storedId !== undefined ? storedId : DEFAULT_WORKSPACE_ID;
+  }
+
+  activeWorkspace(): Workspace {
+    return this.workspaces().find((workspace) => workspace.id === this.activeWorkspaceId()) ?? this.workspaces()[0];
+  }
+
+  async setActiveWorkspace(workspaceId: string): Promise<void> {
+    await this.write(ACTIVE_WORKSPACE_KEY, workspaceId);
+  }
+
+  async createWorkspace(name: string, workspaceId: string): Promise<Workspace> {
+    const newWorkspace = { id: workspaceId, name };
+    await this.write(WORKSPACES_KEY, [...this.workspaces(), newWorkspace]);
+    return newWorkspace;
+  }
+
+  async renameWorkspace(workspaceId: string, name: string): Promise<void> {
+    const renamedWorkspaces = this.workspaces().map((workspace) =>
+      workspace.id === workspaceId ? { ...workspace, name } : workspace,
+    );
+    await this.write(WORKSPACES_KEY, renamedWorkspaces);
+  }
+
+  // Its sessions and groups move to Default, so nothing pinned disappears.
+  async deleteWorkspace(workspaceId: string): Promise<void> {
+    if (workspaceId === DEFAULT_WORKSPACE_ID) {
+      return;
+    }
+    if (this.activeWorkspaceId() === workspaceId) {
+      await this.setActiveWorkspace(DEFAULT_WORKSPACE_ID);
+    }
+    await this.write(SESSION_WORKSPACE_KEY, dropWorkspace(this.sessionWorkspaces(), workspaceId));
+    await this.write(GROUP_WORKSPACE_KEY, dropWorkspace(this.groupWorkspaces(), workspaceId));
+    await this.write(
+      WORKSPACES_KEY,
+      this.workspaces().filter((workspace) => workspace.id !== workspaceId),
+    );
+  }
+
+  async moveToWorkspace(sessionIds: string[], workspaceId: string): Promise<void> {
+    await this.write(SESSION_WORKSPACE_KEY, assignWorkspace(this.sessionWorkspaces(), sessionIds, workspaceId));
+  }
+
+  // A group takes the sessions assigned to it along.
+  async moveGroupToWorkspace(groupId: string, workspaceId: string): Promise<void> {
+    const groupRef = userGroupRef(groupId);
+    const groupSessionIds = Object.entries(this.assignments())
+      .filter(([, assignedRef]) => assignedRef === groupRef)
+      .map(([sessionId]) => sessionId);
+    await this.write(GROUP_WORKSPACE_KEY, assignWorkspace(this.groupWorkspaces(), [groupId], workspaceId));
+    await this.moveToWorkspace(groupSessionIds, workspaceId);
+  }
+
   isSessionExpanded(sessionId: string): boolean {
     return (this.store.get<string[]>(EXPANDED_SESSIONS_KEY) ?? []).includes(sessionId);
   }
@@ -276,6 +379,14 @@ export class Registry {
 
   notifyExternalChange(): void {
     this.changeListeners.forEach((listener) => listener());
+  }
+
+  private sessionWorkspaces(): WorkspaceByItem {
+    return this.store.get<WorkspaceByItem>(SESSION_WORKSPACE_KEY) ?? {};
+  }
+
+  private groupWorkspaces(): WorkspaceByItem {
+    return this.store.get<WorkspaceByItem>(GROUP_WORKSPACE_KEY) ?? {};
   }
 
   private allLinkMarks(): Record<string, LinkMarks> {

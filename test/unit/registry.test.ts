@@ -165,4 +165,99 @@ describe("Registry", () => {
     expect(registry.hasFoundResources("a")).toBe(false);
     expect(registry.hasFoundResources("b")).toBe(true);
   });
+
+  describe("workspaces", () => {
+    it("puts existing pins and groups in Default", async () => {
+      const registry = new Registry(memoryStore());
+      await registry.pin("a");
+      await registry.createGroup("Review", "g1");
+
+      expect(registry.workspaces()).toEqual([{ id: "default", name: "Default" }]);
+      expect(registry.activeWorkspaceId()).toBe("default");
+      expect(registry.pinnedSessionIdsInActiveWorkspace()).toEqual(["a"]);
+      expect(registry.userGroupsInActiveWorkspace().map((group) => group.id)).toEqual(["g1"]);
+    });
+
+    it("shows only the active workspace's sessions and groups", async () => {
+      const registry = new Registry(memoryStore());
+      await registry.pin("home");
+      await registry.createWorkspace("Work", "w1");
+      await registry.setActiveWorkspace("w1");
+      await registry.pin("job");
+      await registry.createGroup("Sprint", "g1");
+
+      expect(registry.pinnedSessionIdsInActiveWorkspace()).toEqual(["job"]);
+      expect(registry.userGroupsInActiveWorkspace().map((group) => group.id)).toEqual(["g1"]);
+      await registry.setActiveWorkspace("default");
+      expect(registry.pinnedSessionIdsInActiveWorkspace()).toEqual(["home"]);
+      expect(registry.userGroupsInActiveWorkspace()).toEqual([]);
+    });
+
+    it("moves an already pinned session into the workspace that pins it again", async () => {
+      const registry = new Registry(memoryStore());
+      await registry.pin("a");
+      await registry.createWorkspace("Work", "w1");
+      await registry.setActiveWorkspace("w1");
+
+      await registry.pin("a");
+
+      expect(registry.pinnedSessionIdsInActiveWorkspace()).toEqual(["a"]);
+      expect(registry.pinnedSessionIds()).toEqual(["a"]);
+    });
+
+    it("moves a group along with its sessions", async () => {
+      const registry = new Registry(memoryStore());
+      await registry.pin("a");
+      await registry.pin("b");
+      await registry.createGroup("Sprint", "g1");
+      await registry.assign(["a"], userGroupRef("g1"));
+      await registry.createWorkspace("Work", "w1");
+
+      await registry.moveGroupToWorkspace("g1", "w1");
+      await registry.setActiveWorkspace("w1");
+
+      expect(registry.pinnedSessionIdsInActiveWorkspace()).toEqual(["a"]);
+      expect(registry.userGroupsInActiveWorkspace().map((group) => group.id)).toEqual(["g1"]);
+    });
+
+    it("sends a deleted workspace's members to Default and leaves it active", async () => {
+      const registry = new Registry(memoryStore());
+      await registry.createWorkspace("Work", "w1");
+      await registry.setActiveWorkspace("w1");
+      await registry.pin("a");
+      await registry.createGroup("Sprint", "g1");
+
+      await registry.deleteWorkspace("w1");
+
+      expect(registry.activeWorkspaceId()).toBe("default");
+      expect(registry.workspaces().map((workspace) => workspace.id)).toEqual(["default"]);
+      expect(registry.pinnedSessionIdsInActiveWorkspace()).toEqual(["a"]);
+      expect(registry.userGroupsInActiveWorkspace().map((group) => group.id)).toEqual(["g1"]);
+    });
+
+    it("never deletes Default, and keeps it first after a rename", async () => {
+      const registry = new Registry(memoryStore());
+      await registry.createWorkspace("Work", "w1");
+      await registry.renameWorkspace("default", "Home");
+      await registry.deleteWorkspace("default");
+
+      expect(registry.workspaces()).toEqual([
+        { id: "default", name: "Home" },
+        { id: "w1", name: "Work" },
+      ]);
+    });
+
+    it("forgets the workspace of an unpinned session", async () => {
+      const registry = new Registry(memoryStore());
+      await registry.createWorkspace("Work", "w1");
+      await registry.setActiveWorkspace("w1");
+      await registry.pin("a");
+      await registry.unpin("a");
+      await registry.setActiveWorkspace("default");
+
+      await registry.pin("a");
+
+      expect(registry.pinnedSessionIdsInActiveWorkspace()).toEqual(["a"]);
+    });
+  });
 });

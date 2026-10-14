@@ -214,12 +214,12 @@ export class SessionTreeProvider
     const sessionsById = new Map<string, SessionMeta>(
       this.sessionIndex.currentSessions.map((meta) => [meta.sessionId, meta]),
     );
-    const pinnedSessionIds = this.registry.pinnedSessionIds();
+    const pinnedSessionIds = this.registry.pinnedSessionIdsInActiveWorkspace();
     return buildSectionGroups(
       {
         pinnedSessionIds,
         sessionsById,
-        userGroups: this.registry.userGroups(),
+        userGroups: this.registry.userGroupsInActiveWorkspace(),
         assignments: this.registry.assignments(),
         labels: this.registry.labels(),
         pendingSessions: this.registry.pendingSessions(),
