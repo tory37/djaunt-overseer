@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { KeyValueStore, Registry, userGroupRef } from "../../src/registry";
+import { EMPTY_WORKSPACE_SNAPSHOT } from "../../src/workspaces";
 
 function memoryStore(): KeyValueStore {
   const values = new Map<string, unknown>();
@@ -167,6 +168,25 @@ describe("Registry", () => {
   });
 
   describe("workspaces", () => {
+    it("keeps a snapshot per workspace and drops it with the workspace", async () => {
+      const registry = new Registry(memoryStore());
+      await registry.createWorkspace("Work", "w1");
+      const snapshot = { liveSessionIds: ["a"], openTerminalIds: ["t"], tabUris: ["file:///x.ts"], activeTabUri: undefined };
+      await registry.setWorkspaceSnapshot("w1", snapshot);
+
+      expect(registry.workspaceSnapshot("w1")).toEqual(snapshot);
+      expect(registry.workspaceSnapshot("default")).toEqual(EMPTY_WORKSPACE_SNAPSHOT);
+      await registry.deleteWorkspace("w1");
+      expect(registry.workspaceSnapshot("w1")).toEqual(EMPTY_WORKSPACE_SNAPSHOT);
+    });
+
+    it("reads a snapshot saved before tabs were tracked as having no tabs", async () => {
+      const store = memoryStore();
+      await store.update("overseer.workspaceSnapshots", { w1: { liveSessionIds: ["a"], openTerminalIds: [] } });
+
+      expect(new Registry(store).workspaceSnapshot("w1")).toEqual({ ...EMPTY_WORKSPACE_SNAPSHOT, liveSessionIds: ["a"] });
+    });
+
     it("puts existing pins and groups in Default", async () => {
       const registry = new Registry(memoryStore());
       await registry.pin("a");

@@ -222,7 +222,7 @@ export function activate(context: vscode.ExtensionContext): void {
       pinnedSessions,
       log,
     }),
-    ...registerWorkspaceCommands({ registry }),
+    ...registerWorkspaceCommands({ registry, sessionIndex, liveMonitor, pinnedSessions, log }),
     ...registerStatusCommands({ jiraService, linkStatusService, statusConfig }),
     ...registerSettingsCommands({
       extensionUri: context.extensionUri,

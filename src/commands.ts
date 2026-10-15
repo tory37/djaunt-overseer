@@ -21,11 +21,11 @@ import {
   resumeSession,
   sendSlashCommand,
   startNewSession,
-  suspendTerminal,
 } from "./terminals";
 import { RepoTreeNode } from "./repoTree";
 import { fillPrompt, parseSessionCommands, promptParameters } from "./sessionCommands";
 import { askStatusReason, configuredStatuses, pickSessionStatus } from "./sessionStatusView";
+import { busySessions, confirmStopBusySessions, runningClaudeSessions, suspendSessions } from "./suspend";
 import { TreeNode } from "./tree";
 import { pickTargetWorkspace } from "./workspaceCommands";
 
@@ -188,28 +188,16 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     return browsedFolders?.[0]?.fsPath;
   };
 
-  const suspendSessions = async (pinnedSessions: PinnedSession[]): Promise<void> => {
-    const runningSessions = pinnedSessions.filter(
-      (pinned) => pinned.terminal === undefined && findSessionTerminal(pinned.sessionId) !== undefined,
+  const suspendSessionsAfterAsking = async (pinnedSessions: PinnedSession[]): Promise<void> => {
+    const runningSessions = runningClaudeSessions(pinnedSessions);
+    const isConfirmed = await confirmStopBusySessions(
+      busySessions(runningSessions, liveMonitor),
+      SUSPEND_ANYWAY_CHOICE,
+      "Suspending stops that work. The conversation up to now is kept and resumes later.",
     );
-    const busySessions = runningSessions.filter((pinned) => liveMonitor.get(pinned.sessionId)?.status === "busy");
-    if (busySessions.length > 0) {
-      const busyTitles = busySessions.map(pinnedSessionTitle).join(", ");
-      const choice = await vscode.window.showWarningMessage(
-        `Claude is mid-task in: ${busyTitles}.`,
-        { modal: true, detail: "Suspending stops that work. The conversation up to now is kept and resumes later." },
-        SUSPEND_ANYWAY_CHOICE,
-      );
-      if (choice !== SUSPEND_ANYWAY_CHOICE) {
-        return;
-      }
+    if (isConfirmed) {
+      await suspendSessions(runningSessions);
     }
-    await Promise.all(
-      runningSessions.map((pinned) => {
-        const terminal = findSessionTerminal(pinned.sessionId);
-        return terminal ? suspendTerminal(terminal) : Promise.resolve();
-      }),
-    );
   };
 
   const renameSession = async (pinned: PinnedSession): Promise<void> => {
@@ -522,7 +510,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       }
     }),
     vscode.commands.registerCommand("overseer.suspendSession", async (clickedNode?: TreeNode) => {
-      await suspendSessions(selectedSessionNodes(clickedNode).map((node) => node.pinned));
+      await suspendSessionsAfterAsking(selectedSessionNodes(clickedNode).map((node) => node.pinned));
     }),
     vscode.commands.registerCommand("overseer.compactSession", (clickedNode?: TreeNode) => {
       sendToIdleSessions(selectedSessionNodes(clickedNode), "/compact");
@@ -625,7 +613,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     vscode.commands.registerCommand("overseer.suspendGroup", async (clickedNode?: TreeNode) => {
       const groupNode = clickedNode ?? activeSessionView.selection[0];
       if (groupNode?.kind === "group") {
-        await suspendSessions(groupNode.group.sessions);
+        await suspendSessionsAfterAsking(groupNode.group.sessions);
       }
     }),
   ];

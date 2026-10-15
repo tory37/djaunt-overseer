@@ -2,11 +2,13 @@ import {
   assignWorkspace,
   DEFAULT_WORKSPACE_ID,
   dropWorkspace,
+  EMPTY_WORKSPACE_SNAPSHOT,
   idsInWorkspace,
   withDefaultWorkspace,
   Workspace,
   WorkspaceByItem,
   workspaceOf,
+  WorkspaceSnapshot,
 } from "./workspaces";
 
 export interface KeyValueStore {
@@ -49,6 +51,7 @@ const WORKSPACES_KEY = "overseer.workspaces";
 const ACTIVE_WORKSPACE_KEY = "overseer.activeWorkspaceId";
 const SESSION_WORKSPACE_KEY = "overseer.workspaceOfSession";
 const GROUP_WORKSPACE_KEY = "overseer.workspaceOfGroup";
+const WORKSPACE_SNAPSHOTS_KEY = "overseer.workspaceSnapshots";
 
 export type LinkMark = "pinned" | "removed";
 export type LinkMarks = Record<string, LinkMark>;
@@ -338,6 +341,8 @@ export class Registry {
     }
     await this.write(SESSION_WORKSPACE_KEY, dropWorkspace(this.sessionWorkspaces(), workspaceId));
     await this.write(GROUP_WORKSPACE_KEY, dropWorkspace(this.groupWorkspaces(), workspaceId));
+    const { [workspaceId]: _droppedSnapshot, ...remainingSnapshots } = this.workspaceSnapshots();
+    await this.write(WORKSPACE_SNAPSHOTS_KEY, remainingSnapshots);
     await this.write(
       WORKSPACES_KEY,
       this.workspaces().filter((workspace) => workspace.id !== workspaceId),
@@ -356,6 +361,16 @@ export class Registry {
       .map(([sessionId]) => sessionId);
     await this.write(GROUP_WORKSPACE_KEY, assignWorkspace(this.groupWorkspaces(), [groupId], workspaceId));
     await this.moveToWorkspace(groupSessionIds, workspaceId);
+  }
+
+  workspaceSnapshot(workspaceId: string): WorkspaceSnapshot {
+    // Snapshots saved before tabs were tracked have no tab fields.
+    return { ...EMPTY_WORKSPACE_SNAPSHOT, ...this.workspaceSnapshots()[workspaceId] };
+  }
+
+  // The tree doesn't show snapshots, so this write skips the change listeners.
+  async setWorkspaceSnapshot(workspaceId: string, snapshot: WorkspaceSnapshot): Promise<void> {
+    await this.store.update(WORKSPACE_SNAPSHOTS_KEY, { ...this.workspaceSnapshots(), [workspaceId]: snapshot });
   }
 
   isSessionExpanded(sessionId: string): boolean {
@@ -387,6 +402,10 @@ export class Registry {
 
   private groupWorkspaces(): WorkspaceByItem {
     return this.store.get<WorkspaceByItem>(GROUP_WORKSPACE_KEY) ?? {};
+  }
+
+  private workspaceSnapshots(): Record<string, WorkspaceSnapshot> {
+    return this.store.get<Record<string, WorkspaceSnapshot>>(WORKSPACE_SNAPSHOTS_KEY) ?? {};
   }
 
   private allLinkMarks(): Record<string, LinkMarks> {

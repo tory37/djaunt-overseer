@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { assignWorkspace, dropWorkspace, idsInWorkspace, withDefaultWorkspace, workspaceContentsLabel } from "../../src/workspaces";
+import {
+  assignWorkspace,
+  dropWorkspace,
+  idsInWorkspace,
+  restorableSnapshot,
+  tabsToSnapshot,
+  withDefaultWorkspace,
+  workspaceContentsLabel,
+} from "../../src/workspaces";
 
 describe("workspaces", () => {
   it("adds Default only when it is not stored", () => {
@@ -16,6 +24,35 @@ describe("workspaces", () => {
 
   it("drops only the deleted workspace's entries", () => {
     expect(dropWorkspace({ a: "w1", b: "w2" }, "w1")).toEqual({ b: "w2" });
+  });
+
+  it("restarts only items still pinned in the workspace, and reopens every tab", () => {
+    const snapshot = {
+      liveSessionIds: ["a", "moved"],
+      openTerminalIds: ["t", "unpinned"],
+      tabUris: ["file:///x.ts"],
+      activeTabUri: "file:///x.ts",
+    };
+
+    expect(restorableSnapshot(snapshot, ["a", "t"])).toEqual({
+      liveSessionIds: ["a"],
+      openTerminalIds: ["t"],
+      tabUris: ["file:///x.ts"],
+      activeTabUri: "file:///x.ts",
+    });
+  });
+
+  it("snapshots each saved file tab once, and leaves untitled and pinned tabs open", () => {
+    const tab = (uri: string, overrides: { isUntitled?: boolean; isPinned?: boolean } = {}) => ({
+      uri,
+      isUntitled: false,
+      isPinned: false,
+      ...overrides,
+    });
+    const tabs = [tab("file:///a.ts"), tab("file:///a.ts"), tab("untitled:1", { isUntitled: true }), tab("file:///p.ts", { isPinned: true })];
+
+    expect(tabsToSnapshot(tabs, "file:///a.ts")).toEqual({ tabUris: ["file:///a.ts"], activeTabUri: "file:///a.ts" });
+    expect(tabsToSnapshot(tabs, "file:///p.ts").activeTabUri).toBeUndefined();
   });
 
   it("labels what a workspace holds", () => {

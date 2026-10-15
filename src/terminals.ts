@@ -151,18 +151,26 @@ export function sendSlashCommand(terminal: vscode.Terminal, slashCommand: string
 
 // /exit lets Claude shut down cleanly; if the tab is still open after the timeout, close it, which ends the process.
 export async function suspendTerminal(terminal: vscode.Terminal): Promise<void> {
+  let closeListener: vscode.Disposable | undefined;
+  let timeoutHandle: NodeJS.Timeout | undefined;
   const terminalClosed = new Promise<void>((resolve) => {
-    const closeListener = vscode.window.onDidCloseTerminal((closedTerminal) => {
+    closeListener = vscode.window.onDidCloseTerminal((closedTerminal) => {
       if (closedTerminal === terminal) {
-        closeListener.dispose();
         resolve();
       }
     });
   });
+  const timedOut = new Promise<"timeout">((resolve) => {
+    timeoutHandle = setTimeout(() => resolve("timeout"), SUSPEND_TIMEOUT_MS);
+  });
   sendSlashCommand(terminal, "/exit");
-  const timedOut = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), SUSPEND_TIMEOUT_MS));
-  if ((await Promise.race([terminalClosed, timedOut])) === "timeout") {
-    terminal.dispose();
+  try {
+    if ((await Promise.race([terminalClosed, timedOut])) === "timeout") {
+      terminal.dispose();
+    }
+  } finally {
+    closeListener?.dispose();
+    clearTimeout(timeoutHandle);
   }
 }
 

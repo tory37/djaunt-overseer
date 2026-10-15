@@ -6,6 +6,30 @@ export interface Workspace {
 export const DEFAULT_WORKSPACE_ID = "default";
 const DEFAULT_WORKSPACE: Workspace = { id: DEFAULT_WORKSPACE_ID, name: "Default" };
 
+// What was running when the workspace was switched away from, so a switch back restarts only that.
+export interface WorkspaceSnapshot {
+  liveSessionIds: string[];
+  openTerminalIds: string[];
+  tabUris: string[];
+  activeTabUri: string | undefined;
+}
+
+export const EMPTY_WORKSPACE_SNAPSHOT: WorkspaceSnapshot = { liveSessionIds: [], openTerminalIds: [], tabUris: [], activeTabUri: undefined };
+
+// The parts of an editor tab a snapshot needs, so tab selection stays free of the vscode API.
+export interface SnapshotTab {
+  uri: string;
+  isUntitled: boolean;
+  isPinned: boolean;
+}
+
+// Untitled tabs can't reopen from a URI, and VS Code-pinned tabs stay open in every workspace.
+export function tabsToSnapshot(tabs: SnapshotTab[], activeUri: string | undefined): Pick<WorkspaceSnapshot, "tabUris" | "activeTabUri"> {
+  const tabUris = [...new Set(tabs.filter((tab) => !tab.isUntitled && !tab.isPinned).map((tab) => tab.uri))];
+  const activeTabUri = activeUri !== undefined && tabUris.includes(activeUri) ? activeUri : undefined;
+  return { tabUris, activeTabUri };
+}
+
 // Maps a session or group id to its workspace. An id with no entry belongs to the default workspace.
 export type WorkspaceByItem = Record<string, string>;
 
@@ -46,6 +70,16 @@ export function workspaceContentsLabel(sessionCount: number, terminalCount: numb
 
 function countLabel(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+// Items unpinned or moved to another workspace since the snapshot are not restarted. Tabs belong to no pin, so all reopen.
+export function restorableSnapshot(snapshot: WorkspaceSnapshot, pinnedIdsInWorkspace: string[]): WorkspaceSnapshot {
+  const isStillHere = (itemId: string): boolean => pinnedIdsInWorkspace.includes(itemId);
+  return {
+    ...snapshot,
+    liveSessionIds: snapshot.liveSessionIds.filter(isStillHere),
+    openTerminalIds: snapshot.openTerminalIds.filter(isStillHere),
+  };
 }
 
 // Items of a deleted workspace fall back to Default by losing their entry.
