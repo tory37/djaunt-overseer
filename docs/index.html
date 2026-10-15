@@ -76,7 +76,7 @@
         const { useState, useEffect, useRef } = React;
 
         const REPO_URL = 'https://github.com/tory37/djaunt-overseer';
-        const VSIX_NAME = 'djaunt-overseer-0.0.10.vsix';
+        const VSIX_NAME = 'djaunt-overseer-0.0.11.vsix';
         const VSIX_URL = `${REPO_URL}/releases/latest/download/${VSIX_NAME}`;
 
         const Icon = ({ name, className = 'w-4 h-4' }) => {
@@ -808,11 +808,64 @@
             </div>
         );
 
+        const HistoryVisual = () => (
+            <div className="font-mono text-xs border border-line bg-surface">
+                <div className="flex items-center gap-2 h-8 px-3 border-b border-line">
+                    <Icon name="Search" className="w-4 h-4 text-muted" />
+                    <span className="text-bone">repo:api retry</span>
+                    <span className="ml-auto text-muted">2 of 214</span>
+                </div>
+                <div className="grid grid-cols-[1fr_1fr]">
+                    <div className="border-r border-line">
+                        {[
+                            { title: 'Billing webhook retries', meta: '3d ago · api', isSelected: true },
+                            { title: 'Rate limiter refactor', meta: '41d ago · api' },
+                        ].map((row) => (
+                            <div key={row.title} className={`px-3 py-2 ${row.isSelected ? 'bg-raised' : ''}`}>
+                                <div className="text-bone truncate">{row.title}</div>
+                                <div className="text-muted truncate">{row.meta}</div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="p-3 space-y-2">
+                        <p className="text-bone font-medium truncate">Billing webhook retries</p>
+                        <p className="text-muted truncate">~/src/api · fix/webhook-retry</p>
+                        <div className="flex flex-wrap gap-2">
+                            <span className="flex items-center px-2 h-6 bg-accent text-on-accent">Open</span>
+                            <span className="flex items-center gap-1 px-2 h-6 border border-line text-warning"><Icon name="Trash2" className="w-3 h-3" />Delete…</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const WorkspaceVisual = () => (
+            <div className="font-mono text-xs border border-line bg-surface">
+                <div className="flex items-center gap-2 h-8 px-3 border-b border-line">
+                    <Icon name="Search" className="w-4 h-4 text-muted" />
+                    <span className="text-muted">Pick a workspace</span>
+                </div>
+                {[
+                    { name: 'Work', detail: 'current · 6 sessions · 2 terminals', isPicked: false },
+                    { name: 'After hours', detail: '2 sessions · 1 terminal', isPicked: true },
+                    { name: 'Default', detail: 'empty', isPicked: false },
+                ].map((workspace) => (
+                    <div key={workspace.name} className={`flex items-center gap-2 h-7 px-3 ${workspace.isPicked ? 'bg-raised' : ''}`}>
+                        <Icon name="Layers" className="w-4 h-4 text-muted" />
+                        <span className="text-bone">{workspace.name}</span>
+                        <span className="text-muted truncate">{workspace.detail}</span>
+                    </div>
+                ))}
+            </div>
+        );
+
         // A lone last card spans both columns, so the grid never shows an empty cell.
         const isLastOfOddCount = (index, count) => count % 2 === 1 && index === count - 1;
 
         const FEATURES = [
             { title: 'Resume a session from any repo', body: 'claude --resume lists only the sessions that started in the current directory. All Sessions searches every repo and resumes each session in the directory it started in.', Visual: QuickPickVisual },
+            { title: 'Search every past session', body: 'Session History opens in an editor tab, like Settings. Search every session by title, prompt, recap, branch, or PR, and filter by repo, age, pinned, or running. The detail pane shows more than All Sessions: recap, prompts, commits, and the PR. Open resumes the session. Delete removes one from your machine for good, and Purge removes every session the filters show. Both list what goes and ask first. Running sessions are never deleted, and Purge skips pinned ones.', Visual: HistoryVisual },
+            { title: 'Switch between workspaces', isExperimental: true, body: 'Keep work, side projects, and after-hours sessions apart. Each workspace has its own sessions, terminals, and groups. A switch suspends the running sessions, closes the terminals and file tabs, then brings back what was open in the other workspace. It asks first when Claude is mid-task or a file has unsaved changes. This one is experimental. It works, but it needs more testing.', Visual: WorkspaceVisual },
             { title: 'Suspend a session and resume it later', body: 'When a session waits on a review for days, Suspend sends /exit so the process and its memory are freed. Resume starts the same session again with its full history.', Visual: SuspendVisual },
             { title: 'Find the PRs, tickets, and artifacts a session worked on', body: 'Right-click a session and choose Find Resources. Overseer scans its transcript, and a short Haiku run sorts what it found into owned, touched, and seen in passing. The session then gets one Associated Links row with a count. Nothing scans until you ask.', Visual: LinksVisual },
             { title: 'Open all of a session\'s links in one panel', body: 'Click Associated Links to open a panel for that session. Links nest as parent ticket, sub-tickets, then the PRs for each ticket. Each row has buttons to open it in VS Code or your browser, copy it, move a ticket to another status, pin it, or remove it. Drag rows to reorder them.', Visual: LinksPanelVisual },
@@ -942,10 +995,15 @@
                 <section id="features" className="max-w-6xl mx-auto px-4 md:px-8 py-24 space-y-12">
                     <h2 className="font-display font-bold tracking-display text-3xl leading-tight max-w-[40rem]">What it does</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-line border border-line">
-                        {FEATURES.map(({ title, body, Visual }, featureIndex) => (
+                        {FEATURES.map(({ title, body, Visual, isExperimental }, featureIndex) => (
                             <article key={title} className={`bg-bg p-6 md:p-8 flex flex-col gap-6 ${isLastOfOddCount(featureIndex, FEATURES.length) ? 'md:col-span-2' : ''}`}>
                                 <div className="space-y-2">
                                     <h3 className="font-display font-semibold tracking-display text-xl">{title}</h3>
+                                    {isExperimental && (
+                                        <span className="inline-flex items-center gap-1 px-2 h-6 border border-warning text-warning font-mono text-xs uppercase tracking-label">
+                                            <Icon name="FlaskConical" className="w-3 h-3" />Experimental
+                                        </span>
+                                    )}
                                     <p className="text-muted leading-relaxed">{body}</p>
                                 </div>
                                 <div className="mt-auto"><Visual /></div>

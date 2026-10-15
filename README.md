@@ -20,6 +20,23 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - `repo:<name>` filters by every repo a session touched, not only the one it started in.
 - Sessions that edited files in other repos show `+N repos`.
 
+### Session History
+- **Session History** (history icon in the title bar, or the button in All Sessions) opens a page that lists every session. It searches title, prompts, recap, branch, folder, and PR. `repo:<name>` works here too.
+- Filter by All, Pinned, or Running, by repo, and by age (idle 7+ days up to 1+ year).
+- The detail pane shows the recap, first and last prompt, branch, repos, PR, and commits. **Open** resumes the session. **Pin**, **Copy ID**, and **Open Transcript** are next to it.
+- **Delete…** removes one session from your machine for good: its transcript, subagent and tool output, `file-history`, `session-env`, its prompts in `~/.claude/history.jsonl`, and Overseer's pin, label, group, and status. A confirm screen lists everything first. Nothing goes to the Trash.
+- **Purge…** deletes every session the current filters show. Pinned sessions are skipped. Purging more than one asks you to type the count.
+- Running sessions are never deleted.
+
+### Workspaces (experimental)
+> Experimental. It works, but it needs more testing. Report anything odd.
+
+- **Switch Workspace** (the layers item on the left of the status bar) keeps sets of sessions, terminals, and groups apart, like work and after hours. **Default** always exists.
+- New sessions, terminals, and groups join the current workspace. **Move to Workspace…** (right-click) moves one.
+- A switch suspends the running Claude sessions, closes the terminals and file tabs, then brings back what was open in the other workspace. Terminals come back as fresh shells in the same folder.
+- It asks first when Claude is mid-task or a file has unsaved changes. Cancel changes nothing.
+- Untitled tabs and tabs pinned in VS Code stay open in every workspace. Split layouts don't come back.
+
 ### Group
 - Pinned sessions group by the ticket key in their name, branch, or first prompt (`PROJ-2567`).
 - **New Group** (title bar) makes your own group. Drag sessions into it.
@@ -105,8 +122,8 @@ Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:
 ## Install
 
 ```bash
-curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.10.vsix
-code --install-extension djaunt-overseer-0.0.10.vsix
+curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.11.vsix
+code --install-extension djaunt-overseer-0.0.11.vsix
 ```
 
 If `code` isn't on your PATH, use `"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"`.
@@ -151,7 +168,7 @@ Link sorting and Summarize with Haiku run through your `claude` CLI, so they cou
 npm install
 npm test
 npm run package
-code --install-extension djaunt-overseer-0.0.10.vsix --force
+code --install-extension djaunt-overseer-0.0.11.vsix --force
 ```
 
 Not affiliated with Anthropic.
