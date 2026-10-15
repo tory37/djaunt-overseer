@@ -318,6 +318,14 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         await openSession(pickedSession);
       }
     }),
+    vscode.commands.registerCommand("overseer.openSessionById", async (sessionId: string) => {
+      const meta = await findSessionMeta(sessionId);
+      if (meta === undefined) {
+        void vscode.window.showErrorMessage(`Overseer: no transcript found for session ${sessionId}.`);
+        return;
+      }
+      await openSession(meta);
+    }),
     vscode.commands.registerCommand("overseer.addExistingToGroup", async (clickedNode?: TreeNode) => {
       if (clickedNode?.kind !== "group") {
         return;

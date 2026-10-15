@@ -416,6 +416,22 @@ export class Registry {
     return this.store.get<Record<string, string[]>>(LINK_ORDER_KEY) ?? {};
   }
 
+  // For a session whose transcript is gone: drops every field that names it, not only the pin.
+  async forgetSessions(sessionIds: string[]): Promise<void> {
+    const forgottenIds = new Set(sessionIds);
+    const withoutForgotten = <Value>(record: Record<string, Value>): Record<string, Value> =>
+      Object.fromEntries(Object.entries(record).filter(([sessionId]) => !forgottenIds.has(sessionId)));
+    for (const sessionId of sessionIds) {
+      await this.unpin(sessionId);
+    }
+    await this.write(LABELS_KEY, withoutForgotten(this.labels()));
+    await this.write(ASSIGNMENTS_KEY, withoutForgotten(this.assignments()));
+    await this.write(LINK_MARKS_KEY, withoutForgotten(this.allLinkMarks()));
+    await this.write(LINK_ORDER_KEY, withoutForgotten(this.allLinkOrders()));
+    await this.write(SESSION_STATUS_KEY, withoutForgotten(this.sessionStatusIds()));
+    await this.write(SESSION_STATUS_REASON_KEY, withoutForgotten(this.sessionStatusReasons()));
+  }
+
   private async write(key: string, value: unknown): Promise<void> {
     await this.store.update(key, value);
     this.notifyExternalChange();

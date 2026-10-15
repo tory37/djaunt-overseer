@@ -73,6 +73,17 @@
         "icon": "$(search)"
       },
       {
+        "command": "overseer.openHistory",
+        "title": "Session History",
+        "category": "Overseer",
+        "icon": "$(history)"
+      },
+      {
+        "command": "overseer.openSessionById",
+        "title": "Open Session by ID",
+        "category": "Overseer"
+      },
+      {
         "command": "overseer.refreshIndex",
         "title": "Refresh Session Index",
         "category": "Overseer",
@@ -399,6 +410,11 @@
         },
         {
           "command": "overseer.allSessions",
+          "when": "view == overseer.sessions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "overseer.openHistory",
           "when": "view == overseer.sessions",
           "group": "navigation@1"
         },
@@ -777,6 +793,10 @@
         },
         {
           "command": "overseer.moveToWorkspace",
+          "when": "false"
+        },
+        {
+          "command": "overseer.openSessionById",
           "when": "false"
         }
       ]

@@ -14,6 +14,7 @@ interface SessionPickItem extends vscode.QuickPickItem {
 }
 
 const PIN_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon("pin"), tooltip: "Pin to sidebar" };
+const HISTORY_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon("history"), tooltip: "Open Session History" };
 const UNPIN_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon("pinned"), tooltip: "Unpin from sidebar" };
 
 export async function pickSession(
@@ -26,6 +27,11 @@ export async function pickSession(
   quickPick.placeholder = "Search title, repo, branch, or prompt. repo:<name> filters by every repo a session touched.";
   quickPick.matchOnDescription = true;
   quickPick.matchOnDetail = true;
+  quickPick.buttons = [HISTORY_BUTTON];
+  quickPick.onDidTriggerButton(() => {
+    quickPick.hide();
+    void vscode.commands.executeCommand("overseer.openHistory");
+  });
 
   let shownSessions = sessionIndex.currentSessions;
   const showSessions = (sessions: SessionMeta[]): void => {

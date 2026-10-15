@@ -92,6 +92,28 @@ describe("Registry", () => {
     expect(registry.terminalSessions()).toEqual({});
   });
 
+  it("forgets every field of a deleted session and keeps the others", async () => {
+    const registry = new Registry(memoryStore());
+    for (const sessionId of ["a", "b"]) {
+      await registry.pin(sessionId);
+      await registry.setLabel(sessionId, `label ${sessionId}`);
+      await registry.assign([sessionId], userGroupRef("g1"));
+      await registry.setLinkMark(sessionId, ["ticket:PROJ-5"], "pinned");
+      await registry.setLinkOrder(sessionId, ["ticket:PROJ-5"]);
+      await registry.setSessionStatus([sessionId], "blocked", "why");
+    }
+
+    await registry.forgetSessions(["a"]);
+
+    expect(registry.pinnedSessionIds()).toEqual(["b"]);
+    expect(registry.labels()).toEqual({ b: "label b" });
+    expect(registry.assignments()).toEqual({ b: userGroupRef("g1") });
+    expect(registry.linkMarks("a")).toEqual({});
+    expect(registry.linkOrder("a")).toEqual([]);
+    expect(registry.sessionStatusIds()).toEqual({ b: "blocked" });
+    expect(registry.sessionStatusReasons()).toEqual({ b: "why" });
+  });
+
   it("pins once and unpins", async () => {
     const registry = new Registry(memoryStore());
 

@@ -23,6 +23,7 @@ import { RepoService } from "./repoService";
 import { resolveRepos } from "./repoSet";
 import { COMMIT_DOCUMENT_SCHEME, CommitDocumentProvider, RepoTreeProvider } from "./repoTree";
 import { CommitAuthorship, indexCommitAuthorship } from "./gitStatus";
+import { HistoryPanel } from "./historyPanel";
 import { ResourcesPanel } from "./resourcesPanel";
 import { SessionTreeProvider } from "./tree";
 import { SessionStatusDecorations } from "./sessionStatusView";
@@ -223,6 +224,9 @@ export function activate(context: vscode.ExtensionContext): void {
       log,
     }),
     ...registerWorkspaceCommands({ registry, sessionIndex, liveMonitor, pinnedSessions, log }),
+    vscode.commands.registerCommand("overseer.openHistory", () =>
+      HistoryPanel.show({ extensionUri: context.extensionUri, sessionIndex, liveMonitor, registry, claudeHome }),
+    ),
     ...registerStatusCommands({ jiraService, linkStatusService, statusConfig }),
     ...registerSettingsCommands({
       extensionUri: context.extensionUri,
