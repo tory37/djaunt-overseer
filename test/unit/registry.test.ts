@@ -302,4 +302,68 @@ describe("Registry", () => {
       expect(registry.pinnedSessionIdsInActiveWorkspace()).toEqual(["a"]);
     });
   });
+
+  it("moves a row to the session that replaced it, keeping its place and settings", async () => {
+    const registry = new Registry(memoryStore());
+    await registry.createWorkspace("Work", "work");
+    await registry.setActiveWorkspace("work");
+    await registry.pin("before");
+    await registry.pin("old");
+    await registry.pin("after");
+    await registry.setSessionOrder(["before", "old", "after"]);
+    await registry.setLabel("old", "My task");
+    await registry.assign(["old"], userGroupRef("g1"));
+    await registry.setSessionStatus(["old"], "blocked", "waiting on review");
+    await registry.setSessionExpanded("old", true);
+    await registry.setLinkMark("old", ["pr:1"], "pinned");
+    await registry.setWorkspaceSnapshot("default", { ...EMPTY_WORKSPACE_SNAPSHOT, liveSessionIds: ["old"] });
+
+    await registry.moveSession("old", "new");
+
+    expect(registry.pinnedSessionIds()).toEqual(["before", "new", "after"]);
+    expect(registry.sessionOrder()).toEqual(["before", "new", "after"]);
+    expect(registry.labels()).toEqual({ new: "My task" });
+    expect(registry.assignments()).toEqual({ new: userGroupRef("g1") });
+    expect(registry.sessionStatusIds()).toEqual({ new: "blocked" });
+    expect(registry.sessionStatusReasons()).toEqual({ new: "waiting on review" });
+    expect(registry.pinnedSessionIdsInWorkspace("work")).toEqual(["before", "new", "after"]);
+    expect(registry.isSessionExpanded("new")).toBe(true);
+    expect(registry.isSessionExpanded("old")).toBe(false);
+    expect(registry.linkMarks("old")).toEqual({ "pr:1": "pinned" });
+    expect(registry.workspaceSnapshot("default").liveSessionIds).toEqual(["new"]);
+  });
+
+  it("keeps a Default row in Default when it moves", async () => {
+    const registry = new Registry(memoryStore());
+    await registry.pin("old");
+    await registry.createWorkspace("Work", "work");
+    await registry.setActiveWorkspace("work");
+
+    await registry.moveSession("old", "new");
+
+    expect(registry.pinnedSessionIdsInWorkspace("default")).toEqual(["new"]);
+  });
+
+  it("drops the old row when the new session already has one", async () => {
+    const registry = new Registry(memoryStore());
+    await registry.pin("old");
+    await registry.pin("new");
+    await registry.setLabel("old", "Old name");
+    await registry.setLabel("new", "New name");
+
+    await registry.moveSession("old", "new");
+
+    expect(registry.pinnedSessionIds()).toEqual(["new"]);
+    expect(registry.labels()["new"]).toBe("New name");
+  });
+
+  it("ignores a session that has no row", async () => {
+    const registry = new Registry(memoryStore());
+    await registry.pin("other");
+
+    await registry.moveSession("old", "new");
+
+    expect(registry.pinnedSessionIds()).toEqual(["other"]);
+  });
 });
+

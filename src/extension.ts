@@ -16,7 +16,7 @@ import { registerSettingsCommands } from "./settingsCommands";
 import { SettingsPanel } from "./settingsPanel";
 import { jiraProjectRefresher, registerStatusCommands } from "./statusCommands";
 import { StatusConfig } from "./statusConfig";
-import { adoptTerminalsByPid, sessionIdOfTerminal } from "./terminals";
+import { adoptTerminalsByPid, followSwitchedSessions, sessionIdOfTerminal } from "./terminals";
 import { createGitRootResolver } from "./gitRoots";
 import { registerRepoCommands } from "./repoCommands";
 import { RepoService } from "./repoService";
@@ -113,8 +113,13 @@ export function activate(context: vscode.ExtensionContext): void {
     void updateRepos();
   };
   const adoptRevivedTerminals = async (): Promise<void> => {
-    if (await adoptTerminalsByPid(await liveMonitor.refresh(), shellPidsBySessionId(registry))) {
+    const liveSessions = await liveMonitor.refresh();
+    if (await adoptTerminalsByPid(liveSessions, shellPidsBySessionId(registry))) {
       refreshTree();
+    }
+    for (const { fromSessionId, toSessionId } of await followSwitchedSessions(liveSessions)) {
+      log.appendLine(`Session ${fromSessionId} became ${toSessionId} in the same terminal; moving its row`);
+      await registry.moveSession(fromSessionId, toSessionId);
     }
   };
   registry.onDidChange(refreshTree);

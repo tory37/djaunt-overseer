@@ -10,11 +10,12 @@ const CLEAR_INPUT_LINE = "\x15";
 export const SESSION_ID_ENV_VAR = "OVERSEER_SESSION_ID";
 
 // Terminals revived after a window reload can lose their env, so they are matched to sessions by pid instead.
+// A terminal whose session changed under it is also here, and this entry wins over its stale env.
 const adoptedTerminalSessionIds = new WeakMap<vscode.Terminal, string>();
 
 export function sessionIdOfTerminal(terminal: vscode.Terminal): string | undefined {
   const creationOptions = terminal.creationOptions as vscode.TerminalOptions;
-  return creationOptions.env?.[SESSION_ID_ENV_VAR] ?? adoptedTerminalSessionIds.get(terminal);
+  return adoptedTerminalSessionIds.get(terminal) ?? creationOptions.env?.[SESSION_ID_ENV_VAR] ?? undefined;
 }
 
 export function findSessionTerminal(sessionId: string): vscode.Terminal | undefined {
@@ -51,6 +52,32 @@ export async function adoptTerminalsByPid(
     }
   }
   return adoptedAny;
+}
+
+export interface SessionSwitch {
+  fromSessionId: string;
+  toSessionId: string;
+}
+
+// /clear and /resume start a new session in the same Claude process, so the terminal follows its pid to the new session.
+export async function followSwitchedSessions(liveSessions: Map<string, LiveSession>): Promise<SessionSwitch[]> {
+  const sessionIdsByPid = new Map<number, string>();
+  for (const liveSession of liveSessions.values()) {
+    if (liveSession.pid !== undefined) {
+      sessionIdsByPid.set(liveSession.pid, liveSession.sessionId);
+    }
+  }
+  const sessionSwitches: SessionSwitch[] = [];
+  for (const terminal of vscode.window.terminals) {
+    const fromSessionId = sessionIdOfTerminal(terminal);
+    const terminalPid = await terminal.processId;
+    const toSessionId = terminalPid === undefined ? undefined : sessionIdsByPid.get(terminalPid);
+    if (fromSessionId !== undefined && toSessionId !== undefined && toSessionId !== fromSessionId) {
+      adoptedTerminalSessionIds.set(terminal, toSessionId);
+      sessionSwitches.push({ fromSessionId, toSessionId });
+    }
+  }
+  return sessionSwitches;
 }
 
 export function resumeSession(

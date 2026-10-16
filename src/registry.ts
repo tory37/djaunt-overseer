@@ -416,6 +416,33 @@ export class Registry {
     return this.store.get<Record<string, string[]>>(LINK_ORDER_KEY) ?? {};
   }
 
+  // /clear and /resume swap the session under a running terminal, so the row moves to the new session in place.
+  // Link marks and found resources describe the old transcript, so they stay with it.
+  async moveSession(fromSessionId: string, toSessionId: string): Promise<void> {
+    if (!this.isPinned(fromSessionId)) {
+      return;
+    }
+    if (!this.isPinned(toSessionId)) {
+      const swapId = (sessionId: string): string => (sessionId === fromSessionId ? toSessionId : sessionId);
+      await this.write(PINNED_KEY, this.pinnedSessionIds().map(swapId));
+      await this.write(SESSION_ORDER_KEY, this.sessionOrder().map(swapId));
+      await this.write(LABELS_KEY, moveEntry(this.labels(), fromSessionId, toSessionId));
+      await this.write(ASSIGNMENTS_KEY, moveEntry(this.assignments(), fromSessionId, toSessionId));
+      await this.write(SESSION_STATUS_KEY, moveEntry(this.sessionStatusIds(), fromSessionId, toSessionId));
+      await this.write(SESSION_STATUS_REASON_KEY, moveEntry(this.sessionStatusReasons(), fromSessionId, toSessionId));
+      await this.write(SESSION_WORKSPACE_KEY, moveEntry(this.sessionWorkspaces(), fromSessionId, toSessionId));
+      await this.setSessionExpanded(toSessionId, this.isSessionExpanded(fromSessionId));
+      const movedSnapshots = Object.fromEntries(
+        Object.entries(this.workspaceSnapshots()).map(([workspaceId, snapshot]) => [
+          workspaceId,
+          { ...snapshot, liveSessionIds: snapshot.liveSessionIds.map(swapId) },
+        ]),
+      );
+      await this.store.update(WORKSPACE_SNAPSHOTS_KEY, movedSnapshots);
+    }
+    await this.unpin(fromSessionId);
+  }
+
   // For a session whose transcript is gone: drops every field that names it, not only the pin.
   async forgetSessions(sessionIds: string[]): Promise<void> {
     const forgottenIds = new Set(sessionIds);
@@ -436,4 +463,10 @@ export class Registry {
     await this.store.update(key, value);
     this.notifyExternalChange();
   }
+}
+
+// The target's old entry is dropped too, so a missing source value (like Default membership) carries over as missing.
+function moveEntry<Value>(record: Record<string, Value>, fromKey: string, toKey: string): Record<string, Value> {
+  const { [fromKey]: movedValue, [toKey]: _replacedValue, ...otherEntries } = record;
+  return movedValue === undefined ? otherEntries : { ...otherEntries, [toKey]: movedValue };
 }
