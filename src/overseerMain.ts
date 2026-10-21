@@ -1,7 +1,10 @@
+import { OVERSEER_CLAUDE_HOME_ENV_VAR } from "./claudeLaunch";
 import { runOverseerCli } from "./overseerCli";
 import { defaultClaudeHome } from "./paths";
 
-runOverseerCli(process.argv.slice(2), process.env, defaultClaudeHome()).then(
+const claudeHome = process.env[OVERSEER_CLAUDE_HOME_ENV_VAR] || defaultClaudeHome();
+
+runOverseerCli(process.argv.slice(2), process.env, claudeHome).then(
   ({ exitCode, output }) => {
     (exitCode === 0 ? process.stdout : process.stderr).write(`${output}\n`);
     process.exitCode = exitCode;

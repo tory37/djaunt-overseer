@@ -1,4 +1,7 @@
+import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
+import { overseerBinDir } from "./claudeLaunch";
 import { registerCommands } from "./commands";
 import { CompactMonitor, registerCompactHookCommands } from "./compactMonitor";
 import { DeclaredTicketMonitor } from "./declaredTicketMonitor";
@@ -17,7 +20,7 @@ import { registerSettingsCommands } from "./settingsCommands";
 import { SettingsPanel } from "./settingsPanel";
 import { jiraProjectRefresher, registerStatusCommands } from "./statusCommands";
 import { StatusConfig } from "./statusConfig";
-import { adoptTerminalsByPid, followSwitchedSessions, sessionIdOfTerminal } from "./terminals";
+import { adoptTerminalsByPid, followSwitchedSessions, sessionIdOfTerminal, setAgentIntegration } from "./terminals";
 import { createGitRootResolver } from "./gitRoots";
 import { registerRepoCommands } from "./repoCommands";
 import { RepoService } from "./repoService";
@@ -54,6 +57,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const summaryService = new SessionSummaryService(context.globalStorageUri.fsPath, log);
   const compactMonitor = new CompactMonitor(claudeHome, log);
   const declaredTicketMonitor = new DeclaredTicketMonitor(claudeHome, log);
+  enableAgentIntegration(context.extensionPath, claudeHome, log);
   const createSectionTree = (section: SessionSection, viewId: string) => {
     const provider = new SessionTreeProvider(section, sessionIndex, liveMonitor, registry, linkService, summaryService, compactMonitor);
     const view = vscode.window.createTreeView(viewId, {
@@ -276,4 +280,15 @@ function shellPidsBySessionId(registry: Registry): Record<string, number | undef
   return Object.fromEntries(
     Object.entries(registry.terminalSessions()).map(([sessionId, terminalSession]) => [sessionId, terminalSession.shellPid]),
   );
+}
+
+// A .vsix may not keep the exec bit, and Claude's Bash tool runs `overseer` straight from PATH.
+function enableAgentIntegration(extensionDir: string, claudeHome: string, log: vscode.OutputChannel): void {
+  const cliWrapper = path.join(overseerBinDir(extensionDir), "overseer");
+  try {
+    fs.chmodSync(cliWrapper, 0o755);
+  } catch (error) {
+    log.appendLine(`Can't make ${cliWrapper} executable: ${String(error)}`);
+  }
+  setAgentIntegration({ extensionDir, nodePath: process.execPath, claudeHome });
 }
