@@ -90,7 +90,7 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - **Find Resources** (right-click a session) finds the GitHub PRs, Jira tickets, and claude.ai artifacts it worked on. Overseer never scans on its own.
 - The session then shows one **Associated Links** row with a count like `3 links`. Click it to open that session's links panel. A second click brings the open panel forward.
 - A headless `claude -p` run with Haiku sorts the links into owned, touched, and seen in passing.
-- An owned ticket names the auto-group, for sessions you ran Find Resources on, when the title and branch have no ticket key.
+- An owned ticket names the auto-group when the title and branch have no ticket key. A ticket you pinned wins, then one the agent declared, then the judge's pick.
 - Clicking a row only selects it. Each row has buttons: **Open in VS Code**, **Open in Browser**, **Copy Link**, **Move to Status…** (tickets), **Pin**, and **Remove**.
 - **Open in VS Code** always opens a new browser tab. VS Code gives extensions no way to find an open one.
 - The panel nests links: parent ticket, then its sub-tickets, then the PRs for each ticket. Jira's parent field and the ticket key in a PR's branch or title decide the nesting. Haiku places the rest. Other tickets, PRs, and artifacts follow.
@@ -100,6 +100,16 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - PR status comes from `gh`. Ticket status comes from the Jira MCP server in your `~/.claude.json`, the same one Claude Code uses. Overseer starts it on its own and reads all visible tickets in one call.
 - **Jira Settings…** lists each Jira project Overseer has seen, like ASSMNT or CR, with its full status list and a color for each status. Turn a project off to stop its status lookups.
 - **GitHub Settings…** sets one color per PR state: draft, open, review required, approved, changes requested, merged, and closed.
+
+### Session panel
+- The **Session** view in the Secondary Side Bar (Cmd+Option+B) shows the session in the focused Claude terminal. It opens once on its own, the first time a Claude terminal gets focus.
+- **Working on** lists the tickets the agent declared and the ones you pinned, with Jira status, summary, and the agent's note.
+- **Also seen** (collapsed) lists the other tickets Find Resources found. Pin one to move it up, or remove it.
+- **+** pins a ticket by key. **Remove** keeps it out for good, even if the agent declares it again.
+- The agent declares tickets itself. Sessions that Overseer starts, resumes, or forks get an `overseer` CLI on PATH and a `tickets` skill. The agent runs `overseer ticket add PROJ-123 --note "..."` when it starts real work on a ticket, and skips tickets it only read.
+- To fill the panel for an older session, resume it from Overseer and ask "Declare the tickets you're working on in Overseer", or run `/overseer:tickets`.
+- `overseer ticket list` shows the agent your pins and removals. The CLI only writes files under `~/.claude/overseer/`. It needs no server and no login.
+- `claude attach` sessions can't take launch flags, so they get no CLI.
 
 ### Settings
 Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:
@@ -132,7 +142,7 @@ Then run **Developer: Reload Window**. Cmd+R only reloads in the F5 development 
 
 ## Requirements
 
-- VS Code 1.100 or later.
+- VS Code 1.106 or later.
 - Claude Code CLI on your login shell's PATH.
 - Optional: `gh` for PR status, and a stdio Jira MCP server in `~/.claude.json` for ticket status. Without them, links show with no status.
 - Tested on macOS only.
