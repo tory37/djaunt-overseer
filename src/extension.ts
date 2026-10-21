@@ -4,7 +4,7 @@ import * as vscode from "vscode";
 import { overseerBinDir } from "./claudeLaunch";
 import { registerCommands } from "./commands";
 import { CompactMonitor, registerCompactHookCommands } from "./compactMonitor";
-import { DeclaredTicketMonitor } from "./declaredTicketMonitor";
+import { DeclarationMonitor } from "./declarationMonitor";
 import { PinnedSession, SessionSection } from "./grouping";
 import { displayTitle, SessionMeta } from "./indexer";
 import { LiveSessionMonitor } from "./liveSessions";
@@ -30,6 +30,7 @@ import { CommitAuthorship, indexCommitAuthorship } from "./gitStatus";
 import { HistoryPanel } from "./historyPanel";
 import { ResourcesPanel } from "./resourcesPanel";
 import { SessionFocusTracker } from "./sessionFocus";
+import { SessionPopulator } from "./sessionPopulator";
 import { SessionPreview } from "./sessionPreview";
 import { SESSION_PANEL_VIEW_ID, SessionPanelProvider } from "./sessionPanel";
 import { SessionTreeProvider } from "./tree";
@@ -47,13 +48,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const registry = new Registry(context.globalState);
   const findIndexedSession = (sessionId: string) =>
     sessionIndex.currentSessions.find((session) => session.sessionId === sessionId);
-  const declaredTicketMonitor = new DeclaredTicketMonitor(claudeHome, log);
+  const declarationMonitor = new DeclarationMonitor(claudeHome, log);
   const linkService = new SessionLinkService(
     context.globalStorageUri.fsPath,
     findIndexedSession,
     (sessionId) => registry.linkMarks(sessionId),
     (sessionId) => registry.linkOrder(sessionId),
-    declaredTicketMonitor,
+    declarationMonitor,
     log,
   );
   const statusConfig = new StatusConfig(context.globalState);
@@ -130,17 +131,20 @@ export function activate(context: vscode.ExtensionContext): void {
     for (const { fromSessionId, toSessionId } of await followSwitchedSessions(liveSessions)) {
       log.appendLine(`Session ${fromSessionId} became ${toSessionId} in the same terminal; moving its row`);
       await registry.copyTicketMarks(fromSessionId, toSessionId);
-      await declaredTicketMonitor.copySession(fromSessionId, toSessionId);
+      await declarationMonitor.copySession(fromSessionId, toSessionId);
       await registry.moveSession(fromSessionId, toSessionId);
     }
   };
   registry.onDidChange(refreshTree);
+  const sessionPopulator = new SessionPopulator(claudeHome, registry, declarationMonitor, log);
   const sessionPreview = new SessionPreview({
     extensionUri: context.extensionUri,
     registry,
     liveMonitor,
     summaryService,
     repoService,
+    declarationMonitor,
+    populator: sessionPopulator,
     findSessionMeta: findIndexedSession,
     sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
   });
@@ -163,7 +167,7 @@ export function activate(context: vscode.ExtensionContext): void {
     globalState: context.globalState,
   });
   const syncUserTicketMarks = (): void => {
-    declaredTicketMonitor
+    declarationMonitor
       .syncUserMarks(registry.allLinkMarks())
       .catch((error: unknown) => log.appendLine(`Can't write ticket marks for the overseer CLI: ${String(error)}`));
   };
@@ -212,7 +216,8 @@ export function activate(context: vscode.ExtensionContext): void {
     linkService.onDidChange(refreshTree),
     summaryService.onDidChange(refreshTree),
     compactMonitor,
-    declaredTicketMonitor,
+    declarationMonitor,
+    sessionPopulator,
     sessionPreview,
     sessionFocus,
     sessionPanelProvider,

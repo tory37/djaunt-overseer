@@ -47,7 +47,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `declaredTicketMonitor.ts` | Watches `declared/`, writes `marks/` for `overseer ticket list`, copies both on `/clear`. |
 | `claudeLaunch.ts` | Pure: the launch shell command (`--plugin-dir`, `--allowedTools`, PATH) and env, plus `quoteForShell`. |
 | `sessionPanel.ts` | Secondary Side Bar webview: Working on and Also seen for the focused Claude terminal. |
-| `plugin/` | Claude plugin with the `tickets` skill. Loaded per launch with `--plugin-dir`. |
+| `plugin/` | Claude plugin with the `track` skill. Loaded per launch with `--plugin-dir`. |
 
 ## Rules
 

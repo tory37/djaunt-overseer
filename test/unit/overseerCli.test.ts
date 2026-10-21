@@ -3,6 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { AGENT_TICKETS_SCHEMA_VERSION, declaredTicketsFile, userTicketMarksFile } from "../../src/agentTickets";
+import { AGENT_WORK_SCHEMA_VERSION, declaredWorkFile } from "../../src/agentWork";
 import { OVERSEER_USAGE, runOverseerCli } from "../../src/overseerCli";
 
 const SESSION_ID = "0b1e7a6c-1f7e-4a5e-9d7e-2b8c3f1a9e10";
@@ -59,11 +60,32 @@ describe("runOverseerCli", () => {
     [["ticket", "remove", "PROJ-1", "--note", "x"], "Unexpected arguments: --note x"],
     [["ticket", "add", "PROJ-1", "--note"], "Unexpected arguments: --note"],
     [["ticket", "close", "PROJ-1"], "Unknown ticket action: close"],
-    [["pr", "add"], "Unknown command: pr add"],
+    [["pr", "add"], "Not a GitHub pull request URL: (missing)"],
+    [["commit", "add", "xyz"], "Not a commit hash: xyz"],
+    [["commit", "squash", "abc1234"], "Unknown commit action: squash"],
+    [["branch", "add"], "Unknown command: branch add"],
   ])("rejects %o with usage", async (args, message) => {
     const result = await runOverseerCli(args, SESSION_ENV, claudeHome);
     expect(result.exitCode).toBe(2);
     expect(result.output.startsWith(`${message}\n\n`)).toBe(true);
+  });
+
+  it("declares commits and pull requests in the work file", async () => {
+    await runOverseerCli(["commit", "add", "ABC1234", "--note", "fix the loop"], SESSION_ENV, claudeHome, 100);
+    const added = await runOverseerCli(["pr", "add", "https://github.com/o/r/pull/12/files"], SESSION_ENV, claudeHome, 200);
+    expect(added.output).toBe(
+      "Declared https://github.com/o/r/pull/12.\nCommits:\n  abc1234  (fix the loop)\nPull requests:\n  https://github.com/o/r/pull/12",
+    );
+    expect(JSON.parse(fs.readFileSync(declaredWorkFile(claudeHome, SESSION_ID), "utf8"))).toEqual({
+      version: AGENT_WORK_SCHEMA_VERSION,
+      entries: {
+        commits: [{ hash: "abc1234", note: "fix the loop", addedAt: 100 }],
+        pullRequests: [{ url: "https://github.com/o/r/pull/12", addedAt: 200 }],
+      },
+    });
+
+    const removed = await runOverseerCli(["commit", "remove", "abc1234"], SESSION_ENV, claudeHome);
+    expect(removed.output).toBe("Removed abc1234.\nPull requests:\n  https://github.com/o/r/pull/12");
   });
 
   it.each([[{}], [{ CLAUDE_CODE_SESSION_ID: "../escape" }]])("refuses to run without a safe session id: %o", async (env) => {

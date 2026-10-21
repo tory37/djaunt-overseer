@@ -11,6 +11,19 @@ import {
   withDeclaredTicket,
   withoutDeclaredTicket,
 } from "./agentTickets";
+import {
+  AGENT_WORK_SCHEMA_VERSION,
+  declaredWorkFile,
+  formatWorkList,
+  normalizeCommitHash,
+  normalizePullRequestUrl,
+  readSessionWork,
+  SessionWork,
+  withDeclaredCommit,
+  withDeclaredPullRequest,
+  withoutDeclaredCommit,
+  withoutDeclaredPullRequest,
+} from "./agentWork";
 import { loadVersionedCache, saveVersionedCache } from "./linkCache";
 
 export const OVERSEER_USAGE = `overseer: tell the Overseer VS Code extension about this Claude session.
@@ -23,6 +36,14 @@ Usage:
       Undeclare a ticket you declared by mistake.
   overseer ticket list
       Show this session's tickets, including the ones the user pinned or removed in the panel.
+  overseer commit add <HASH> [--note "<what it does>"]
+      Declare a commit this session made. Run it right after the commit.
+  overseer pr add <URL> [--note "<what it does>"]
+      Declare a GitHub pull request this session opened or pushed to.
+  overseer commit remove <HASH> / overseer pr remove <URL>
+      Undeclare one you declared by mistake.
+  overseer commit list / overseer pr list
+      Show this session's declared commits and pull requests.
 
 The session comes from CLAUDE_CODE_SESSION_ID, or OVERSEER_SESSION_ID when that is unset.`;
 
@@ -45,13 +66,18 @@ export async function runOverseerCli(
   if (area === undefined || area === "--help" || area === "-h" || area === "help") {
     return { exitCode: EXIT_OK, output: OVERSEER_USAGE };
   }
-  if (area !== "ticket" || action === undefined) {
+  const isKnownArea = area === "ticket" || area === "commit" || area === "pr";
+  if (!isKnownArea || action === undefined) {
     return usageFailure(`Unknown command: ${args.join(" ")}`);
   }
 
   const sessionId = env.CLAUDE_CODE_SESSION_ID || env.OVERSEER_SESSION_ID;
   if (sessionId === undefined || !isSafeSessionId(sessionId)) {
     return { exitCode: EXIT_FAILURE, output: "No Claude session found: CLAUDE_CODE_SESSION_ID is not set." };
+  }
+
+  if (area !== "ticket") {
+    return runWorkCommand(area, action, rest, declaredWorkFile(claudeHome, sessionId), now);
   }
 
   const ticketsFile = declaredTicketsFile(claudeHome, sessionId);
@@ -77,6 +103,49 @@ export async function runOverseerCli(
   }
 }
 
+const WORK_ITEMS = {
+  commit: { normalize: normalizeCommitHash, invalid: "Not a commit hash" },
+  pr: { normalize: normalizePullRequestUrl, invalid: "Not a GitHub pull request URL" },
+};
+
+async function runWorkCommand(area: "commit" | "pr", action: string, rest: string[], workFile: string, now: number): Promise<CliResult> {
+  const work = readSessionWork(await loadVersionedCache<unknown>(workFile, AGENT_WORK_SCHEMA_VERSION));
+  if (action === "list") {
+    return { exitCode: EXIT_OK, output: formatWorkList(work) };
+  }
+  if (action !== "add" && action !== "remove") {
+    return usageFailure(`Unknown ${area} action: ${action}`);
+  }
+  const { normalize, invalid } = WORK_ITEMS[area];
+  const [rawId, ...options] = rest;
+  const id = rawId === undefined ? undefined : normalize(rawId);
+  if (id === undefined) {
+    return usageFailure(`${invalid}: ${rawId ?? "(missing)"}`);
+  }
+  const { note, error } = parseNoteOption(options, action === "add");
+  if (error !== undefined) {
+    return usageFailure(error);
+  }
+  const updatedWork = updatedSessionWork(work, area, action, id, note, now);
+  await saveVersionedCache(workFile, updatedWork, AGENT_WORK_SCHEMA_VERSION);
+  const verb = action === "add" ? "Declared" : "Removed";
+  return { exitCode: EXIT_OK, output: `${verb} ${id}.\n${formatWorkList(updatedWork)}` };
+}
+
+function updatedSessionWork(
+  work: SessionWork,
+  area: "commit" | "pr",
+  action: "add" | "remove",
+  id: string,
+  note: string | undefined,
+  now: number,
+): SessionWork {
+  if (area === "commit") {
+    return action === "add" ? withDeclaredCommit(work, id, note, now) : withoutDeclaredCommit(work, id);
+  }
+  return action === "add" ? withDeclaredPullRequest(work, id, note, now) : withoutDeclaredPullRequest(work, id);
+}
+
 interface TicketArguments {
   key: string;
   note?: string;
@@ -89,14 +158,18 @@ function parseTicketArguments(rest: string[], allowsNote: boolean): TicketArgume
   if (key === undefined) {
     return { key: "", error: `Not a Jira ticket key: ${rawKey ?? "(missing)"}` };
   }
+  return { key, ...parseNoteOption(options, allowsNote) };
+}
+
+function parseNoteOption(options: string[], allowsNote: boolean): { note?: string; error?: string } {
   if (options.length === 0) {
-    return { key };
+    return {};
   }
   const [optionName, ...noteWords] = options;
   if (!allowsNote || optionName !== "--note" || noteWords.length === 0) {
-    return { key, error: `Unexpected arguments: ${options.join(" ")}` };
+    return { error: `Unexpected arguments: ${options.join(" ")}` };
   }
-  return { key, note: noteWords.join(" ").replace(/\s+/g, " ").trim() };
+  return { note: noteWords.join(" ").replace(/\s+/g, " ").trim() };
 }
 
 async function ticketListText(claudeHome: string, sessionId: string, declaredTickets: DeclaredTicket[]): Promise<string> {

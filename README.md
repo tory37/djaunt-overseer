@@ -106,8 +106,8 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - **Working on** lists the tickets the agent declared and the ones you pinned, with Jira status, summary, and the agent's note.
 - **Also seen** (collapsed) lists the other tickets Find Resources found. Pin one to move it up, or remove it.
 - **+** pins a ticket by key. **Remove** keeps it out for good, even if the agent declares it again.
-- The agent declares tickets itself. Sessions that Overseer starts, resumes, or forks get an `overseer` CLI on PATH and a `tickets` skill. The agent runs `overseer ticket add PROJ-123 --note "..."` when it starts real work on a ticket, and skips tickets it only read.
-- To fill the panel for an older session, resume it from Overseer and ask "Declare the tickets you're working on in Overseer", or run `/overseer:tickets`.
+- The agent declares its own work. Sessions that Overseer starts, resumes, or forks get an `overseer` CLI on PATH and a `track` skill. The agent runs `overseer ticket add PROJ-123 --note "..."` when it starts real work on a ticket, `overseer commit add <hash>` after each commit, and `overseer pr add <url>` after it opens or pushes to a PR. It skips anything it only read.
+- For an older session, **Populate all** in its preview asks Haiku to read a digest of the transcript and declare the same things. It costs cents, not a full resume. In a live session, run `/overseer:track` instead.
 - `overseer ticket list` shows the agent your pins and removals. The CLI only writes files under `~/.claude/overseer/`. It needs no server and no login.
 - `claude attach` sessions can't take launch flags, so they get no CLI.
 

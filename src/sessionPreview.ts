@@ -1,15 +1,19 @@
 import * as crypto from "crypto";
 import * as path from "path";
 import * as vscode from "vscode";
+import { DeclaredCommit, pullRequestLabel, TrackedKind, untrackedKinds } from "./agentWork";
+import { DeclarationMonitor } from "./declarationMonitor";
 import { formatAge } from "./format";
 import { CommitEntry } from "./gitStatus";
 import { SessionMeta } from "./indexer";
 import { LiveSessionMonitor } from "./liveSessions";
+import { openInBrowser } from "./openUrl";
 import { tildePath } from "./paths";
 import { Registry } from "./registry";
 import { RepoService } from "./repoService";
 import { commitDocumentUri } from "./repoTree";
 import { sessionSubtitle } from "./resourcesPanel";
+import { SessionPopulator } from "./sessionPopulator";
 import { SessionSummaryService } from "./sessionSummaries";
 import { pickHoverSummary, readTranscriptTail, SUMMARY_SOURCE_LABELS, transcriptTurns } from "./sessionSummary";
 import {
@@ -23,6 +27,7 @@ import {
 
 export const SESSION_PREVIEW_VIEW_TYPE = "overseer.sessionPreview";
 const MAX_PREVIEW_COMMITS = 20;
+const SHORT_HASH_LENGTH = 7;
 
 export interface SessionPreviewDependencies {
   extensionUri: vscode.Uri;
@@ -30,6 +35,8 @@ export interface SessionPreviewDependencies {
   liveMonitor: LiveSessionMonitor;
   summaryService: SessionSummaryService;
   repoService: RepoService;
+  declarationMonitor: DeclarationMonitor;
+  populator: SessionPopulator;
   findSessionMeta: (sessionId: string) => SessionMeta | undefined;
   sessionTitle: (sessionId: string) => string;
 }
@@ -53,12 +60,22 @@ interface PreviewSummary {
   isStale: boolean;
 }
 
+// A declared hash git can't find in the session's repos still shows, without a subject.
 interface PreviewCommit {
   hash: string;
   shortHash: string;
-  subject: string;
-  repoName: string;
+  subject: string | undefined;
+  repoName: string | undefined;
+  note: string | undefined;
 }
+
+interface PreviewPullRequest {
+  url: string;
+  label: string;
+  note: string | undefined;
+}
+
+const TRACKED_KIND_LABELS: Record<TrackedKind, string> = { tickets: "tickets", commits: "commits", pullRequests: "pull requests" };
 
 interface PreviewState extends PreviewRunState {
   title: string;
@@ -70,7 +87,12 @@ interface PreviewState extends PreviewRunState {
   firstPrompt: string | undefined;
   lastPrompt: string | undefined;
   turns: PreviewTurn[] | undefined;
+  untracked: string[];
+  isPopulating: boolean;
+  commitsTracked: boolean;
   commits: PreviewCommit[] | undefined;
+  pullRequestsTracked: boolean;
+  pullRequests: PreviewPullRequest[];
   cwd: string | undefined;
   otherRepos: string[];
 }
@@ -79,6 +101,8 @@ type PreviewMessage =
   | { type: "ready" }
   | { type: "resume" }
   | { type: "summarize" }
+  | { type: "populate" }
+  | { type: "openPullRequest"; url: string }
   | { type: "openCommit"; hash: string }
   | { type: "copyHash"; hash: string };
 
@@ -98,6 +122,8 @@ export class SessionPreview implements vscode.Disposable {
       dependencies.registry.onDidChange(postState),
       dependencies.liveMonitor.onDidChange(postState),
       dependencies.summaryService.onDidChange(postState),
+      dependencies.declarationMonitor.onDidChange(postState),
+      dependencies.populator.onDidChange(postState),
     );
   }
 
@@ -161,6 +187,20 @@ export class SessionPreview implements vscode.Disposable {
       case "summarize":
         await vscode.commands.executeCommand("overseer.summarizeSession", sessionId);
         return;
+      case "populate": {
+        const meta = this.dependencies.findSessionMeta(sessionId);
+        if (meta !== undefined) {
+          await this.dependencies.populator.populate(meta);
+        }
+        return;
+      }
+      case "openPullRequest": {
+        const pullRequest = this.dependencies.declarationMonitor.sessionWork(sessionId).pullRequests.find(({ url }) => url === message.url);
+        if (pullRequest !== undefined) {
+          await openInBrowser(pullRequest.url);
+        }
+        return;
+      }
       case "openCommit": {
         const sessionCommit = this.details?.commits.find(({ commit }) => commit.hash === message.hash);
         if (sessionCommit !== undefined) {
@@ -188,11 +228,14 @@ export class SessionPreview implements vscode.Disposable {
   }
 
   private previewState(sessionId: string): PreviewState {
-    const { liveMonitor, summaryService, findSessionMeta, sessionTitle } = this.dependencies;
+    const { liveMonitor, summaryService, declarationMonitor, populator, findSessionMeta, sessionTitle } = this.dependencies;
     const meta = findSessionMeta(sessionId);
+    const work = declarationMonitor.sessionWork(sessionId);
+    const declaredHashes = work.commits.map(({ hash }) => hash);
     if (meta !== undefined) {
-      this.loadDetails(meta);
+      this.loadDetails(meta, declaredHashes);
     }
+    const untracked = untrackedKinds(work, declarationMonitor.declaredTickets(sessionId).length);
     const details = this.details?.sessionId === sessionId ? this.details : undefined;
     const summary = meta && pickHoverSummary(meta.recap, summaryService.summaryFor(sessionId), meta.sizeBytes);
     return {
@@ -209,24 +252,24 @@ export class SessionPreview implements vscode.Disposable {
       firstPrompt: meta?.firstPrompt,
       lastPrompt: distinctLastPrompt(meta?.firstPrompt, meta?.lastPrompt),
       turns: details?.turns,
-      commits: details?.commits.map(({ commit, repoRoot }) => ({
-        hash: commit.hash,
-        shortHash: commit.shortHash,
-        subject: commit.subject,
-        repoName: path.basename(repoRoot),
-      })),
+      untracked: untracked.map((kind) => TRACKED_KIND_LABELS[kind]),
+      isPopulating: populator.isPopulating(sessionId),
+      commitsTracked: !untracked.includes("commits"),
+      commits: details === undefined ? undefined : previewCommits(work.commits, details.commits),
+      pullRequestsTracked: !untracked.includes("pullRequests"),
+      pullRequests: work.pullRequests.map(({ url, note }) => ({ url, label: pullRequestLabel(url), note })),
       cwd: meta === undefined ? undefined : tildePath(meta.resumeCwd ?? meta.startCwd),
       otherRepos: (meta?.otherReposTouched ?? []).map((repoRoot) => path.basename(repoRoot)),
     };
   }
 
-  private loadDetails(meta: SessionMeta): void {
-    const loadKey = `${meta.sessionId}:${meta.sizeBytes}`;
+  private loadDetails(meta: SessionMeta, declaredHashes: string[]): void {
+    const loadKey = `${meta.sessionId}:${meta.sizeBytes}:${declaredHashes.join(",")}`;
     if (this.details?.loadKey === loadKey || this.loadingKey === loadKey) {
       return;
     }
     this.loadingKey = loadKey;
-    void Promise.all([this.readTurns(meta), this.readCommits(meta)]).then(([turns, commits]) => {
+    void Promise.all([this.readTurns(meta), this.readCommits(meta, declaredHashes)]).then(([turns, commits]) => {
       if (this.loadingKey !== loadKey) {
         return;
       }
@@ -244,14 +287,14 @@ export class SessionPreview implements vscode.Disposable {
     }
   }
 
-  private async readCommits(meta: SessionMeta): Promise<SessionCommit[]> {
-    if (meta.commitHashes.length === 0) {
+  private async readCommits(meta: SessionMeta, declaredHashes: string[]): Promise<SessionCommit[]> {
+    if (declaredHashes.length === 0) {
       return [];
     }
     const repoRoots = [meta.homeRepo, ...meta.otherReposTouched].filter((repoRoot): repoRoot is string => repoRoot !== undefined);
     const commitsByRepo = await Promise.all(
       repoRoots.map(async (repoRoot) =>
-        (await this.dependencies.repoService.describeCommits(repoRoot, meta.commitHashes)).map((commit) => ({ commit, repoRoot })),
+        (await this.dependencies.repoService.describeCommits(repoRoot, declaredHashes)).map((commit) => ({ commit, repoRoot })),
       ),
     );
     const commitsByHash = new Map(commitsByRepo.flat().map((sessionCommit) => [sessionCommit.commit.hash, sessionCommit]));
@@ -265,6 +308,20 @@ export class SessionPreview implements vscode.Disposable {
     vscode.Disposable.from(...this.disposables).dispose();
     this.changeEmitter.dispose();
   }
+}
+
+// Declared order, newest first; a hash git found gets its subject and repo.
+function previewCommits(declaredCommits: DeclaredCommit[], foundCommits: SessionCommit[]): PreviewCommit[] {
+  return [...declaredCommits].reverse().map((declaredCommit) => {
+    const found = foundCommits.find(({ commit }) => commit.hash.startsWith(declaredCommit.hash));
+    return {
+      hash: found?.commit.hash ?? declaredCommit.hash,
+      shortHash: found?.commit.shortHash ?? declaredCommit.hash.slice(0, SHORT_HASH_LENGTH),
+      subject: found?.commit.subject,
+      repoName: found === undefined ? undefined : path.basename(found.repoRoot),
+      note: declaredCommit.note,
+    };
+  });
 }
 
 function previewHtml(nonce: string, cspSource: string, codiconStylesheet: string): string {
@@ -392,6 +449,7 @@ function previewHtml(nonce: string, cspSource: string, codiconStylesheet: string
   .commit:hover { background: var(--vscode-list-hoverBackground); }
   .commit-hash { font-family: var(--vscode-editor-font-family); font-size: 12px; line-height: 20px; color: var(--vscode-textLink-foreground); text-align: left; }
   .commit-hash:hover { text-decoration: underline; }
+  .commit-hash:disabled { color: var(--vscode-descriptionForeground); text-decoration: none; cursor: default; }
   .commit-subject { font-size: 13px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .commit-repo { font-size: 12px; color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .commit .icon-button { opacity: 0; }
@@ -401,6 +459,24 @@ function previewHtml(nonce: string, cspSource: string, codiconStylesheet: string
   .repos { list-style: none; margin: 4px 0 0; padding: 0; }
   .repos li { display: flex; align-items: center; gap: 8px; height: 24px; font-size: 13px; }
   .repos .codicon { font-size: 14px; color: var(--vscode-descriptionForeground); }
+  .populate {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 32px;
+    padding: 12px 16px;
+    border: 1px dashed var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
+    border-radius: 2px;
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .populate p { flex: 1; min-width: 0; color: var(--vscode-descriptionForeground); }
+  .populate strong { color: var(--vscode-foreground); font-weight: 600; }
+  .pull-requests { list-style: none; margin: 0; padding: 0; }
+  .pull-request + .pull-request { margin-top: 8px; }
+  .pull-request-link { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; line-height: 20px; color: var(--vscode-textLink-foreground); }
+  .pull-request-link:hover { text-decoration: underline; }
+  .item-note { font-size: 12px; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
   [hidden] { display: none !important; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -419,6 +495,10 @@ function previewHtml(nonce: string, cspSource: string, codiconStylesheet: string
 </header>
 <div class="columns">
   <main class="main">
+    <div class="populate" id="populate" hidden>
+      <p id="populate-text"></p>
+      <button type="button" class="button primary" id="populate-button"><span class="codicon codicon-sparkle"></span><span>Populate all</span></button>
+    </div>
     <section>
       <div class="section-label">
         <h2>Where it left off</h2>
@@ -435,6 +515,10 @@ function previewHtml(nonce: string, cspSource: string, codiconStylesheet: string
     <section id="prompts-section">
       <div class="section-label"><h2>Prompts</h2></div>
       <div id="prompts"></div>
+    </section>
+    <section id="pull-requests-section">
+      <div class="section-label"><h2>Pull requests<span class="count" id="pull-request-count"></span></h2></div>
+      <div id="pull-requests"></div>
     </section>
     <section id="commits-section">
       <div class="section-label"><h2>Commits<span class="count" id="commit-count"></span></h2></div>
@@ -513,6 +597,52 @@ function previewHtml(nonce: string, cspSource: string, codiconStylesheet: string
     container.replaceChildren(box);
   }
 
+  function renderPopulate(state) {
+    const banner = byId("populate");
+    banner.hidden = state.untracked.length === 0 && !state.isPopulating;
+    byId("populate-button").hidden = state.isPopulating;
+    const text = byId("populate-text");
+    if (state.isPopulating) {
+      text.replaceChildren(element("span", "codicon codicon-loading codicon-modifier-spin"), document.createTextNode(" Haiku is reading the session…"));
+      return;
+    }
+    const missing = element("strong", "", "Not tracked yet: " + state.untracked.join(", ") + ".");
+    text.replaceChildren(missing, document.createTextNode(" Haiku can read this session and fill them in."));
+  }
+
+  function untrackedNote(isTracked, isEmpty) {
+    if (!isTracked) {
+      return element("p", "muted", "Not tracked yet.");
+    }
+    return isEmpty ? element("p", "muted", "None.") : undefined;
+  }
+
+  function renderPullRequests(state) {
+    const container = byId("pull-requests");
+    byId("pull-request-count").hidden = state.pullRequests.length === 0;
+    byId("pull-request-count").textContent = String(state.pullRequests.length);
+    const note = untrackedNote(state.pullRequestsTracked || state.pullRequests.length > 0, state.pullRequests.length === 0);
+    if (note !== undefined) {
+      container.replaceChildren(note);
+      return;
+    }
+    const list = element("ul", "pull-requests");
+    for (const pullRequest of state.pullRequests) {
+      const item = element("li", "pull-request");
+      const link = element("button", "pull-request-link");
+      link.type = "button";
+      link.title = pullRequest.url;
+      link.append(codicon("git-pull-request"), element("span", "", pullRequest.label));
+      link.addEventListener("click", () => vscode.postMessage({ type: "openPullRequest", url: pullRequest.url }));
+      item.append(link);
+      if (pullRequest.note) {
+        item.append(element("p", "item-note", pullRequest.note));
+      }
+      list.append(item);
+    }
+    container.replaceChildren(list);
+  }
+
   function renderTurns(state) {
     const container = byId("turns");
     if (state.turns === undefined) {
@@ -549,23 +679,34 @@ function previewHtml(nonce: string, cspSource: string, codiconStylesheet: string
 
   function renderCommits(state) {
     const container = byId("commits");
-    byId("commits-section").hidden = state.commits !== undefined && state.commits.length === 0;
-    byId("commit-count").hidden = state.commits === undefined;
-    byId("commit-count").textContent = state.commits === undefined ? "" : String(state.commits.length);
+    const commits = state.commits ?? [];
+    byId("commit-count").hidden = commits.length === 0;
+    byId("commit-count").textContent = String(commits.length);
+    const note = untrackedNote(state.commitsTracked || commits.length > 0, state.commits !== undefined && commits.length === 0);
+    if (note !== undefined) {
+      container.replaceChildren(note);
+      return;
+    }
     if (state.commits === undefined) {
       container.replaceChildren(element("p", "muted", "Looking up commits…"));
       return;
     }
     const list = element("ul", "commits");
-    for (const commit of state.commits) {
+    for (const commit of commits) {
       const item = element("li", "commit");
       const hashButton = element("button", "commit-hash", commit.shortHash);
       hashButton.type = "button";
-      hashButton.title = "Show the commit";
+      hashButton.disabled = commit.subject === undefined;
+      hashButton.title = commit.subject === undefined ? "Not found in this session's repos" : "Show the commit";
       hashButton.addEventListener("click", () => vscode.postMessage({ type: "openCommit", hash: commit.hash }));
       const text = element("div");
-      text.append(element("p", "commit-subject", commit.subject), element("p", "commit-repo", commit.repoName));
-      text.firstChild.title = commit.subject;
+      const subject = element("p", "commit-subject", commit.subject ?? commit.note ?? "Not found in this session's repos");
+      subject.title = subject.textContent;
+      text.append(subject);
+      const detail = [commit.repoName, commit.subject !== undefined ? commit.note : undefined].filter(Boolean).join(" · ");
+      if (detail !== "") {
+        text.append(element("p", "commit-repo", detail));
+      }
       const copyButton = element("button", "icon-button");
       copyButton.type = "button";
       copyButton.title = "Copy hash";
@@ -593,14 +734,17 @@ function previewHtml(nonce: string, cspSource: string, codiconStylesheet: string
 
   byId("resume").addEventListener("click", () => vscode.postMessage({ type: "resume" }));
   byId("summarize-again").addEventListener("click", () => vscode.postMessage({ type: "summarize" }));
+  byId("populate-button").addEventListener("click", () => vscode.postMessage({ type: "populate" }));
   window.addEventListener("message", (event) => {
     if (event.data.type !== "state") {
       return;
     }
     const state = event.data.state;
     renderHeader(state);
+    renderPopulate(state);
     renderSummary(state);
     renderTurns(state);
+    renderPullRequests(state);
     renderPrompts(state);
     renderCommits(state);
     renderWhere(state);
