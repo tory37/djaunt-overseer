@@ -73,11 +73,13 @@ export function buildGroups(input: GroupingInput): SessionGroup[] {
   const sessionsByRef = new Map<GroupRef, PinnedSession[]>();
 
   for (const sessionId of input.pinnedSessionIds) {
+    const meta = input.sessionsById.get(sessionId);
     const pinnedSession: PinnedSession = {
       sessionId,
-      meta: input.sessionsById.get(sessionId),
+      meta,
       label: input.labels[sessionId],
-      pending: input.pendingSessions[sessionId],
+      // The registry keeps a pending entry after the transcript appears, so a transcript ends pending.
+      pending: meta === undefined ? input.pendingSessions[sessionId] : undefined,
       terminal: input.terminalSessions?.[sessionId],
     };
     const linkedTicketKey = input.linkedTicketKeys?.[sessionId];

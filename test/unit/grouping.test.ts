@@ -116,6 +116,17 @@ describe("buildGroups", () => {
     expect(summarize(input)).toEqual([["CR-5", ["new"]]]);
   });
 
+  it("stops treating a session as pending once its transcript is indexed", () => {
+    const groups = buildGroups(
+      groupingInput([sessionMeta("started", {})], {
+        pinnedSessionIds: ["started"],
+        pendingSessions: { started: { cwd: "/repo", createdAtMs: 1 } },
+      }),
+    );
+
+    expect(groups[0].sessions[0].pending).toBeUndefined();
+  });
+
   it("titles a terminal session, files it by a ticket key in its label, and sorts it by creation time", () => {
     const olderClaude = sessionMeta("claude", { lastActivityMs: 1_000 });
     const groups = buildGroups(
