@@ -15,6 +15,18 @@ export interface HoverSummary {
   isStale: boolean;
 }
 
+export interface TranscriptTurn {
+  speaker: "user" | "claude" | "tool";
+  text: string;
+}
+
+export const SUMMARY_SOURCE_LABELS: Record<HoverSummary["source"], string> = {
+  recap: "Claude Code recap",
+  haiku: "Haiku summary",
+};
+
+const TURN_LABELS: Record<TranscriptTurn["speaker"], string> = { user: "User", claude: "Claude", tool: "Tool" };
+
 export interface SummarySessionContext {
   title: string | undefined;
   gitBranch: string | undefined;
@@ -66,7 +78,7 @@ export function buildSummaryDigest(context: SummarySessionContext, transcriptLin
     "",
     "Latest turns:",
   ].join("\n");
-  const turns = transcriptLines.flatMap(readTurns);
+  const turns = transcriptTurns(transcriptLines).map(digestLine);
   const keptTurns: string[] = [];
   let usedBytes = Buffer.byteLength(headerText, "utf8");
   for (let turnIndex = turns.length - 1; turnIndex >= 0; turnIndex--) {
@@ -131,7 +143,15 @@ export function pickHoverSummary(
   return haikuHoverSummary.writtenAtMs >= recapHoverSummary.writtenAtMs ? haikuHoverSummary : recapHoverSummary;
 }
 
-function readTurns(line: string): string[] {
+export function transcriptTurns(transcriptLines: string[]): TranscriptTurn[] {
+  return transcriptLines.flatMap(readTurns);
+}
+
+function digestLine(turn: TranscriptTurn): string {
+  return `${TURN_LABELS[turn.speaker]}: ${clipText(turn.text, turn.speaker === "tool" ? MAX_TOOL_CHARS : MAX_TURN_CHARS)}`;
+}
+
+function readTurns(line: string): TranscriptTurn[] {
   const isTurnRecord = line.includes('"type":"user"') || line.includes('"type":"assistant"');
   if (!isTurnRecord) {
     return [];
@@ -155,7 +175,7 @@ function readTurns(line: string): string[] {
   return [];
 }
 
-function userTurns(content: unknown): string[] {
+function userTurns(content: unknown): TranscriptTurn[] {
   if (typeof content === "string") {
     return promptTurn(content);
   }
@@ -168,28 +188,28 @@ function userTurns(content: unknown): string[] {
     .flatMap((block: { text: string }) => promptTurn(block.text));
 }
 
-function promptTurn(promptText: string): string[] {
+function promptTurn(promptText: string): TranscriptTurn[] {
   const isCommandOutput = promptText.startsWith("<local-command") || promptText.startsWith("<command-");
   const withoutMarkup = promptText.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, " ");
   if (isCommandOutput || withoutMarkup.trim() === "") {
     return [];
   }
-  return [`User: ${clipText(withoutMarkup, MAX_TURN_CHARS)}`];
+  return [{ speaker: "user", text: withoutMarkup.trim() }];
 }
 
-function assistantTurn(block: { type?: string; text?: unknown; name?: unknown; input?: unknown }): string[] {
+function assistantTurn(block: { type?: string; text?: unknown; name?: unknown; input?: unknown }): TranscriptTurn[] {
   if (block?.type === "text" && typeof block.text === "string" && block.text.trim() !== "") {
-    return [`Claude: ${clipText(block.text, MAX_TURN_CHARS)}`];
+    return [{ speaker: "claude", text: block.text.trim() }];
   }
   if (block?.type === "tool_use" && typeof block.name === "string") {
     const toolInput = block.input as { description?: unknown } | undefined;
     const toolDescription = typeof toolInput?.description === "string" ? `: ${toolInput.description}` : "";
-    return [`Tool: ${clipText(`${block.name}${toolDescription}`, MAX_TOOL_CHARS)}`];
+    return [{ speaker: "tool", text: `${block.name}${toolDescription}` }];
   }
   return [];
 }
 
-function clipText(text: string, maxLength: number): string {
+export function clipText(text: string, maxLength: number): string {
   const singleLineText = text.replace(/\s+/g, " ").trim();
   return singleLineText.length <= maxLength ? singleLineText : `${singleLineText.slice(0, maxLength - 1)}…`;
 }

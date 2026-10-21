@@ -37,6 +37,11 @@ export function logArgs(repoRoot: string, commitLimit: number): string[] {
   return ["-C", repoRoot, "log", `-n${commitLimit}`, `--format=${LOG_FORMAT}`];
 }
 
+// --ignore-missing skips hashes from other repos, so one call per repo looks up every hash the session printed.
+export function describeCommitsArgs(repoRoot: string, hashes: string[]): string[] {
+  return ["-C", repoRoot, "log", "--no-walk", "--ignore-missing", `--format=${LOG_FORMAT}`, ...hashes];
+}
+
 export function showArgs(repoRoot: string, hash: string): string[] {
   return ["-C", repoRoot, "show", "--stat", "--patch", "--format=fuller", hash];
 }

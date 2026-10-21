@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { BranchStatus, CommitEntry, logArgs, parseBranchStatus, parseLog, showArgs, statusArgs } from "./gitStatus";
+import { BranchStatus, CommitEntry, describeCommitsArgs, logArgs, parseBranchStatus, parseLog, showArgs, statusArgs } from "./gitStatus";
 import { ConcurrencyLimiter } from "./linkView";
 import { RepoEntry } from "./repoSet";
 
@@ -53,6 +53,15 @@ export class RepoService implements vscode.Disposable {
       });
     this.commitsByRoot.set(repoRoot, pendingCommits);
     return pendingCommits;
+  }
+
+  describeCommits(repoRoot: string, hashes: string[]): Promise<CommitEntry[]> {
+    return this.runGit(describeCommitsArgs(repoRoot, hashes))
+      .then(parseLog)
+      .catch((error: unknown) => {
+        this.log.appendLine(`git log of session commits failed in ${repoRoot}: ${firstLine(error)}`);
+        return [];
+      });
   }
 
   showCommit(repoRoot: string, hash: string): Promise<string> {

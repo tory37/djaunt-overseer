@@ -17,7 +17,7 @@ import { SessionLinkService } from "./sessionLinks";
 import { SessionSummaryService } from "./sessionSummaries";
 import { sessionStatusFor, sessionStatusUri } from "./sessionStatusView";
 import { MarkedStatus } from "./sessionStatuses";
-import { HoverSummary, pickHoverSummary } from "./sessionSummary";
+import { HoverSummary, pickHoverSummary, SUMMARY_SOURCE_LABELS } from "./sessionSummary";
 import { findSessionTerminal } from "./terminals";
 
 export type TreeNode =
@@ -279,10 +279,6 @@ interface SummaryState {
   isSummarizing: boolean;
 }
 
-const SUMMARY_SOURCE_LABELS: Record<HoverSummary["source"], string> = {
-  recap: "Claude Code recap",
-  haiku: "Haiku summary",
-};
 
 function sessionTreeItem(
   pinned: PinnedSession,

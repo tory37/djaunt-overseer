@@ -139,6 +139,8 @@ export function activate(context: vscode.ExtensionContext): void {
     extensionUri: context.extensionUri,
     registry,
     liveMonitor,
+    summaryService,
+    repoService,
     findSessionMeta: findIndexedSession,
     sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
   });

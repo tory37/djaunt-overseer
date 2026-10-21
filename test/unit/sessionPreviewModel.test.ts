@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LiveSession } from "../../src/liveParse";
-import { previewRunState, previewTabTitle } from "../../src/sessionPreviewModel";
+import { distinctLastPrompt, previewRunState, previewTabTitle, recentConversation } from "../../src/sessionPreviewModel";
 
 function liveSession(overrides: Partial<LiveSession>): LiveSession {
   return {
@@ -39,5 +39,33 @@ describe("previewTabTitle", () => {
   it("shortens long titles", () => {
     expect(previewTabTitle("abcdefghij", 5)).toBe("Preview: abcd…");
     expect(previewTabTitle("abc", 5)).toBe("Preview: abc");
+  });
+});
+
+describe("recentConversation", () => {
+  it("keeps the newest user and Claude turns and drops tool calls", () => {
+    const turns = [
+      { speaker: "user" as const, text: "first" },
+      { speaker: "claude" as const, text: "reply" },
+      { speaker: "tool" as const, text: "Bash: run tests" },
+      { speaker: "user" as const, text: "second" },
+    ];
+    expect(recentConversation(turns, 2)).toEqual([
+      { speaker: "claude", text: "reply" },
+      { speaker: "user", text: "second" },
+    ]);
+  });
+
+  it("puts long turns on one clipped line", () => {
+    const [turn] = recentConversation([{ speaker: "claude", text: `line one\n\n${"x".repeat(700)}` }]);
+    expect(turn.text.startsWith("line one x")).toBe(true);
+    expect(turn.text.length).toBe(600);
+  });
+});
+
+describe("distinctLastPrompt", () => {
+  it("hides the last prompt when it is the first one", () => {
+    expect(distinctLastPrompt("fix it", "fix it")).toBeUndefined();
+    expect(distinctLastPrompt("fix it", "ship it")).toBe("ship it");
   });
 });

@@ -7,6 +7,7 @@ import {
   branchStatusLabel,
   commitHashesIn,
   commitSessionId,
+  describeCommitsArgs,
   githubCommitUrl,
   indexCommitAuthorship,
   parseBranchStatus,
@@ -62,6 +63,24 @@ describe("branch status", () => {
       fs.writeFileSync(path.join(repoRoot, "a.txt"), "two\n");
       const porcelainText = execFileSync("git", statusArgs(repoRoot), { encoding: "utf8" });
       expect(branchStatusLabel(parseBranchStatus(porcelainText))).toBe("main · 1 changed");
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("session commits", () => {
+  it("looks up the hashes a repo has and skips the rest", () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "overseer-git-"));
+    try {
+      const git = (...args: string[]) => execFileSync("git", ["-C", repoRoot, ...args], { encoding: "utf8" });
+      git("init", "-q", "-b", "main");
+      fs.writeFileSync(path.join(repoRoot, "a.txt"), "one\n");
+      git("add", "a.txt");
+      git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-q", "-m", "first");
+      const shortHash = git("rev-parse", "--short", "HEAD").trim();
+      const logText = execFileSync("git", describeCommitsArgs(repoRoot, [shortHash, "deadbee"]), { encoding: "utf8" });
+      expect(parseLog(logText).map((commit) => commit.subject)).toEqual(["first"]);
     } finally {
       fs.rmSync(repoRoot, { recursive: true, force: true });
     }
