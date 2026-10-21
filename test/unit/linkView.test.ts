@@ -9,6 +9,7 @@ import {
   MarkedLink,
   markLinks,
   ownedTicketKey,
+  withDeclaredTickets,
   visibleLinks,
 } from "../../src/linkView";
 import { acceptedOrder, resourceRow } from "../../src/resourceRows";
@@ -117,6 +118,30 @@ describe("link labels", () => {
   it("prefers a pinned ticket and skips a removed one", () => {
     expect(ownedTicketKey([OWNED_TICKET, { ...TOUCHED_TICKET, mark: "pinned" }])).toBe("PROJ-5");
     expect(ownedTicketKey([{ ...OWNED_TICKET, mark: "removed" }])).toBeUndefined();
+  });
+
+  it("prefers a declared ticket over the judge's pick but not over a pin", () => {
+    const declaredTicket = { ...TOUCHED_TICKET, isAgentDeclared: true };
+    expect(ownedTicketKey([OWNED_TICKET, declaredTicket])).toBe("PROJ-5");
+    expect(ownedTicketKey([{ ...OWNED_TICKET, mark: "pinned" }, declaredTicket])).toBe("PROJ-9");
+    expect(ownedTicketKey([OWNED_TICKET, { ...declaredTicket, mark: "removed" }])).toBe("PROJ-9");
+  });
+});
+
+describe("withDeclaredTickets", () => {
+  it("marks a scanned ticket as declared and owned", () => {
+    const [declaredLink] = withDeclaredTickets([TOUCHED_TICKET], [{ key: "PROJ-5", note: "fixing it", addedAt: 1 }]);
+    expect(declaredLink).toMatchObject({ id: "PROJ-5", role: "owned", isAgentDeclared: true, agentNote: "fixing it", judged: true });
+  });
+
+  it("adds declared tickets the scan never saw, first", () => {
+    const links = withDeclaredTickets([OWNED_PR], [{ key: "PROJ-77", addedAt: 1 }]);
+    expect(links.map((link) => link.id)).toEqual(["PROJ-77", OWNED_PR.id]);
+    expect(links[0]).toMatchObject({ kind: "ticket", role: "owned", isAgentDeclared: true, judged: false });
+  });
+
+  it("leaves links alone when nothing is declared", () => {
+    expect(withDeclaredTickets([OWNED_PR, TOUCHED_TICKET], [])).toEqual([OWNED_PR, TOUCHED_TICKET]);
   });
 });
 

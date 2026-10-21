@@ -1,3 +1,4 @@
+import { DeclaredTicket } from "./agentTickets";
 import { LinkKind } from "./linkCandidates";
 import { linkKey, ResolvedLink } from "./linkJudge";
 import { LinkMark, LinkMarks } from "./registry";
@@ -78,11 +79,43 @@ function isCountedLink(link: MarkedLink): boolean {
   return link.role !== "irrelevant";
 }
 
-// A pinned ticket beats the judge's pick, and a removed one never names the group.
+// A pinned ticket beats the agent's declaration, which beats the judge's pick; a removed one never names the group.
 export function ownedTicketKey(links: MarkedLink[]): string | undefined {
   const tickets = links.filter((link) => link.kind === "ticket" && link.mark !== "removed");
   const pinnedTicket = tickets.find((link) => link.mark === "pinned");
-  return (pinnedTicket ?? tickets.find((link) => link.role === "owned"))?.id;
+  const declaredTicket = tickets.find((link) => link.isAgentDeclared === true);
+  return (pinnedTicket ?? declaredTicket ?? tickets.find((link) => link.role === "owned"))?.id;
+}
+
+// The agent knows what it works on, so a declared ticket is owned even when the transcript never mentions it.
+export function withDeclaredTickets(resolvedLinks: ResolvedLink[], declaredTickets: DeclaredTicket[]): ResolvedLink[] {
+  const declaredByKey = new Map(declaredTickets.map((ticket) => [ticket.key, ticket]));
+  const linksWithDeclarations = resolvedLinks.map((link) => {
+    const declaredTicket = link.kind === "ticket" ? declaredByKey.get(link.id) : undefined;
+    if (declaredTicket === undefined) {
+      return link;
+    }
+    declaredByKey.delete(link.id);
+    return { ...link, ...declaredTicketFields(declaredTicket) };
+  });
+  const unscannedLinks = [...declaredByKey.values()].map((declaredTicket): ResolvedLink => ({
+    kind: "ticket",
+    id: declaredTicket.key,
+    url: undefined,
+    title: undefined,
+    signals: {},
+    snippets: [],
+    firstSeen: undefined,
+    lastSeen: undefined,
+    label: undefined,
+    judged: false,
+    ...declaredTicketFields(declaredTicket),
+  }));
+  return [...unscannedLinks, ...linksWithDeclarations];
+}
+
+function declaredTicketFields(declaredTicket: DeclaredTicket): Pick<ResolvedLink, "role" | "stillRelevant" | "isAgentDeclared" | "agentNote"> {
+  return { role: "owned", stillRelevant: true, isAgentDeclared: true, agentNote: declaredTicket.note };
 }
 
 export class ConcurrencyLimiter {

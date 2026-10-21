@@ -44,11 +44,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const registry = new Registry(context.globalState);
   const findIndexedSession = (sessionId: string) =>
     sessionIndex.currentSessions.find((session) => session.sessionId === sessionId);
+  const declaredTicketMonitor = new DeclaredTicketMonitor(claudeHome, log);
   const linkService = new SessionLinkService(
     context.globalStorageUri.fsPath,
     findIndexedSession,
     (sessionId) => registry.linkMarks(sessionId),
     (sessionId) => registry.linkOrder(sessionId),
+    declaredTicketMonitor,
     log,
   );
   const statusConfig = new StatusConfig(context.globalState);
@@ -56,7 +58,6 @@ export function activate(context: vscode.ExtensionContext): void {
   const linkStatusService = new LinkStatusService(log, jiraService, statusConfig, new StoredStatusCache(context.globalState));
   const summaryService = new SessionSummaryService(context.globalStorageUri.fsPath, log);
   const compactMonitor = new CompactMonitor(claudeHome, log);
-  const declaredTicketMonitor = new DeclaredTicketMonitor(claudeHome, log);
   enableAgentIntegration(context.extensionPath, claudeHome, log);
   const createSectionTree = (section: SessionSection, viewId: string) => {
     const provider = new SessionTreeProvider(section, sessionIndex, liveMonitor, registry, linkService, summaryService, compactMonitor);

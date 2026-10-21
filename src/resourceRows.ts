@@ -16,6 +16,8 @@ export interface ResourceRow {
   role: JudgedRole;
   mark: LinkMark | undefined;
   isDimmed: boolean;
+  isAgentDeclared: boolean;
+  agentNote: string | undefined;
   depth: number;
 }
 
@@ -48,6 +50,8 @@ export function resourceRow(
     role: link.role,
     mark: link.mark,
     isDimmed: isDimmedLink(link),
+    isAgentDeclared: link.isAgentDeclared === true,
+    agentNote: link.agentNote,
     depth,
   };
 }

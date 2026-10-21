@@ -33,6 +33,8 @@ export interface ResolvedLink extends LinkCandidate {
   label: string | undefined;
   judged: boolean;
   parentKey?: string;
+  isAgentDeclared?: boolean;
+  agentNote?: string;
 }
 
 export type ClaudeRunner = (claudeArgs: string[], stdinText: string) => Promise<string>;

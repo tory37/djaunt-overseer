@@ -456,9 +456,13 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       pinIcon.title = "Pinned";
       meta.append(pinIcon);
     }
-    const parts = [row.statusText, ROLE_TAGS[row.role], row.mark === "removed" ? "removed" : ""].filter(Boolean);
+    const roleTag = row.isAgentDeclared ? "working on" : ROLE_TAGS[row.role];
+    const parts = [row.statusText, roleTag, row.mark === "removed" ? "removed" : ""].filter(Boolean);
     if (parts.length > 0) {
       meta.append(document.createTextNode(parts.join(" · ")));
+    }
+    if (row.agentNote) {
+      meta.title = "Agent: " + row.agentNote;
     }
     return meta;
   }
