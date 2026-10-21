@@ -88,6 +88,8 @@ export class SessionPreview implements vscode.Disposable {
         return;
       case "resume":
         if (this.shownSessionId !== undefined) {
+          // The terminal opens beside the active tab and its focus closes the preview, so it takes the preview's place.
+          this.panel?.reveal(this.panel.viewColumn, false);
           await vscode.commands.executeCommand("overseer.openSessionById", this.shownSessionId);
         }
         return;
