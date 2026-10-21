@@ -250,6 +250,16 @@ export class Registry {
     await this.write(LINK_MARKS_KEY, hasMarks ? { ...otherSessionMarks, [sessionId]: sessionMarks } : otherSessionMarks);
   }
 
+  // Copies only ticket marks: after /clear the terminal keeps working the same tickets, but other links belong to the old transcript.
+  async copyTicketMarks(fromSessionId: string, toSessionId: string): Promise<void> {
+    const ticketMarkEntries = Object.entries(this.linkMarks(fromSessionId)).filter(([linkKey]) => linkKey.startsWith("ticket:"));
+    if (ticketMarkEntries.length === 0) {
+      return;
+    }
+    const targetMarks = { ...Object.fromEntries(ticketMarkEntries), ...this.linkMarks(toSessionId) };
+    await this.write(LINK_MARKS_KEY, { ...this.allLinkMarks(), [toSessionId]: targetMarks });
+  }
+
   linkOrder(sessionId: string): string[] {
     return this.allLinkOrders()[sessionId] ?? [];
   }
@@ -408,7 +418,7 @@ export class Registry {
     return this.store.get<Record<string, WorkspaceSnapshot>>(WORKSPACE_SNAPSHOTS_KEY) ?? {};
   }
 
-  private allLinkMarks(): Record<string, LinkMarks> {
+  allLinkMarks(): Record<string, LinkMarks> {
     return this.store.get<Record<string, LinkMarks>>(LINK_MARKS_KEY) ?? {};
   }
 

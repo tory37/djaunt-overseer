@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   declaredTicketsFile,
   formatTicketList,
+  hasUserTicketMarks,
   isSafeSessionId,
+  mergeDeclaredTickets,
   normalizeTicketKey,
   readDeclaredTickets,
   readUserTicketMarks,
+  userTicketMarksFromLinkMarks,
   withDeclaredTicket,
   withoutDeclaredTicket,
   workingTicketKeys,
@@ -122,5 +125,31 @@ describe("keys and paths", () => {
 
   it("puts declarations under the overseer folder", () => {
     expect(declaredTicketsFile("/home/me/.claude", "abc")).toBe("/home/me/.claude/overseer/declared/abc.json");
+  });
+});
+
+describe("copying a session's tickets", () => {
+  it("adds missing tickets and keeps the target's own entries", () => {
+    const targetTickets = [{ key: "PROJ-1", note: "new note", addedAt: 20 }];
+    const incomingTickets = [
+      { key: "PROJ-1", note: "old note", addedAt: 10 },
+      { key: "PROJ-2", addedAt: 11 },
+    ];
+    expect(mergeDeclaredTickets(targetTickets, incomingTickets)).toEqual([
+      { key: "PROJ-1", note: "new note", addedAt: 20 },
+      { key: "PROJ-2", addedAt: 11 },
+    ]);
+  });
+
+  it("reads ticket marks out of link marks", () => {
+    const userMarks = userTicketMarksFromLinkMarks({
+      "ticket:PROJ-1": "pinned",
+      "ticket:PROJ-2": "removed",
+      "pr:https://github.com/o/r/pull/1": "pinned",
+      "ticket:UTF-8": "pinned",
+    });
+    expect(userMarks).toEqual({ pinned: ["PROJ-1"], removed: ["PROJ-2"] });
+    expect(hasUserTicketMarks(userMarks)).toBe(true);
+    expect(hasUserTicketMarks(userTicketMarksFromLinkMarks({ "pr:1": "pinned" }))).toBe(false);
   });
 });

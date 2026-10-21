@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { registerCommands } from "./commands";
 import { CompactMonitor, registerCompactHookCommands } from "./compactMonitor";
+import { DeclaredTicketMonitor } from "./declaredTicketMonitor";
 import { PinnedSession, SessionSection } from "./grouping";
 import { displayTitle, SessionMeta } from "./indexer";
 import { LiveSessionMonitor } from "./liveSessions";
@@ -52,6 +53,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const linkStatusService = new LinkStatusService(log, jiraService, statusConfig, new StoredStatusCache(context.globalState));
   const summaryService = new SessionSummaryService(context.globalStorageUri.fsPath, log);
   const compactMonitor = new CompactMonitor(claudeHome, log);
+  const declaredTicketMonitor = new DeclaredTicketMonitor(claudeHome, log);
   const createSectionTree = (section: SessionSection, viewId: string) => {
     const provider = new SessionTreeProvider(section, sessionIndex, liveMonitor, registry, linkService, summaryService, compactMonitor);
     const view = vscode.window.createTreeView(viewId, {
@@ -119,10 +121,19 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     for (const { fromSessionId, toSessionId } of await followSwitchedSessions(liveSessions)) {
       log.appendLine(`Session ${fromSessionId} became ${toSessionId} in the same terminal; moving its row`);
+      await registry.copyTicketMarks(fromSessionId, toSessionId);
+      await declaredTicketMonitor.copySession(fromSessionId, toSessionId);
       await registry.moveSession(fromSessionId, toSessionId);
     }
   };
   registry.onDidChange(refreshTree);
+  const syncUserTicketMarks = (): void => {
+    declaredTicketMonitor
+      .syncUserMarks(registry.allLinkMarks())
+      .catch((error: unknown) => log.appendLine(`Can't write ticket marks for the overseer CLI: ${String(error)}`));
+  };
+  registry.onDidChange(syncUserTicketMarks);
+  syncUserTicketMarks();
   statusConfig.onDidChange(() => {
     refreshTree();
     SettingsPanel.notifyConfigChanged();
@@ -166,6 +177,7 @@ export function activate(context: vscode.ExtensionContext): void {
     linkService.onDidChange(refreshTree),
     summaryService.onDidChange(refreshTree),
     compactMonitor,
+    declaredTicketMonitor,
     compactMonitor.onDidChange(refreshTree),
     ...registerCompactHookCommands(context, claudeHome, log),
     liveMonitor.onDidChange(() => {

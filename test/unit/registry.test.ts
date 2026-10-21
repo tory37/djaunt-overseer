@@ -13,6 +13,18 @@ function memoryStore(): KeyValueStore {
 }
 
 describe("Registry", () => {
+  it("copies only ticket marks to a new session and keeps the target's own marks", async () => {
+    const registry = new Registry(memoryStore());
+    await registry.setLinkMark("old", ["ticket:PROJ-1", "pr:9"], "pinned");
+    await registry.setLinkMark("old", ["ticket:PROJ-2"], "removed");
+    await registry.setLinkMark("new", ["ticket:PROJ-2"], "pinned");
+
+    await registry.copyTicketMarks("old", "new");
+
+    expect(registry.linkMarks("new")).toEqual({ "ticket:PROJ-1": "pinned", "ticket:PROJ-2": "pinned" });
+    expect(registry.linkMarks("old")).toEqual({ "ticket:PROJ-1": "pinned", "pr:9": "pinned", "ticket:PROJ-2": "removed" });
+  });
+
   it("sets and clears session statuses for several sessions at once", async () => {
     const registry = new Registry(memoryStore());
 

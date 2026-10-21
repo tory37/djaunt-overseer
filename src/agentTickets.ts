@@ -6,6 +6,7 @@ const DECLARED_DIR_NAME = "declared";
 const USER_MARKS_DIR_NAME = "marks";
 export const AGENT_TICKETS_SCHEMA_VERSION = 1;
 const SAFE_SESSION_ID_PATTERN = /^[A-Za-z0-9-]+$/;
+const TICKET_LINK_KEY_PREFIX = "ticket:";
 
 export interface DeclaredTicket {
   key: string;
@@ -89,6 +90,27 @@ export function withDeclaredTicket(
 
 export function withoutDeclaredTicket(declaredTickets: DeclaredTicket[], key: string): DeclaredTicket[] {
   return declaredTickets.filter((ticket) => ticket.key !== key);
+}
+
+// Keeps every target entry as it is and adds the incoming tickets it doesn't have yet.
+export function mergeDeclaredTickets(targetTickets: DeclaredTicket[], incomingTickets: DeclaredTicket[]): DeclaredTicket[] {
+  const targetKeys = new Set(targetTickets.map((ticket) => ticket.key));
+  return [...targetTickets, ...incomingTickets.filter((ticket) => !targetKeys.has(ticket.key))];
+}
+
+export function userTicketMarksFromLinkMarks(linkMarks: Record<string, "pinned" | "removed">): UserTicketMarks {
+  const userMarks: UserTicketMarks = { pinned: [], removed: [] };
+  for (const [linkKey, mark] of Object.entries(linkMarks)) {
+    const ticketKey = linkKey.startsWith(TICKET_LINK_KEY_PREFIX) ? linkKey.slice(TICKET_LINK_KEY_PREFIX.length) : undefined;
+    if (ticketKey !== undefined && isTicketKey(ticketKey)) {
+      userMarks[mark].push(ticketKey);
+    }
+  }
+  return userMarks;
+}
+
+export function hasUserTicketMarks(userMarks: UserTicketMarks): boolean {
+  return userMarks.pinned.length > 0 || userMarks.removed.length > 0;
 }
 
 // A ticket the user removed stays out of the working list even if the agent declared it.
