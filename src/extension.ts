@@ -30,6 +30,7 @@ import { CommitAuthorship, indexCommitAuthorship } from "./gitStatus";
 import { HistoryPanel } from "./historyPanel";
 import { ResourcesPanel } from "./resourcesPanel";
 import { SessionFocusTracker } from "./sessionFocus";
+import { SessionPreview } from "./sessionPreview";
 import { SESSION_PANEL_VIEW_ID, SessionPanelProvider } from "./sessionPanel";
 import { SessionTreeProvider } from "./tree";
 import { SessionStatusDecorations } from "./sessionStatusView";
@@ -134,7 +135,19 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
   registry.onDidChange(refreshTree);
-  const sessionFocus = new SessionFocusTracker();
+  const sessionPreview = new SessionPreview({
+    extensionUri: context.extensionUri,
+    registry,
+    liveMonitor,
+    findSessionMeta: findIndexedSession,
+    sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
+  });
+  const sessionFocus = new SessionFocusTracker(sessionPreview);
+  sessionFocus.onDidChange(() => {
+    if (sessionFocus.focusSource() === "terminal") {
+      sessionPreview.close();
+    }
+  });
   const sessionPanelProvider = new SessionPanelProvider({
     extensionUri: context.extensionUri,
     registry,
@@ -198,6 +211,7 @@ export function activate(context: vscode.ExtensionContext): void {
     summaryService.onDidChange(refreshTree),
     compactMonitor,
     declaredTicketMonitor,
+    sessionPreview,
     sessionFocus,
     sessionPanelProvider,
     vscode.window.registerWebviewViewProvider(SESSION_PANEL_VIEW_ID, sessionPanelProvider),
@@ -247,6 +261,7 @@ export function activate(context: vscode.ExtensionContext): void {
       linkStatusService,
       summaryService,
       sessionViews: [treeView, terminalTreeView],
+      sessionPreview,
       showResources: (sessionId) =>
         ResourcesPanel.show(
           {

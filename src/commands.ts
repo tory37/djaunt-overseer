@@ -24,6 +24,7 @@ import {
 } from "./terminals";
 import { RepoTreeNode } from "./repoTree";
 import { fillPrompt, parseSessionCommands, promptParameters } from "./sessionCommands";
+import { SessionPreview } from "./sessionPreview";
 import { askStatusReason, configuredStatuses, pickSessionStatus } from "./sessionStatusView";
 import { busySessions, confirmStopBusySessions, runningClaudeSessions, suspendSessions } from "./suspend";
 import { TreeNode } from "./tree";
@@ -38,6 +39,7 @@ export interface CommandDependencies {
   summaryService: SessionSummaryService;
   sessionViews: vscode.TreeView<TreeNode>[];
   showResources: (sessionId: string) => void;
+  sessionPreview: SessionPreview;
   pinnedSessions: () => PinnedSession[];
   log: vscode.OutputChannel;
 }
@@ -73,6 +75,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     summaryService,
     sessionViews,
     showResources,
+    sessionPreview,
     pinnedSessions,
     log,
   } = dependencies;
@@ -269,12 +272,9 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     return fillPrompt(picked.command.prompt, valuesByParameter);
   };
 
-  const findPinnedSession = (sessionId: string): PinnedSession | undefined => {
-    const sessionNode = sessionViews
-      .flatMap((sessionView) => sessionView.selection)
-      .find((node): node is SessionNode => node.kind === "session" && node.pinned.sessionId === sessionId);
-    return sessionNode?.pinned;
-  };
+  // A click runs before the tree's selection updates, so look the session up by id, not in the selection.
+  const findPinnedSession = (sessionId: string): PinnedSession | undefined =>
+    pinnedSessions().find((pinned) => pinned.sessionId === sessionId);
 
   const openTerminalSession = async (pinned: PinnedSession): Promise<void> => {
     if (pinned.terminal === undefined) {
@@ -454,7 +454,15 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         await renameSession(pinned);
         return;
       }
-      findSessionTerminal(sessionId)?.show(true);
+      const sessionTerminal = findSessionTerminal(sessionId);
+      if (sessionTerminal !== undefined) {
+        sessionPreview.close();
+        sessionTerminal.show(true);
+        return;
+      }
+      if (pinned !== undefined && pinned.terminal === undefined && pinned.pending === undefined) {
+        sessionPreview.show(sessionId);
+      }
     }),
     vscode.commands.registerCommand("overseer.newSession", async (clickedNode?: TreeNode) => {
       const groupDirectories =

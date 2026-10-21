@@ -8,6 +8,7 @@ export interface SessionFocus {
 export type SessionFocusEvent =
   | { kind: "terminal"; sessionId: string | undefined }
   | { kind: "preview"; sessionId: string }
+  | { kind: "previewClosed"; terminalSessionId: string | undefined }
   | { kind: "otherTab" };
 
 // A file or other tab keeps the last session, so the panel stays useful while the user reads code.
@@ -17,6 +18,11 @@ export function nextSessionFocus(current: SessionFocus | undefined, event: Sessi
       return event.sessionId === undefined ? undefined : { sessionId: event.sessionId, source: "terminal" };
     case "preview":
       return { sessionId: event.sessionId, source: "preview" };
+    case "previewClosed":
+      if (current?.source !== "preview") {
+        return current;
+      }
+      return event.terminalSessionId === undefined ? undefined : { sessionId: event.terminalSessionId, source: "terminal" };
     case "otherTab":
       return current;
   }

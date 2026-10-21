@@ -16,6 +16,16 @@ describe("nextSessionFocus", () => {
     expect(nextSessionFocus(TERMINAL_FOCUS, { kind: "preview", sessionId: "b" })).toEqual({ sessionId: "b", source: "preview" });
   });
 
+  it("falls back to the active terminal when the preview closes", () => {
+    const previewFocus = { sessionId: "b", source: "preview" as const };
+    expect(nextSessionFocus(previewFocus, { kind: "previewClosed", terminalSessionId: "a" })).toEqual(TERMINAL_FOCUS);
+    expect(nextSessionFocus(previewFocus, { kind: "previewClosed", terminalSessionId: undefined })).toBeUndefined();
+  });
+
+  it("ignores a closed preview it wasn't following", () => {
+    expect(nextSessionFocus(TERMINAL_FOCUS, { kind: "previewClosed", terminalSessionId: undefined })).toBe(TERMINAL_FOCUS);
+  });
+
   it("keeps the last session when another tab gets focus", () => {
     expect(nextSessionFocus(TERMINAL_FOCUS, { kind: "otherTab" })).toBe(TERMINAL_FOCUS);
   });
