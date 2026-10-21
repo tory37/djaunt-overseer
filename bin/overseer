@@ -1,0 +1,7 @@
+#!/bin/sh
+# Ships with the Overseer VS Code extension, which sets OVERSEER_NODE to VS Code's own runtime, so no Node install is needed.
+cli_script="$(dirname "$0")/../dist/overseer.js"
+if [ -n "$OVERSEER_NODE" ]; then
+  ELECTRON_RUN_AS_NODE=1 exec "$OVERSEER_NODE" "$cli_script" "$@"
+fi
+exec node "$cli_script" "$@"
