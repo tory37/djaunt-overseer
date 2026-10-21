@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LiveSession } from "../../src/liveParse";
-import { distinctLastPrompt, previewRunState, previewTabTitle, recentConversation } from "../../src/sessionPreviewModel";
+import { distinctLastPrompt, previewRunState, previewTabTitle, recentConversation, sidebarRunKind } from "../../src/sessionPreviewModel";
 
 function liveSession(overrides: Partial<LiveSession>): LiveSession {
   return {
@@ -67,5 +67,17 @@ describe("distinctLastPrompt", () => {
   it("hides the last prompt when it is the first one", () => {
     expect(distinctLastPrompt("fix it", "fix it")).toBeUndefined();
     expect(distinctLastPrompt("fix it", "ship it")).toBe("ship it");
+  });
+});
+
+describe("sidebarRunKind", () => {
+  it("follows the live status when the terminal is here", () => {
+    expect(sidebarRunKind(true, liveSession({ status: "busy" }))).toBe("busy");
+    expect(sidebarRunKind(true, undefined)).toBe("idle");
+  });
+
+  it("tells paused from running somewhere else when there is no terminal here", () => {
+    expect(sidebarRunKind(false, undefined)).toBe("paused");
+    expect(sidebarRunKind(false, liveSession({ pid: 48211 }))).toBe("elsewhere");
   });
 });

@@ -1,7 +1,7 @@
 import * as crypto from "crypto";
 import * as path from "path";
 import * as vscode from "vscode";
-import { DeclaredCommit, pullRequestLabel, TrackedKind, untrackedKinds } from "./agentWork";
+import { DeclaredCommit, pullRequestLabel, TRACKED_KIND_LABELS, untrackedKinds } from "./agentWork";
 import { DeclarationMonitor } from "./declarationMonitor";
 import { formatAge } from "./format";
 import { CommitEntry } from "./gitStatus";
@@ -74,8 +74,6 @@ interface PreviewPullRequest {
   label: string;
   note: string | undefined;
 }
-
-const TRACKED_KIND_LABELS: Record<TrackedKind, string> = { tickets: "tickets", commits: "commits", pullRequests: "pull requests" };
 
 interface PreviewState extends PreviewRunState {
   title: string;
@@ -170,6 +168,16 @@ export class SessionPreview implements vscode.Disposable {
     return panel;
   }
 
+  // The terminal opens beside the active tab and its focus closes the preview, so it takes the preview's place.
+  async resume(): Promise<void> {
+    const sessionId = this.shownSessionId;
+    if (sessionId === undefined) {
+      return;
+    }
+    this.panel?.reveal(this.panel.viewColumn, false);
+    await vscode.commands.executeCommand("overseer.openSessionById", sessionId);
+  }
+
   private async receive(message: PreviewMessage): Promise<void> {
     const sessionId = this.shownSessionId;
     if (sessionId === undefined) {
@@ -180,9 +188,7 @@ export class SessionPreview implements vscode.Disposable {
         this.postState();
         return;
       case "resume":
-        // The terminal opens beside the active tab and its focus closes the preview, so it takes the preview's place.
-        this.panel?.reveal(this.panel.viewColumn, false);
-        await vscode.commands.executeCommand("overseer.openSessionById", sessionId);
+        await this.resume();
         return;
       case "summarize":
         await vscode.commands.executeCommand("overseer.summarizeSession", sessionId);

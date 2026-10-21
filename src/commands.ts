@@ -99,10 +99,16 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     return candidateNodes.filter((node): node is SessionNode => node.kind === "session");
   };
 
+  // The Session sidebar passes a session ID; the tree passes the clicked node.
+  const targetSessions = (clicked?: TreeNode | string): PinnedSession[] =>
+    typeof clicked === "string"
+      ? [findPinnedSession(clicked)].filter(isDefined)
+      : selectedSessionNodes(clicked).map((node) => node.pinned);
+
   // A clicked session offers only its own repos; the palette offers every repo in the tree.
-  const pickRepo = async (clickedNode?: TreeNode): Promise<string | undefined> => {
-    const sessionNodes = clickedNode === undefined ? [] : selectedSessionNodes(clickedNode);
-    const sourceSessions = sessionNodes.length > 0 ? sessionNodes.map((node) => node.pinned) : pinnedSessions();
+  const pickRepo = async (clicked?: TreeNode | string): Promise<string | undefined> => {
+    const clickedSessions = clicked === undefined ? [] : targetSessions(clicked);
+    const sourceSessions = clickedSessions.length > 0 ? clickedSessions : pinnedSessions();
     const repos = await resolveRepos(sourceSessions, createGitRootResolver());
     if (repos.length === 0) {
       void vscode.window.showInformationMessage("Overseer: no git repo found for that session.");
@@ -230,11 +236,11 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
   };
 
   // Busy sessions are skipped because Claude drops input typed while it works.
-  const sendToIdleSessions = (sessionNodes: SessionNode[], slashCommand: string): void => {
-    const idleTerminals = sessionNodes
-      .filter((node) => node.pinned.terminal === undefined)
-      .filter((node) => liveMonitor.get(node.pinned.sessionId)?.status !== "busy")
-      .map((node) => findSessionTerminal(node.pinned.sessionId))
+  const sendToIdleSessions = (sessions: PinnedSession[], slashCommand: string): void => {
+    const idleTerminals = sessions
+      .filter((pinned) => pinned.terminal === undefined)
+      .filter((pinned) => liveMonitor.get(pinned.sessionId)?.status !== "busy")
+      .map((pinned) => findSessionTerminal(pinned.sessionId))
       .filter(isDefined);
     idleTerminals.forEach((terminal) => sendSlashCommand(terminal, slashCommand));
     if (idleTerminals.length === 1) {
@@ -432,10 +438,10 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         await renameGroup(selectedNode);
       }
     }),
-    vscode.commands.registerCommand("overseer.renameSession", async (clickedNode?: TreeNode) => {
-      const sessionNode = selectedSessionNodes(clickedNode)[0];
-      if (sessionNode) {
-        await renameSession(sessionNode.pinned);
+    vscode.commands.registerCommand("overseer.renameSession", async (clicked?: TreeNode | string) => {
+      const pinned = targetSessions(clicked)[0];
+      if (pinned) {
+        await renameSession(pinned);
       }
     }),
     vscode.commands.registerCommand("overseer.renameTerminal", async (clickedNode?: TreeNode) => {
@@ -525,30 +531,30 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         await openTerminalSession(sessionNode.pinned);
       }
     }),
-    vscode.commands.registerCommand("overseer.suspendSession", async (clickedNode?: TreeNode) => {
-      await suspendSessionsAfterAsking(selectedSessionNodes(clickedNode).map((node) => node.pinned));
+    vscode.commands.registerCommand("overseer.suspendSession", async (clicked?: TreeNode | string) => {
+      await suspendSessionsAfterAsking(targetSessions(clicked));
     }),
-    vscode.commands.registerCommand("overseer.compactSession", (clickedNode?: TreeNode) => {
-      sendToIdleSessions(selectedSessionNodes(clickedNode), "/compact");
+    vscode.commands.registerCommand("overseer.compactSession", (clicked?: TreeNode | string) => {
+      sendToIdleSessions(targetSessions(clicked), "/compact");
     }),
-    vscode.commands.registerCommand("overseer.clearSession", (clickedNode?: TreeNode) => {
-      sendToIdleSessions(selectedSessionNodes(clickedNode), "/clear");
+    vscode.commands.registerCommand("overseer.clearSession", (clicked?: TreeNode | string) => {
+      sendToIdleSessions(targetSessions(clicked), "/clear");
     }),
-    vscode.commands.registerCommand("overseer.costSession", (clickedNode?: TreeNode) => {
-      sendToIdleSessions(selectedSessionNodes(clickedNode), "/cost");
+    vscode.commands.registerCommand("overseer.costSession", (clicked?: TreeNode | string) => {
+      sendToIdleSessions(targetSessions(clicked), "/cost");
     }),
-    vscode.commands.registerCommand("overseer.switchModel", async (clickedNode?: TreeNode) => {
-      const sessionNodes = selectedSessionNodes(clickedNode);
+    vscode.commands.registerCommand("overseer.switchModel", async (clicked?: TreeNode | string) => {
+      const sessions = targetSessions(clicked);
       const modelAlias = await pickModel();
       if (modelAlias !== undefined) {
-        sendToIdleSessions(sessionNodes, `/model ${modelAlias}`);
+        sendToIdleSessions(sessions, `/model ${modelAlias}`);
       }
     }),
-    vscode.commands.registerCommand("overseer.runSessionCommand", async (clickedNode?: TreeNode) => {
-      const sessionNodes = selectedSessionNodes(clickedNode);
+    vscode.commands.registerCommand("overseer.runSessionCommand", async (clicked?: TreeNode | string) => {
+      const sessions = targetSessions(clicked);
       const prompt = await pickSessionPrompt();
       if (prompt !== undefined) {
-        sendToIdleSessions(sessionNodes, prompt);
+        sendToIdleSessions(sessions, prompt);
       }
     }),
     // The resources panel passes a session ID; the context menu passes the clicked node.
@@ -594,9 +600,9 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         .filter(isDefined);
       await Promise.all(sessionMetas.map((meta) => summaryService.summarize(meta)));
     }),
-    // The Repos view passes a repo row; the session context menu passes the clicked session.
-    vscode.commands.registerCommand("overseer.openRepoInScm", async (clicked?: TreeNode | RepoTreeNode) => {
-      if (clicked?.kind === "repo" || clicked?.kind === "commit") {
+    // The Repos view passes a repo row, the context menu the clicked session, and the Session sidebar a session ID.
+    vscode.commands.registerCommand("overseer.openRepoInScm", async (clicked?: TreeNode | RepoTreeNode | string) => {
+      if (typeof clicked === "object" && (clicked.kind === "repo" || clicked.kind === "commit")) {
         await openRepoInSourceControl(clicked.kind === "repo" ? clicked.repo.root : clicked.repoRoot, log);
         return;
       }
@@ -605,8 +611,8 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         await openRepoInSourceControl(repoRoot, log);
       }
     }),
-    vscode.commands.registerCommand("overseer.setSessionStatus", async (clickedNode?: TreeNode) => {
-      const sessionIds = selectedSessionNodes(clickedNode).map((node) => node.pinned.sessionId);
+    vscode.commands.registerCommand("overseer.setSessionStatus", async (clicked?: TreeNode | string) => {
+      const sessionIds = targetSessions(clicked).map((pinned) => pinned.sessionId);
       if (sessionIds.length === 0) {
         return;
       }

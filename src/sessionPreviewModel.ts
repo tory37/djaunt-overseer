@@ -43,3 +43,13 @@ export function recentConversation(turns: TranscriptTurn[], turnLimit = RECENT_T
 export function distinctLastPrompt(firstPrompt: string | undefined, lastPrompt: string | undefined): string | undefined {
   return lastPrompt === firstPrompt ? undefined : lastPrompt;
 }
+
+export type SidebarRunKind = "idle" | "busy" | "paused" | "elsewhere";
+
+// A session with a terminal here is live; one shown in the preview is paused or running somewhere else.
+export function sidebarRunKind(hasTerminalHere: boolean, liveSession: LiveSession | undefined): SidebarRunKind {
+  if (hasTerminalHere) {
+    return liveSession?.status === "busy" ? "busy" : "idle";
+  }
+  return previewRunState(liveSession).isElsewhere ? "elsewhere" : "paused";
+}

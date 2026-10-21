@@ -1,17 +1,29 @@
 import * as crypto from "crypto";
+import * as path from "path";
 import * as vscode from "vscode";
 import { normalizeTicketKey } from "./agentTickets";
+import { TRACKED_KIND_LABELS, untrackedKinds } from "./agentWork";
+import { DeclarationMonitor } from "./declarationMonitor";
+import { formatAge } from "./format";
 import { SessionMeta } from "./indexer";
 import { linkKey } from "./linkJudge";
 import { LinkStatusService } from "./linkStatusService";
 import { MarkedLink, sessionPanelTickets } from "./linkView";
 import { LiveSessionMonitor } from "./liveSessions";
 import { openInBrowser } from "./openUrl";
+import { tildePath } from "./paths";
 import { LinkMark, Registry } from "./registry";
-import { linkStatusColor, sessionSubtitle } from "./resourcesPanel";
+import { linkStatusColor } from "./resourcesPanel";
 import { ResourceRow, resourceRow } from "./resourceRows";
 import { readLinkSettings, SessionLinkService } from "./sessionLinks";
 import { SessionFocusTracker } from "./sessionFocus";
+import { SessionPopulator } from "./sessionPopulator";
+import { SessionPreview } from "./sessionPreview";
+import { previewRunState, SidebarRunKind, sidebarRunKind } from "./sessionPreviewModel";
+import { statusColorId } from "./sessionStatuses";
+import { sessionStatusFor } from "./sessionStatusView";
+import { SessionSummaryService } from "./sessionSummaries";
+import { pickHoverSummary, SUMMARY_SOURCE_LABELS } from "./sessionSummary";
 import { StatusConfig } from "./statusConfig";
 import { sessionIdOfTerminal } from "./terminals";
 
@@ -26,19 +38,34 @@ export interface SessionPanelDependencies {
   statusConfig: StatusConfig;
   liveMonitor: LiveSessionMonitor;
   sessionFocus: SessionFocusTracker;
+  sessionPreview: SessionPreview;
+  summaryService: SessionSummaryService;
+  declarationMonitor: DeclarationMonitor;
+  populator: SessionPopulator;
   findSessionMeta: (sessionId: string) => SessionMeta | undefined;
   sessionTitle: (sessionId: string) => string;
   globalState: vscode.Memento;
 }
 
-interface SessionHeader {
+interface SessionDetails {
   title: string;
-  subtitle: string;
-  isBusy: boolean;
+  runKind: SidebarRunKind;
+  stateLabel: string;
+  resumeLabel: string;
+  lastActive: string | undefined;
+  cwd: string | undefined;
+  branch: string | undefined;
+  otherRepos: string[];
+  status: { name: string; icon: string; color: string; reason: string | undefined } | undefined;
+  summary: { text: string; caption: string; isStale: boolean } | undefined;
+  isSummarizing: boolean;
+  hasTranscript: boolean;
+  untracked: string[];
+  isPopulating: boolean;
 }
 
 interface PanelState {
-  session: SessionHeader | undefined;
+  session: SessionDetails | undefined;
   workingOn: ResourceRow[];
   alsoSeen: ResourceRow[];
   isFinding: boolean;
@@ -50,9 +77,26 @@ type PanelMessage =
   | { type: "open"; key: string }
   | { type: "setMark"; key: string; mark: LinkMark | null }
   | { type: "pinByKey" }
-  | { type: "findAgain" };
+  | { type: "findAgain" }
+  | { type: "action"; action: string }
+  | { type: "populate" };
 
 const LINK_MARKS = new Set<string>(["pinned", "removed"]);
+
+// Each sidebar action runs the same command as the tree's context menu, given the session ID.
+const ACTION_COMMANDS: Record<string, string> = {
+  suspend: "overseer.suspendSession",
+  compact: "overseer.compactSession",
+  clear: "overseer.clearSession",
+  model: "overseer.switchModel",
+  cost: "overseer.costSession",
+  command: "overseer.runSessionCommand",
+  summarize: "overseer.summarizeSession",
+  findLinks: "overseer.findResources",
+  openRepo: "overseer.openRepoInScm",
+  status: "overseer.setSessionStatus",
+  rename: "overseer.renameSession",
+};
 
 // Shows the tickets of the focused session, beside it in the Secondary Side Bar.
 export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -71,6 +115,9 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
       dependencies.linkService.onDidChange(postState),
       dependencies.linkStatusService.onDidChange(postState),
       dependencies.liveMonitor.onDidChange(postState),
+      dependencies.summaryService.onDidChange(postState),
+      dependencies.declarationMonitor.onDidChange(postState),
+      dependencies.populator.onDidChange(postState),
     );
   }
 
@@ -109,21 +156,50 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
       this.shownLinks = [];
       return { session: undefined, workingOn: [], alsoSeen: [], isFinding: false, canFind: false };
     }
-    const { registry, linkService, liveMonitor, findSessionMeta, sessionTitle } = this.dependencies;
+    const { registry, linkService, findSessionMeta } = this.dependencies;
     const meta = findSessionMeta(sessionId);
     const visibleLinks = linkService.visibleLinksFor(sessionId, meta) ?? [];
     const { workingOn, alsoSeen } = sessionPanelTickets(visibleLinks, registry.linkMarks(sessionId));
     this.shownLinks = [...workingOn, ...alsoSeen];
     return {
-      session: {
-        title: sessionTitle(sessionId),
-        subtitle: meta === undefined ? "" : sessionSubtitle(meta),
-        isBusy: liveMonitor.get(sessionId)?.status === "busy",
-      },
+      session: this.sessionDetails(sessionId, meta),
       workingOn: workingOn.map((link) => this.rowFor(link)),
       alsoSeen: alsoSeen.map((link) => this.rowFor(link)),
       isFinding: linkService.isFinding(sessionId),
       canFind: meta !== undefined,
+    };
+  }
+
+  private sessionDetails(sessionId: string, meta: SessionMeta | undefined): SessionDetails {
+    const { registry, liveMonitor, sessionFocus, summaryService, declarationMonitor, populator, sessionTitle } = this.dependencies;
+    const liveSession = liveMonitor.get(sessionId);
+    const runKind = sidebarRunKind(sessionFocus.focusSource() === "terminal", liveSession);
+    const isLive = runKind === "idle" || runKind === "busy";
+    const { stateLabel, resumeLabel } = previewRunState(isLive ? undefined : liveSession);
+    const status = sessionStatusFor(registry, sessionId);
+    const summary = meta && pickHoverSummary(meta.recap, summaryService.summaryFor(sessionId), meta.sizeBytes);
+    const untracked = untrackedKinds(declarationMonitor.sessionWork(sessionId), declarationMonitor.declaredTickets(sessionId).length);
+    return {
+      title: sessionTitle(sessionId),
+      runKind,
+      stateLabel: isLive ? (runKind === "busy" ? "Working" : "Idle") : stateLabel,
+      resumeLabel,
+      lastActive: meta === undefined ? undefined : formatAge(meta.lastActivityMs),
+      cwd: meta === undefined ? undefined : tildePath(meta.resumeCwd ?? meta.startCwd),
+      branch: meta?.gitBranch || undefined,
+      otherRepos: (meta?.otherReposTouched ?? []).map((repoRoot) => path.basename(repoRoot)),
+      status:
+        status === undefined
+          ? undefined
+          : { name: status.name, icon: status.icon, color: `--vscode-${statusColorId(status.color).replace(/\./g, "-")}`, reason: status.reason },
+      summary:
+        summary === undefined
+          ? undefined
+          : { text: summary.text, caption: `${SUMMARY_SOURCE_LABELS[summary.source]} · ${formatAge(summary.writtenAtMs)}`, isStale: summary.isStale },
+      isSummarizing: summaryService.isSummarizing(sessionId),
+      hasTranscript: meta !== undefined,
+      untracked: untracked.map((kind) => TRACKED_KIND_LABELS[kind]),
+      isPopulating: populator.isPopulating(sessionId),
     };
   }
 
@@ -176,7 +252,31 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
       case "findAgain":
         await vscode.commands.executeCommand("overseer.findResources", sessionId);
         return;
+      case "action":
+        if (message.action === "resume") {
+          await this.resume(sessionId);
+        } else if (Object.hasOwn(ACTION_COMMANDS, message.action)) {
+          await vscode.commands.executeCommand(ACTION_COMMANDS[message.action], sessionId);
+        }
+        return;
+      case "populate": {
+        const meta = this.dependencies.findSessionMeta(sessionId);
+        if (meta !== undefined) {
+          await this.dependencies.populator.populate(meta);
+        }
+        return;
+      }
     }
+  }
+
+  // Resuming the previewed session opens its terminal in the preview's place.
+  private async resume(sessionId: string): Promise<void> {
+    const { sessionPreview } = this.dependencies;
+    if (sessionPreview.sessionId() === sessionId) {
+      await sessionPreview.resume();
+      return;
+    }
+    await vscode.commands.executeCommand("overseer.openSessionById", sessionId);
   }
 
   dispose(): void {
@@ -208,10 +308,52 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .header { padding: 12px 12px 8px; }
   .title-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
   h1 { flex: 1; margin: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .title-tools { visibility: hidden; margin: -4px 0; }
+  .header:hover .title-tools, .header:focus-within .title-tools { visibility: visible; }
   .busy { color: var(--vscode-charts-blue); }
-  .idle { color: var(--vscode-descriptionForeground); }
-  .subtitle { display: flex; align-items: center; gap: 4px; margin: 4px 0 0; font-size: 12px; color: var(--vscode-descriptionForeground); min-width: 0; }
-  .subtitle span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .idle { color: var(--vscode-charts-green); }
+  .paused { color: var(--vscode-descriptionForeground); }
+  .elsewhere { color: var(--vscode-charts-orange); }
+  .state-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 4px 0 0; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .state-line .elsewhere { color: var(--vscode-charts-orange); }
+  .place { display: flex; align-items: center; gap: 4px; margin: 4px 0 0; font-size: 12px; color: var(--vscode-descriptionForeground); min-width: 0; }
+  .places { margin-top: 8px; }
+  .places .place:first-child { margin-top: 0; }
+  .place .codicon { font-size: 12px; flex-shrink: 0; }
+  .place span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mono { font-family: var(--vscode-editor-font-family); }
+  .status-tag { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; height: 16px; padding: 0 4px; border: 1px solid currentColor; border-radius: 2px; font-size: 11px; line-height: 1; }
+  .status-tag .codicon { font-size: 11px; }
+  .status-tag span:last-child { color: var(--vscode-foreground); }
+  .recap { padding: 0 12px 12px; }
+  .caption { margin: 0; font-size: 11px; font-style: italic; color: var(--vscode-descriptionForeground); }
+  .recap-text { display: block; width: 100%; margin-top: 4px; text-align: left; font-size: 13px; line-height: 20px; }
+  .recap-text.clamped { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .muted { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .link-button { color: var(--vscode-textLink-foreground); }
+  .link-button:hover { text-decoration: underline; }
+  .main-actions { display: flex; gap: 8px; padding: 0 12px 12px; }
+  .button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 28px; padding: 0 12px; border-radius: 2px; font-size: 13px; transition: background-color 80ms linear; }
+  .button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  .button.primary:hover { background: var(--vscode-button-hoverBackground); }
+  .button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
+  .button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+  .button.inline { flex: none; }
+  .button .codicon { font-size: 14px; }
+  .populate { margin: 0 12px 12px; padding: 8px; border: 1px solid var(--vscode-editorWidget-border, transparent); border-radius: 2px; background: var(--vscode-editorWidget-background); }
+  .populate p { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 12px; line-height: 16px; }
+  .populate p .codicon { font-size: 14px; color: var(--vscode-descriptionForeground); }
+  .populate .hint { margin-top: 4px; padding-left: 22px; color: var(--vscode-descriptionForeground); }
+  .populate .populate-tools { display: flex; margin-top: 8px; padding-left: 22px; }
+  .action-group { margin: 0; padding: 4px 8px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+  .action-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 4px; padding: 0 4px; }
+  @media (min-width: 360px) { .action-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .action-grid:last-child { padding-bottom: 8px; }
+  .action { display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 8px; border-radius: 2px; font-size: 13px; text-align: left; min-width: 0; transition: background-color 80ms linear; }
+  .action:hover { background: var(--vscode-list-hoverBackground); }
+  .action:disabled { opacity: 0.5; cursor: default; background: none; }
+  .action .codicon { font-size: 14px; flex-shrink: 0; }
+  .action span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .section-header {
     display: flex;
     align-items: center;
@@ -318,7 +460,23 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
 <div id="root"></div>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
-  const savedViewState = vscode.getState() ?? { isWorkingOnExpanded: true, isAlsoSeenExpanded: false };
+  const savedViewState = { isWorkingOnExpanded: true, isAlsoSeenExpanded: false, isActionsExpanded: true, ...vscode.getState() };
+  let isRecapExpanded = false;
+  const RUN_ICONS = { idle: "circle-filled", busy: "loading", paused: "debug-pause", elsewhere: "broadcast" };
+  const CLAUDE_ACTIONS = [
+    ["compact", "fold", "Compact"],
+    ["clear", "clear-all", "Clear"],
+    ["model", "sparkle", "Model"],
+    ["cost", "graph", "Cost"],
+    ["command", "terminal", "Run command"],
+  ];
+  const SESSION_ACTIONS = [
+    ["summarize", "note", "Summarize"],
+    ["findLinks", "search", "Find links"],
+    ["openRepo", "source-control", "Open repo"],
+    ["status", "tag", "Set status"],
+    ["rename", "edit", "Rename"],
+  ];
   let panelState = undefined;
 
   function element(tagName, className, text) {
@@ -460,7 +618,10 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     const toggle = element("button", "section-toggle");
     toggle.type = "button";
     toggle.setAttribute("aria-expanded", String(savedViewState[stateField]));
-    toggle.append(codicon("chevron-right"), document.createTextNode(title), element("span", "count", String(count)));
+    toggle.append(codicon("chevron-right"), document.createTextNode(title));
+    if (count !== undefined) {
+      toggle.append(element("span", "count", String(count)));
+    }
     toggle.addEventListener("click", () => {
       savedViewState[stateField] = !savedViewState[stateField];
       vscode.setState(savedViewState);
@@ -472,22 +633,163 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     return header;
   }
 
+  function textButton(className, iconName, label, onPress) {
+    const button = element("button", className);
+    button.type = "button";
+    if (iconName) {
+      button.append(codicon(iconName));
+    }
+    button.append(element("span", "", label));
+    button.addEventListener("click", onPress);
+    return button;
+  }
+
+  function runAction(action) {
+    send({ type: "action", action });
+  }
+
+  function placeLine(iconName, text, isMono, title) {
+    const line = element("p", "place");
+    line.title = title ?? text;
+    line.append(codicon(iconName), element("span", isMono ? "mono" : "", text));
+    return line;
+  }
+
   function sessionHeader(session) {
     const header = element("header", "header");
     const titleLine = element("div", "title-line");
-    const liveIcon = session.isBusy ? codicon("loading", "Busy") : codicon("circle-filled", "Idle");
-    liveIcon.classList.add(session.isBusy ? "busy" : "idle");
-    if (session.isBusy) {
-      liveIcon.classList.add("codicon-modifier-spin");
+    const runIcon = codicon(RUN_ICONS[session.runKind], session.stateLabel);
+    runIcon.classList.add(session.runKind);
+    if (session.runKind === "busy") {
+      runIcon.classList.add("codicon-modifier-spin");
     }
-    titleLine.append(liveIcon, element("h1", "", session.title));
+    const title = element("h1", "", session.title);
+    title.title = session.title;
+    const titleTools = element("div", "title-tools");
+    titleTools.append(iconButton("edit", "Rename", () => runAction("rename")));
+    titleLine.append(runIcon, title, titleTools);
     header.append(titleLine);
-    if (session.subtitle) {
-      const subtitle = element("p", "subtitle");
-      subtitle.append(codicon("git-branch"), element("span", "", session.subtitle));
-      header.append(subtitle);
+
+    const stateLine = element("p", "state-line");
+    const isLive = session.runKind === "idle" || session.runKind === "busy";
+    stateLine.append(element("span", session.runKind === "elsewhere" ? "elsewhere" : "", session.stateLabel));
+    if (isLive) {
+      stateLine.append(element("span", "", "·"), element("span", "", "active now"));
+    } else if (session.lastActive) {
+      stateLine.append(element("span", "", "·"), element("span", "", "last active " + session.lastActive));
+    }
+    header.append(stateLine);
+
+    const places = element("div", "places");
+    if (session.cwd) {
+      places.append(placeLine("folder", session.cwd, true));
+    }
+    if (session.branch) {
+      places.append(placeLine("git-branch", session.branch, true));
+    }
+    if (session.otherRepos.length > 0) {
+      places.append(placeLine("repo", "also " + session.otherRepos.join(", "), false));
+    }
+    if (places.childElementCount > 0) {
+      header.append(places);
+    }
+    if (session.status) {
+      const tag = element("span", "status-tag");
+      tag.style.color = "var(" + session.status.color + ")";
+      tag.title = session.status.reason ? "Why: " + session.status.reason : session.status.name;
+      tag.append(codicon(session.status.icon), element("span", "", session.status.name));
+      header.append(tag);
     }
     return header;
+  }
+
+  function recapBlock(session) {
+    const block = element("div", "recap");
+    if (session.isSummarizing) {
+      const line = element("p", "muted");
+      line.append(codicon("loading"), document.createTextNode("Summarizing with Haiku…"));
+      line.firstChild.classList.add("codicon-modifier-spin");
+      block.append(line);
+      return block;
+    }
+    if (session.summary === undefined) {
+      if (!session.hasTranscript) {
+        return undefined;
+      }
+      const line = element("p", "muted", "No summary yet.");
+      line.append(textButton("link-button", undefined, "Summarize with Haiku", () => runAction("summarize")));
+      block.append(line);
+      return block;
+    }
+    const caption = session.summary.caption + (session.summary.isStale ? " · the session moved on" : "");
+    const text = textButton(isRecapExpanded ? "recap-text" : "recap-text clamped", undefined, session.summary.text, () => {
+      isRecapExpanded = !isRecapExpanded;
+      render();
+    });
+    text.title = isRecapExpanded ? "Show less" : "Show all";
+    block.append(element("p", "caption", caption), text);
+    return block;
+  }
+
+  function mainActions(session) {
+    const row = element("div", "main-actions");
+    if (session.runKind === "paused" || session.runKind === "elsewhere") {
+      const iconName = session.runKind === "elsewhere" ? "repo-forked" : "play";
+      row.append(textButton("button primary", iconName, session.resumeLabel, () => runAction("resume")));
+    } else {
+      row.append(textButton("button secondary", "debug-pause", "Suspend", () => runAction("suspend")));
+    }
+    return row;
+  }
+
+  function populateBanner(session) {
+    if (session.untracked.length === 0 && !session.isPopulating) {
+      return undefined;
+    }
+    const banner = element("div", "populate");
+    const lead = element("p");
+    lead.append(codicon("hubot"), element("span", "", session.isPopulating ? "Haiku is reading this session…" : "Not tracked yet: " + session.untracked.join(", ") + "."));
+    banner.append(lead);
+    const tools = element("div", "populate-tools");
+    if (session.isPopulating) {
+      const running = element("p", "muted");
+      running.append(codicon("loading"), document.createTextNode("Populating"));
+      running.firstChild.classList.add("codicon-modifier-spin");
+      tools.append(running);
+    } else {
+      banner.append(element("p", "hint", "Haiku can read the session and fill them in. Costs cents."));
+      tools.append(textButton("button secondary inline", "sparkle", "Populate all", () => send({ type: "populate" })));
+    }
+    banner.append(tools);
+    return banner;
+  }
+
+  function actionTile([action, iconName, label], disabledReason) {
+    const tile = textButton("action", iconName, label, () => runAction(action));
+    tile.disabled = disabledReason !== undefined;
+    tile.title = disabledReason ?? label;
+    return tile;
+  }
+
+  function actionsSection(session) {
+    const nodes = [sectionHeader("Actions", undefined, "isActionsExpanded", [])];
+    if (!savedViewState.isActionsExpanded) {
+      return nodes;
+    }
+    const isLive = session.runKind === "idle" || session.runKind === "busy";
+    if (isLive) {
+      const isBusy = session.runKind === "busy";
+      const busyReason = isBusy ? "Wait until Claude is idle. Typed input is lost while it works." : undefined;
+      const claudeGrid = element("div", "action-grid");
+      claudeGrid.append(...CLAUDE_ACTIONS.map((action) => actionTile(action, busyReason)));
+      nodes.push(element("p", "action-group", isBusy ? "Claude · wait until idle" : "Claude"), claudeGrid, element("p", "action-group", "Session"));
+    }
+    const sessionGrid = element("div", "action-grid");
+    sessionGrid.append(
+      ...SESSION_ACTIONS.map((action) => actionTile(action, session.hasTranscript || action[0] === "rename" || action[0] === "status" ? undefined : "No transcript yet")),
+    );
+    nodes.push(sessionGrid);
+    return nodes;
   }
 
   function render() {
@@ -497,10 +799,13 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       return;
     }
     if (panelState.session === undefined) {
-      root.append(emptyNote("terminal", "No Claude session in focus", "Click a Claude terminal tab to see its tickets here."));
+      root.append(emptyNote("terminal", "No session in focus", "Click a Claude terminal tab, or a paused session in the tree."));
       return;
     }
-    root.append(sessionHeader(panelState.session));
+    const session = panelState.session;
+    root.append(
+      ...[sessionHeader(session), recapBlock(session), mainActions(session), populateBanner(session), ...actionsSection(session)].filter(Boolean),
+    );
 
     root.append(
       sectionHeader("Working on", panelState.workingOn.length, "isWorkingOnExpanded", [

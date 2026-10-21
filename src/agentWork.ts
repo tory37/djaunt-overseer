@@ -27,6 +27,8 @@ export interface SessionWork {
 
 export type TrackedKind = "tickets" | "commits" | "pullRequests";
 
+export const TRACKED_KIND_LABELS: Record<TrackedKind, string> = { tickets: "tickets", commits: "commits", pullRequests: "pull requests" };
+
 export const EMPTY_SESSION_WORK: SessionWork = { commits: [], pullRequests: [] };
 
 export function declaredWorkDir(claudeHome: string): string {
