@@ -29,6 +29,7 @@ import { COMMIT_DOCUMENT_SCHEME, CommitDocumentProvider, RepoTreeProvider } from
 import { CommitAuthorship, indexCommitAuthorship } from "./gitStatus";
 import { HistoryPanel } from "./historyPanel";
 import { ResourcesPanel } from "./resourcesPanel";
+import { SessionFocusTracker } from "./sessionFocus";
 import { SESSION_PANEL_VIEW_ID, SessionPanelProvider } from "./sessionPanel";
 import { SessionTreeProvider } from "./tree";
 import { SessionStatusDecorations } from "./sessionStatusView";
@@ -133,6 +134,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
   registry.onDidChange(refreshTree);
+  const sessionFocus = new SessionFocusTracker();
   const sessionPanelProvider = new SessionPanelProvider({
     extensionUri: context.extensionUri,
     registry,
@@ -140,6 +142,7 @@ export function activate(context: vscode.ExtensionContext): void {
     linkStatusService,
     statusConfig,
     liveMonitor,
+    sessionFocus,
     findSessionMeta: findIndexedSession,
     sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
     globalState: context.globalState,
@@ -195,6 +198,7 @@ export function activate(context: vscode.ExtensionContext): void {
     summaryService.onDidChange(refreshTree),
     compactMonitor,
     declaredTicketMonitor,
+    sessionFocus,
     sessionPanelProvider,
     vscode.window.registerWebviewViewProvider(SESSION_PANEL_VIEW_ID, sessionPanelProvider),
     compactMonitor.onDidChange(refreshTree),

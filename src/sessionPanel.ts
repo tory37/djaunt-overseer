@@ -11,6 +11,7 @@ import { LinkMark, Registry } from "./registry";
 import { linkStatusColor, sessionSubtitle } from "./resourcesPanel";
 import { ResourceRow, resourceRow } from "./resourceRows";
 import { readLinkSettings, SessionLinkService } from "./sessionLinks";
+import { SessionFocusTracker } from "./sessionFocus";
 import { StatusConfig } from "./statusConfig";
 import { sessionIdOfTerminal } from "./terminals";
 
@@ -24,6 +25,7 @@ export interface SessionPanelDependencies {
   linkStatusService: LinkStatusService;
   statusConfig: StatusConfig;
   liveMonitor: LiveSessionMonitor;
+  sessionFocus: SessionFocusTracker;
   findSessionMeta: (sessionId: string) => SessionMeta | undefined;
   sessionTitle: (sessionId: string) => string;
   globalState: vscode.Memento;
@@ -52,7 +54,7 @@ type PanelMessage =
 
 const LINK_MARKS = new Set<string>(["pinned", "removed"]);
 
-// Shows the tickets of the session in the focused Claude terminal, beside it in the Secondary Side Bar.
+// Shows the tickets of the focused session, beside it in the Secondary Side Bar.
 export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private view: vscode.WebviewView | undefined;
   private shownLinks: MarkedLink[] = [];
@@ -61,10 +63,8 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
   constructor(private readonly dependencies: SessionPanelDependencies) {
     const postState = (): void => this.postState();
     this.disposables.push(
-      vscode.window.onDidChangeActiveTerminal((terminal) => {
-        void this.introduceOnce(terminal);
-        postState();
-      }),
+      vscode.window.onDidChangeActiveTerminal((terminal) => void this.introduceOnce(terminal)),
+      dependencies.sessionFocus.onDidChange(postState),
       vscode.window.onDidCloseTerminal(postState),
       dependencies.registry.onDidChange(postState),
       dependencies.statusConfig.onDidChange(postState),
@@ -96,11 +96,6 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
     terminal.show(false);
   }
 
-  private focusedSessionId(): string | undefined {
-    const activeTerminal = vscode.window.activeTerminal;
-    return activeTerminal === undefined ? undefined : sessionIdOfTerminal(activeTerminal);
-  }
-
   private postState(): void {
     if (this.view?.visible !== true) {
       return;
@@ -109,7 +104,7 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
   }
 
   private panelState(): PanelState {
-    const sessionId = this.focusedSessionId();
+    const sessionId = this.dependencies.sessionFocus.focusedSessionId();
     if (sessionId === undefined) {
       this.shownLinks = [];
       return { session: undefined, workingOn: [], alsoSeen: [], isFinding: false, canFind: false };
@@ -143,7 +138,7 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
   }
 
   private async receive(message: PanelMessage): Promise<void> {
-    const sessionId = this.focusedSessionId();
+    const sessionId = this.dependencies.sessionFocus.focusedSessionId();
     if (message.type === "ready") {
       this.postState();
       return;
