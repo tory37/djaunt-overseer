@@ -98,20 +98,47 @@ export function withDeclaredTickets(resolvedLinks: ResolvedLink[], declaredTicke
     declaredByKey.delete(link.id);
     return { ...link, ...declaredTicketFields(declaredTicket) };
   });
-  const unscannedLinks = [...declaredByKey.values()].map((declaredTicket): ResolvedLink => ({
+  const unscannedLinks = [...declaredByKey.values()].map((declaredTicket) => ({
+    ...unscannedTicketLink(declaredTicket.key),
+    ...declaredTicketFields(declaredTicket),
+  }));
+  return [...unscannedLinks, ...linksWithDeclarations];
+}
+
+export interface SessionPanelTickets {
+  workingOn: MarkedLink[];
+  alsoSeen: MarkedLink[];
+}
+
+// Working on: what the agent declared or the user pinned, even a ticket pinned by key that no scan has seen.
+export function sessionPanelTickets(links: MarkedLink[], linkMarks: LinkMarks): SessionPanelTickets {
+  const tickets = links.filter((link) => link.kind === "ticket" && link.mark !== "removed");
+  const shownTicketKeys = new Set(tickets.map((link) => linkKey(link)));
+  const pinnedByKeyOnly = Object.entries(linkMarks)
+    .filter(([key, mark]) => mark === "pinned" && key.startsWith("ticket:") && !shownTicketKeys.has(key))
+    .map(([key]): MarkedLink => ({ ...unscannedTicketLink(key.slice("ticket:".length)), mark: "pinned" }));
+  const isWorkingOn = (link: MarkedLink): boolean => link.mark === "pinned" || link.isAgentDeclared === true;
+  return {
+    workingOn: [...pinnedByKeyOnly, ...tickets.filter(isWorkingOn)],
+    alsoSeen: tickets.filter((link) => !isWorkingOn(link)),
+  };
+}
+
+function unscannedTicketLink(ticketKey: string): ResolvedLink {
+  return {
     kind: "ticket",
-    id: declaredTicket.key,
+    id: ticketKey,
     url: undefined,
     title: undefined,
     signals: {},
     snippets: [],
     firstSeen: undefined,
     lastSeen: undefined,
+    role: "owned",
+    stillRelevant: true,
     label: undefined,
     judged: false,
-    ...declaredTicketFields(declaredTicket),
-  }));
-  return [...unscannedLinks, ...linksWithDeclarations];
+  };
 }
 
 function declaredTicketFields(declaredTicket: DeclaredTicket): Pick<ResolvedLink, "role" | "stillRelevant" | "isAgentDeclared" | "agentNote"> {

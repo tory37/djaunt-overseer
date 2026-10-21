@@ -9,6 +9,7 @@ import {
   MarkedLink,
   markLinks,
   ownedTicketKey,
+  sessionPanelTickets,
   withDeclaredTickets,
   visibleLinks,
 } from "../../src/linkView";
@@ -209,5 +210,27 @@ describe("acceptedOrder", () => {
     expect(acceptedOrder(["a", "b", "c"], ["c", "a"])).toBeUndefined();
     expect(acceptedOrder(["a", "b", "c"], ["c", "a", "a"])).toBeUndefined();
     expect(acceptedOrder(["a", "b"], ["a", "x"])).toBeUndefined();
+  });
+});
+
+describe("sessionPanelTickets", () => {
+  it("puts declared and pinned tickets under Working on and the rest under Also seen", () => {
+    const declaredTicket = { ...OWNED_TICKET, isAgentDeclared: true };
+    const pinnedTicket = { ...TOUCHED_TICKET, mark: "pinned" as const };
+    const seenTicket = resolvedLink({ kind: "ticket", id: "PROJ-30", role: "touched" });
+    const { workingOn, alsoSeen } = sessionPanelTickets([OWNED_PR, declaredTicket, pinnedTicket, seenTicket], {});
+    expect(workingOn.map((link) => link.id)).toEqual(["PROJ-9", "PROJ-5"]);
+    expect(alsoSeen.map((link) => link.id)).toEqual(["PROJ-30"]);
+  });
+
+  it("drops removed tickets, even declared ones", () => {
+    const removedDeclared = { ...OWNED_TICKET, isAgentDeclared: true, mark: "removed" as const };
+    expect(sessionPanelTickets([removedDeclared], {})).toEqual({ workingOn: [], alsoSeen: [] });
+  });
+
+  it("shows a ticket pinned by key that no scan has seen", () => {
+    const { workingOn } = sessionPanelTickets([TOUCHED_TICKET], { "ticket:PROJ-88": "pinned", "ticket:PROJ-5": "removed", "pr:x": "pinned" });
+    expect(workingOn).toHaveLength(1);
+    expect(workingOn[0]).toMatchObject({ kind: "ticket", id: "PROJ-88", mark: "pinned" });
   });
 });

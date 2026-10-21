@@ -8,7 +8,7 @@
   "license": "UNLICENSED",
   "icon": "media/icon.png",
   "engines": {
-    "vscode": "^1.100.0"
+    "vscode": "^1.106.0"
   },
   "categories": [
     "Other"
@@ -30,9 +30,23 @@
           "title": "Overseer",
           "icon": "media/overseer.svg"
         }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "overseerSession",
+          "title": "Session",
+          "icon": "media/overseer.svg"
+        }
       ]
     },
     "views": {
+      "overseerSession": [
+        {
+          "type": "webview",
+          "id": "overseer.session",
+          "name": "Session"
+        }
+      ],
       "djauntOverseer": [
         {
           "id": "overseer.sessions",
@@ -1223,7 +1237,7 @@
   },
   "devDependencies": {
     "@types/node": "22.20.5",
-    "@types/vscode": "1.100.0",
+    "@types/vscode": "1.106.0",
     "@vscode/codicons": "0.0.46-24",
     "@vscode/vsce": "4.0.0",
     "esbuild": "0.28.2",

@@ -108,12 +108,17 @@ export class SessionLinkService implements vscode.Disposable {
 
   // Returns undefined until Find Resources has scanned this transcript or the agent has declared a ticket.
   linksFor(meta: SessionMeta): MarkedLink[] | undefined {
-    const resolvedLinks = this.resolvedLinksFor(meta.sessionId, meta);
+    return this.visibleLinksFor(meta.sessionId, meta);
+  }
+
+  // The session panel shows a brand-new session before the index has it, so the transcript metadata is optional.
+  visibleLinksFor(sessionId: string, meta: SessionMeta | undefined = this.findSessionMeta(sessionId)): MarkedLink[] | undefined {
+    const resolvedLinks = this.resolvedLinksFor(sessionId, meta);
     if (resolvedLinks === undefined) {
       return undefined;
     }
-    const markedLinks = markLinks(resolvedLinks, this.readLinkMarks(meta.sessionId));
-    return visibleLinks(markedLinks, readLinkSettings(), this.readLinkOrder(meta.sessionId));
+    const markedLinks = markLinks(resolvedLinks, this.readLinkMarks(sessionId));
+    return visibleLinks(markedLinks, readLinkSettings(), this.readLinkOrder(sessionId));
   }
 
   ownedTicketKeys(sessionIds: string[]): Record<string, string> {

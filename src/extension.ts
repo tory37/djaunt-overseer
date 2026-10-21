@@ -29,6 +29,7 @@ import { COMMIT_DOCUMENT_SCHEME, CommitDocumentProvider, RepoTreeProvider } from
 import { CommitAuthorship, indexCommitAuthorship } from "./gitStatus";
 import { HistoryPanel } from "./historyPanel";
 import { ResourcesPanel } from "./resourcesPanel";
+import { SESSION_PANEL_VIEW_ID, SessionPanelProvider } from "./sessionPanel";
 import { SessionTreeProvider } from "./tree";
 import { SessionStatusDecorations } from "./sessionStatusView";
 import { registerWorkspaceCommands } from "./workspaceCommands";
@@ -132,6 +133,17 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
   registry.onDidChange(refreshTree);
+  const sessionPanelProvider = new SessionPanelProvider({
+    extensionUri: context.extensionUri,
+    registry,
+    linkService,
+    linkStatusService,
+    statusConfig,
+    liveMonitor,
+    findSessionMeta: findIndexedSession,
+    sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
+    globalState: context.globalState,
+  });
   const syncUserTicketMarks = (): void => {
     declaredTicketMonitor
       .syncUserMarks(registry.allLinkMarks())
@@ -183,6 +195,8 @@ export function activate(context: vscode.ExtensionContext): void {
     summaryService.onDidChange(refreshTree),
     compactMonitor,
     declaredTicketMonitor,
+    sessionPanelProvider,
+    vscode.window.registerWebviewViewProvider(SESSION_PANEL_VIEW_ID, sessionPanelProvider),
     compactMonitor.onDidChange(refreshTree),
     ...registerCompactHookCommands(context, claudeHome, log),
     liveMonitor.onDidChange(() => {

@@ -131,13 +131,7 @@ export class ResourcesPanel {
   }
 
   private statusColor(link: MarkedLink, status: LinkStatus | undefined): string | undefined {
-    if (status === undefined) {
-      return undefined;
-    }
-    const { statusConfig } = this.dependencies;
-    return link.kind === "pr"
-      ? statusConfig.prColor(status.colorKey)
-      : statusConfig.jiraColor(projectKeyOf(link.id) ?? "", status.colorKey);
+    return linkStatusColor(this.dependencies.statusConfig, link, status);
   }
 
   private shownLink(key: string): MarkedLink | undefined {
@@ -214,7 +208,16 @@ function tabTitle(sessionTitle: string): string {
   return `Links: ${shortTitle}`;
 }
 
-function sessionSubtitle(meta: SessionMeta): string {
+export function linkStatusColor(statusConfig: StatusConfig, link: MarkedLink, status: LinkStatus | undefined): string | undefined {
+  if (status === undefined) {
+    return undefined;
+  }
+  return link.kind === "pr"
+    ? statusConfig.prColor(status.colorKey)
+    : statusConfig.jiraColor(projectKeyOf(link.id) ?? "", status.colorKey);
+}
+
+export function sessionSubtitle(meta: SessionMeta): string {
   const repoName = path.basename(meta.resumeCwd ?? meta.startCwd);
   return [repoName, meta.gitBranch].filter((part) => part !== undefined && part !== "").join(" · ");
 }
