@@ -76,7 +76,7 @@
         const { useState, useEffect, useRef } = React;
 
         const REPO_URL = 'https://github.com/tory37/djaunt-overseer';
-        const VSIX_NAME = 'djaunt-overseer-0.0.16.vsix';
+        const VSIX_NAME = 'djaunt-overseer-0.0.17.vsix';
         const VSIX_URL = `${REPO_URL}/releases/latest/download/${VSIX_NAME}`;
 
         const Icon = ({ name, className = 'w-4 h-4' }) => {
@@ -155,7 +155,7 @@
                 <Icon name="Terminal" className={`w-4 h-4 ${terminal.isOpen ? 'text-success' : 'text-muted'}`} />
                 <span className="flex-1 min-w-0 truncate text-xs">
                     <span className="text-bone">{terminal.title}</span>
-                    <span className="text-muted ml-2">{terminal.folder} · {terminal.isOpen ? 'open' : 'closed'}</span>
+                    <span className="text-muted ml-2">{terminal.isOpen ? terminal.folder : `${terminal.folder} · closed`}</span>
                 </span>
             </div>
         );
@@ -173,9 +173,8 @@
         const isLiveHere = (session) => LIVE_STATES.includes(session.state);
 
         const reposLabel = (session) => {
-            const extraCount = session.extraRepos.length;
-            if (extraCount === 0) return '';
-            return extraCount === 1 ? ' · +1 repo' : ` · +${extraCount} repos`;
+            if (session.extraRepos.length === 0) return '';
+            return ` · +${session.extraRepos.join(', ')}`;
         };
 
         const resumeTranscript = (session) => [
@@ -198,13 +197,13 @@
                 else setDraftTitle(session.title);
             };
             const description = session.state === 'duplicate'
-                ? `2 copies running · ${session.repo}`
-                : `${session.repo} · ${session.branch}${reposLabel(session)}`;
+                ? '2 copies running'
+                : '';
             return (
                 <div
                     onClick={() => onSelect(session.id)}
                     onDoubleClick={() => setIsEditing(true)}
-                    title="Double-click to rename"
+                    title={`${session.repo} · ${session.branch}${reposLabel(session)}\nDouble-click to rename`}
                     className={`group flex items-center gap-2 h-6 pl-8 pr-2 cursor-pointer border transition-colors duration-200 ease-dj ${isSelected ? 'bg-raised border-accent-deep' : 'border-transparent hover:bg-surface'}`}
                 >
                     <Icon name={stateIcon.name} className={`w-4 h-4 ${stateIcon.className}`} />
@@ -221,7 +220,7 @@
                     ) : (
                         <span className="flex-1 min-w-0 truncate text-xs">
                             <span className="text-bone">{session.title}</span>
-                            <span className="text-muted ml-2">{description}</span>
+                            {description !== '' && <span className="text-muted ml-2">{description}</span>}
                         </span>
                     )}
                     <button
@@ -239,10 +238,13 @@
             '5f1c9a2e': {
                 summary: 'Extended the refresh window in src/auth/session.ts. Tests pass. Next: open the PR.',
                 workingOn: [
-                    { depth: 0, icon: 'Ticket', color: 'gold', label: 'PROJ-2567', detail: 'In Progress', note: 'fixing the refresh window' },
-                    { depth: 1, icon: 'GitPullRequest', color: 'green', label: 'web-app#412', detail: 'approved' },
+                    { depth: 0, icon: 'Ticket', color: 'gold', label: 'PROJ-2567', text: 'Session timeout', detail: 'In Progress', note: 'fixing the refresh window' },
+                    { depth: 1, icon: 'GitPullRequest', color: 'green', label: 'web-app#412', text: 'Extend refresh window', detail: 'approved' },
                 ],
-                alsoSeen: [{ depth: 0, icon: 'TicketCheck', color: 'green', label: 'PROJ-2571', detail: 'Done' }],
+                alsoSeen: [{ depth: 0, icon: 'TicketCheck', color: 'green', label: 'PROJ-2571', text: 'Cookie flag', detail: 'Done' }],
+                untracked: ['commits'],
+                recapCaption: 'Claude Code recap · 3m ago',
+                lastActive: '3m ago',
             },
             'a83d0b17': {
                 summary: 'Collecting review notes on web-app#412 before the merge.',
@@ -276,52 +278,77 @@
             },
         };
 
+        const stateSentence = (session, lastActive) => {
+            if (isLiveHere(session)) return session.state === 'working' || session.state === 'compacting' ? 'Working in this window' : 'Idle in this window';
+            if (session.state === 'elsewhere') return 'Running in another terminal · fork to work on it here';
+            return `Paused · last active ${lastActive}`;
+        };
+
         const SidebarMainAction = ({ session, onToggle }) => {
-            const actionLabel = isLiveHere(session) ? 'Suspend' : session.state === 'elsewhere' ? 'Fork here' : 'Resume';
+            const isLive = isLiveHere(session);
+            const actionLabel = isLive ? 'Suspend' : session.state === 'elsewhere' ? 'Fork here' : 'Resume';
+            const actionIcon = isLive ? 'Pause' : session.state === 'elsewhere' ? 'GitFork' : 'Play';
             return (
                 <button
                     onClick={() => onToggle(session.id)}
-                    className="flex items-center gap-1 px-2 h-6 border border-line text-bone hover:border-accent hover:text-accent transition-colors duration-200 ease-dj"
+                    className={`flex-1 flex items-center justify-center gap-2 h-8 text-sm font-medium transition-colors duration-200 ease-dj ${isLive ? 'border border-line text-bone hover:border-accent hover:text-accent' : 'bg-accent text-on-accent hover:bg-accent-hi'}`}
                 >
-                    <Icon name={isLiveHere(session) ? 'Pause' : 'Play'} className="w-3 h-3" />{actionLabel}
+                    <Icon name={actionIcon} className="w-4 h-4" />{actionLabel}
                 </button>
             );
         };
+
+        const SummarizeButton = () => (
+            <button
+                aria-label="Summarize with Haiku"
+                title="Summarize with Haiku"
+                className="flex items-center justify-center w-8 h-8 border border-line text-bone hover:border-accent hover:text-accent transition-colors duration-200 ease-dj"
+            >
+                <Icon name="Sparkle" className="w-4 h-4" />
+            </button>
+        );
+
+        const NextStep = ({ sentence, isElsewhere, recap, caption, mainAction }) => (
+            <div className="mx-4 mt-4">
+                <p className={`mb-1.5 ${isElsewhere ? 'text-warning' : 'text-muted'}`}>{sentence}</p>
+                <p className="text-sm leading-[22px] text-bone line-clamp-4">{recap}</p>
+                <p className="mt-1.5 text-muted opacity-70">{caption}</p>
+                <div className="flex gap-2 mt-3">
+                    {mainAction}
+                    <SummarizeButton />
+                </div>
+            </div>
+        );
 
         const SessionSidebar = ({ session, onToggle }) => {
             const stateIcon = STATE_ICONS[session.state];
             const details = SESSION_DETAILS[session.id];
             return (
                 <div className="hidden xl:flex flex-col min-w-0 border-l border-line bg-surface">
-                    <div className="flex items-center h-8 px-3 text-muted">
-                        <span className="uppercase tracking-label">Session</span>
-                    </div>
-                    <div className="px-3 pb-2 space-y-2 border-b border-line">
-                        <div className="flex items-center gap-2">
+                    <div className="pt-3.5 px-4">
+                        <div className="flex items-center gap-2 min-w-0">
                             <Icon name={stateIcon.name} className={`w-4 h-4 ${stateIcon.className}`} />
-                            <span className="text-bone truncate">{session.title}</span>
+                            <span className="flex-1 min-w-0 truncate text-sm font-semibold text-bone">{session.title}</span>
                         </div>
-                        <p className="text-muted truncate">~/src/{session.repo} · {session.branch}</p>
-                        <p className="text-bone leading-relaxed">{details.summary}</p>
-                        <div className="flex">
-                            <SidebarMainAction session={session} onToggle={onToggle} />
-                        </div>
+                        <p className="mt-1 ml-6 font-mono text-muted truncate">{session.repo} · {session.branch}{reposLabel(session)}</p>
                     </div>
-                    <SidebarActions showClaude={session.state === 'running'} />
-                    <div className="border-t border-line">
-                        <PanelSectionHeader title="Working on" count={details.workingOn.length} tools={<Icon name="Plus" className="w-4 h-4" />} />
+                    <NextStep
+                        sentence={stateSentence(session, details.lastActive ?? '2d ago')}
+                        isElsewhere={session.state === 'elsewhere'}
+                        recap={details.summary}
+                        caption={details.recapCaption ?? 'Claude Code recap · 1h ago'}
+                        mainAction={<SidebarMainAction session={session} onToggle={onToggle} />}
+                    />
+                    <div className="mt-5 pt-3 border-t border-line">
+                        <WorkingOnHeading />
                         {details.workingOn.length === 0
-                            ? <p className="px-3 pb-2 text-muted">Nothing tracked yet.</p>
+                            ? <p className="mx-4 mb-1 text-muted">Nothing yet. The agent adds tickets and PRs as it works.</p>
                             : details.workingOn.map((row) => <PanelLinkRow key={row.label} row={row} />)}
+                        {details.untracked !== undefined && <UntrackedLine kinds={details.untracked} />}
+                        <AlsoSeen rows={details.alsoSeen} />
                     </div>
-                    <div className="border-t border-line pb-2">
-                        <PanelSectionHeader
-                            title="Also seen"
-                            count={details.alsoSeen.length}
-                            tools={<><Icon name="ListFilter" className="w-4 h-4" /><Icon name="RefreshCw" className="w-4 h-4" /></>}
-                        />
-                        {details.alsoSeen.map((row) => <PanelLinkRow key={row.label} row={row} />)}
-                    </div>
+                    <div className="mt-auto pt-3" />
+                    <SidebarActions showClaude={session.state === 'running'} />
                 </div>
             );
         };
@@ -632,7 +659,7 @@
                 <div className="flex items-center gap-2 h-7 px-3 border border-line bg-surface">
                     <Icon name="TriangleAlert" className="w-4 h-4 text-warning" />
                     <span className="text-bone">Flaky e2e triage</span>
-                    <span className="text-muted truncate">2 copies running · web-app</span>
+                    <span className="text-muted truncate">2 copies running</span>
                 </div>
                 <div className="border border-line bg-raised p-3 space-y-3 shadow-float">
                     <p className="text-bone">"Docs site migration" is already running in another window.</p>
@@ -649,9 +676,9 @@
                 <div className="flex items-center gap-2 h-7 px-3 border border-line bg-surface">
                     <Icon name="LoaderCircle" className="w-4 h-4 text-success animate-spin motion-reduce:animate-none" />
                     <span className="text-bone">OPS-4410 billing export</span>
-                    <span className="text-muted truncate">api · ops-4410-export · <span className="text-accent">+2 repos</span></span>
                 </div>
                 <div className="ml-8 border border-line bg-raised p-3 space-y-1 shadow-float">
+                    <p className="text-bone">api · ops-4410-export</p>
                     <p className="text-muted">Also touched</p>
                     <p className="text-bone">~/src/infra</p>
                     <p className="text-bone">~/src/web-app</p>
@@ -688,18 +715,24 @@
 
         const SIDEBAR_ACTION_GROUPS = [
             { label: 'Claude', actions: [['Minimize2', 'Compact'], ['Eraser', 'Clear'], ['Cpu', 'Model'], ['Coins', 'Cost'], ['SquareTerminal', 'Run command']] },
-            { label: 'Session', actions: [['Sparkles', 'Summarize'], ['Search', 'Find links'], ['FolderGit2', 'Open repo'], ['Tag', 'Set status'], ['Pencil', 'Rename']] },
+            { label: 'Session', actions: [['Search', 'Find links'], ['FolderGit2', 'Open repo'], ['Tag', 'Set status'], ['Pencil', 'Rename']] },
         ];
+        const SHORT_ACTION_LABELS = { 'Run command': 'Run…', 'Open repo': 'Repo', 'Set status': 'Status' };
 
         const SidebarActions = ({ highlighted, showClaude = true }) => (
-            <div className="px-3 py-2 space-y-2">
+            <div className="border-t border-line bg-raised px-2 pt-2 pb-2.5">
                 {SIDEBAR_ACTION_GROUPS.filter((group) => showClaude || group.label !== 'Claude').map((group) => (
                     <div key={group.label}>
-                        <div className="uppercase tracking-label text-muted mb-1">{group.label}</div>
-                        <div className="flex flex-wrap gap-1">
+                        <div className="px-2 pt-0.5 pb-1 text-[10px] uppercase tracking-label text-muted">{group.label}</div>
+                        <div className="grid grid-cols-5 gap-0.5 mb-1.5">
                             {group.actions.map(([iconName, label]) => (
-                                <span key={label} className={`flex items-center gap-1 px-2 h-6 border ${label === highlighted ? 'border-accent text-accent' : 'border-line text-bone'}`}>
-                                    <Icon name={iconName} className="w-3 h-3" />{label}
+                                <span
+                                    key={label}
+                                    title={label}
+                                    className={`flex flex-col items-center gap-[3px] pt-1.5 pb-[5px] ${label === highlighted ? 'text-accent' : 'text-bone hover:text-accent'} transition-colors duration-200 ease-dj`}
+                                >
+                                    <Icon name={iconName} className="w-4 h-4" />
+                                    <span className="max-w-full truncate text-[10px]">{SHORT_ACTION_LABELS[label] ?? label}</span>
                                 </span>
                             ))}
                         </div>
@@ -710,19 +743,24 @@
 
         const SessionSidebarVisual = () => (
             <div className="font-mono text-xs border border-line bg-surface">
-                <div className="flex items-center gap-2 h-8 px-3 border-b border-line">
-                    <Icon name="SquareTerminal" className="w-4 h-4 text-success" />
-                    <span className="text-bone truncate">PROJ-2567 login timeout</span>
-                    <span className="ml-auto text-muted">idle</span>
-                </div>
-                <div className="px-3 py-2 space-y-2 border-b border-line">
-                    <p className="text-muted truncate">~/src/web-app · fix/proj-2567-login-timeout</p>
-                    <p className="text-bone leading-relaxed">Extended the refresh window in src/auth/session.ts. Tests pass. Next: open the PR.</p>
-                    <div className="flex flex-wrap gap-2">
-                        <span className="flex items-center gap-1 px-2 h-6 border border-line text-bone"><Icon name="Pause" className="w-3 h-3" />Suspend</span>
-                        <span className="flex items-center gap-1 px-2 h-6 text-accent"><Icon name="Sparkles" className="w-3 h-3" />Summarize with Haiku</span>
+                <div className="pt-3.5 px-4">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <Icon name="SquareTerminal" className="w-4 h-4 text-success" />
+                        <span className="flex-1 min-w-0 truncate text-sm font-semibold text-bone">PROJ-2567 login timeout</span>
+                        <span className="shrink-0 text-warning">In Progress</span>
                     </div>
+                    <p className="mt-1 ml-6 text-muted truncate">web-app · fix/proj-2567-login-timeout · +api</p>
                 </div>
+                <NextStep
+                    sentence="Idle in this window"
+                    isElsewhere={false}
+                    recap="Extended the refresh window in src/auth/session.ts. Tests pass. Next: open the PR."
+                    caption="Claude Code recap · 3m ago"
+                    mainAction={
+                        <span className="flex-1 flex items-center justify-center gap-2 h-8 text-sm font-medium border border-line text-bone"><Icon name="Pause" className="w-4 h-4" />Suspend</span>
+                    }
+                />
+                <div className="h-4" />
                 <SidebarActions />
             </div>
         );
@@ -730,57 +768,55 @@
         const LinksVisual = () => (
             <div className="font-mono text-xs border border-line bg-surface">
                 <SidebarActions highlighted="Find links" />
-                <div className="flex items-center gap-1 h-8 px-3 border-t border-line text-muted">
-                    <Icon name="ChevronDown" className="w-4 h-4" />
-                    <span className="uppercase tracking-label">Also seen</span>
-                    <span className="ml-1">3</span>
+                <div className="border-t border-line">
+                    <AlsoSeen defaultOpen rows={ALSO_SEEN_FOUND} />
                 </div>
-                {[
-                    { icon: 'GitPullRequest', color: 'green', label: 'web-app#418', detail: 'touched · open' },
-                    { icon: 'Ticket', color: 'gray', label: 'PROJ-2502', detail: 'touched · To Do' },
-                    { icon: 'Sparkles', color: 'cyan', label: 'Timeout repro notes', detail: 'artifact' },
-                ].map((row) => (
-                    <div key={row.label} className="flex items-center gap-2 h-6 pl-3 pr-2 text-bone">
-                        <LinkIcon name={row.icon} color={row.color} />
-                        <span className="shrink-0">{row.label}</span>
-                        <span className="text-muted truncate">{row.detail}</span>
-                    </div>
-                ))}
             </div>
         );
 
+        const ALSO_SEEN_FOUND = [
+            { depth: 0, icon: 'GitPullRequest', color: 'green', label: 'web-app#418', text: 'Retry on timeout', detail: 'open' },
+            { depth: 0, icon: 'Ticket', color: 'gray', label: 'PROJ-2502', text: 'Login redirect', detail: 'To Do' },
+            { depth: 0, icon: 'Sparkles', color: 'cyan', label: 'Timeout repro notes', detail: 'artifact' },
+        ];
+
         const WORKING_ON_ROWS = [
-            { depth: 0, icon: 'Ticket', color: 'gold', label: 'PROJ-2560', detail: 'Login epic · In Progress' },
-            { depth: 1, icon: 'Ticket', color: 'gold', label: 'PROJ-2567', detail: 'Session timeout · In Progress', note: 'fixing the refresh window', isSelected: true },
-            { depth: 2, icon: 'GitPullRequest', color: 'green', label: 'web-app#412', detail: 'approved' },
+            { depth: 0, icon: 'Ticket', color: 'gold', label: 'PROJ-2560', text: 'Login epic', detail: 'In Progress' },
+            { depth: 1, icon: 'Ticket', color: 'gold', label: 'PROJ-2567', text: 'Session timeout', detail: 'In Progress', note: 'fixing the refresh window', isSelected: true },
+            { depth: 2, icon: 'GitPullRequest', color: 'green', label: 'web-app#412', text: 'Extend refresh window', detail: 'approved' },
         ];
         const ALSO_SEEN_ROWS = [
-            { depth: 0, icon: 'TicketCheck', color: 'green', label: 'PROJ-2571', detail: 'Cookie flag · Done' },
-            { depth: 0, icon: 'GitPullRequest', color: 'dim', label: 'web-app#397', detail: 'passing mention', isDimmed: true },
+            { depth: 0, icon: 'TicketCheck', color: 'green', label: 'PROJ-2571', text: 'Cookie flag', detail: 'Done' },
+            { depth: 0, icon: 'GitPullRequest', color: 'dim', label: 'web-app#397', text: 'passing mention', detail: '', isDimmed: true },
         ];
-        const DEPTH_PADDING = ['pl-2', 'pl-6', 'pl-10'];
+        const DEPTH_PADDING = ['pl-4', 'pl-[34px]', 'pl-[52px]'];
 
-        const PanelSectionHeader = ({ title, count, tools }) => (
-            <div className="group/header flex items-center gap-1 h-8 px-2 text-muted">
-                <Icon name="ChevronDown" className="w-4 h-4" />
-                <span className="uppercase tracking-label">{title}</span>
-                <span className="ml-1">{count}</span>
-                <span className="ml-auto flex items-center gap-2 opacity-0 group-hover/header:opacity-100 transition-opacity duration-200 ease-dj">{tools}</span>
+        const IconTool = ({ name, label }) => (
+            <span title={label} aria-label={label} className="flex items-center justify-center w-[22px] h-[22px] text-muted hover:text-bone hover:bg-raised transition-colors duration-200 ease-dj">
+                <Icon name={name} className="w-3.5 h-3.5" />
+            </span>
+        );
+
+        const WorkingOnHeading = () => (
+            <div className="flex items-center gap-1.5 h-7 pl-4 pr-2.5">
+                <span className="text-bone font-semibold">Working on</span>
+                <span className="ml-auto flex items-center">
+                    <IconTool name="RefreshCw" label="Refresh statuses and declarations" />
+                    <IconTool name="Plus" label="Pin a ticket by key" />
+                </span>
             </div>
         );
 
         const PanelLinkRow = ({ row }) => (
-            <div className={`group/link flex items-center gap-2 min-h-6 pr-2 ${DEPTH_PADDING[row.depth]} ${row.isSelected ? 'bg-raised' : ''} ${row.isDimmed ? 'opacity-60' : ''}`}>
-                <Icon name="GripVertical" className="w-3 h-3 text-muted" />
+            <div
+                title={[row.label, row.text, row.detail, row.note !== undefined ? `Agent: ${row.note}` : undefined].filter(Boolean).join(' — ')}
+                className={`group/link flex items-center gap-2 h-7 pr-4 ${DEPTH_PADDING[row.depth]} ${row.isSelected ? 'bg-raised' : 'hover:bg-raised'} ${row.isDimmed ? 'opacity-80 hover:opacity-100' : ''}`}
+            >
                 <LinkIcon name={row.icon} color={row.color} />
-                <span className="flex-1 min-w-0 flex flex-col py-1">
-                    <span className="flex gap-2 min-w-0">
-                        <span className="shrink-0 text-bone">{row.label}</span>
-                        <span className="text-muted truncate">{row.detail}</span>
-                    </span>
-                    {row.note !== undefined && <span className="text-muted truncate">{row.note}</span>}
-                </span>
-                <span className={`flex items-center gap-2 text-muted ${row.isSelected ? 'opacity-100' : 'opacity-0 group-hover/link:opacity-100'} transition-opacity duration-200 ease-dj`}>
+                <span className="shrink-0 font-mono text-bone">{row.label}</span>
+                <span className="flex-1 min-w-0 truncate text-muted">{row.text}</span>
+                <span style={{ color: LINK_COLORS[row.color] }} className="shrink-0 text-[11px] group-hover/link:hidden">{row.detail}</span>
+                <span className="hidden group-hover/link:flex items-center gap-2 text-muted">
                     <Icon name="Globe" className="w-4 h-4" />
                     <Icon name="Pin" className="w-4 h-4" />
                     <Icon name="Ellipsis" className="w-4 h-4" />
@@ -788,18 +824,44 @@
             </div>
         );
 
+        const UntrackedLine = ({ kinds }) => (
+            <div className="flex items-center gap-2 h-7 px-4 text-muted">
+                <Icon name="Bot" className="w-4 h-4" />
+                <span className="flex-1 min-w-0 truncate">{kinds.join(', ')} not tracked</span>
+                <span className="shrink-0 text-accent">Fill in</span>
+            </div>
+        );
+
+        const AlsoSeen = ({ rows, defaultOpen = false }) => {
+            const [isOpen, setIsOpen] = useState(defaultOpen);
+            const label = rows.length === 0 ? 'Find links in the transcript' : `${rows.length} more in the transcript`;
+            return (
+                <div className="mt-1 pb-3">
+                    <div className="group/also flex items-center h-7 pr-2.5">
+                        <button
+                            onClick={() => setIsOpen(!isOpen)}
+                            aria-expanded={isOpen}
+                            className="flex-1 flex items-center gap-1.5 h-7 pl-4 text-left text-muted hover:text-bone transition-colors duration-200 ease-dj"
+                        >
+                            <Icon name="ChevronRight" className={`w-3 h-3 transition-transform duration-100 ease-linear ${isOpen ? 'rotate-90' : ''}`} />
+                            {label}
+                        </button>
+                        <span className="flex items-center opacity-0 group-hover/also:opacity-100 transition-opacity duration-200 ease-dj">
+                            <IconTool name="ListFilter" label="Filter" />
+                            <IconTool name="RefreshCw" label="Scan the transcript again" />
+                        </span>
+                    </div>
+                    {isOpen && rows.map((row) => <PanelLinkRow key={row.label} row={{ ...row, depth: 1 }} />)}
+                </div>
+            );
+        };
+
         const LinksPanelVisual = () => (
             <div className="font-mono text-xs border border-line bg-surface">
-                <PanelSectionHeader title="Working on" count={WORKING_ON_ROWS.length} tools={<Icon name="Plus" className="w-4 h-4" />} />
+                <WorkingOnHeading />
                 {WORKING_ON_ROWS.map((row) => <PanelLinkRow key={row.label} row={row} />)}
-                <div className="border-t border-line mt-1">
-                    <PanelSectionHeader
-                        title="Also seen"
-                        count={ALSO_SEEN_ROWS.length}
-                        tools={<><Icon name="ListFilter" className="w-4 h-4" /><Icon name="RefreshCw" className="w-4 h-4" /></>}
-                    />
-                    <div className="pb-1">{ALSO_SEEN_ROWS.map((row) => <PanelLinkRow key={row.label} row={row} />)}</div>
-                </div>
+                <UntrackedLine kinds={['commits']} />
+                <AlsoSeen defaultOpen rows={ALSO_SEEN_ROWS} />
             </div>
         );
 
@@ -1069,13 +1131,13 @@
             { title: 'Search every past session', body: 'Session History opens in an editor tab, like Settings. Search every session by title, prompt, recap, branch, or PR, and filter by repo, age, pinned, or running. The detail pane shows more than All Sessions: recap, prompts, commits, and the PR. Open resumes the session. Delete removes one from your machine for good, and Purge removes every session the filters show. Both list what goes and ask first. Running sessions are never deleted, and Purge skips pinned ones.', Visual: HistoryVisual },
             { title: 'Switch between workspaces', isExperimental: true, body: 'Keep work, side projects, and after-hours sessions apart. Each workspace has its own sessions, terminals, and groups. A switch suspends the running sessions, closes the terminals and file tabs, then brings back what was open in the other workspace. It asks first when Claude is mid-task or a file has unsaved changes. This one is experimental. It works, but it needs more testing.', Visual: WorkspaceVisual },
             { title: 'Suspend a session and resume it later', body: 'When a session waits on a review for days, Suspend sends /exit so the process and its memory are freed. Resume starts the same session again with its full history.', Visual: SuspendVisual },
-            { title: 'Follow the focused session in the Session sidebar', body: 'The Session sidebar sits to the right of the editor and follows the session you focus, terminal or preview. It shows the folder, branch, and summary, with Suspend, Resume, or Fork when the session runs elsewhere. The Claude actions (Compact, Clear, Model, Cost, Run command) appear when the session runs here and is idle. The Session actions (Summarize, Find links, Open repo, Set status, Rename) always show.', Visual: SessionSidebarVisual },
+            { title: 'Follow the focused session in the Session sidebar', body: 'The Session sidebar sits to the right of the editor and follows the session you focus, terminal or preview. The next step comes first: what state the session is in, the recap, and one main button, Suspend, Resume, or Fork here. A sparkle button beside it writes a fresh summary with Haiku. One line under the title shows the repo, the branch, and any other repos. The toolbar at the bottom stays in view. Its Claude actions (Compact, Clear, Model, Cost, Run command) appear when the session runs here and is idle. Its Session actions (Find links, Open repo, Set status, Rename) always show.', Visual: SessionSidebarVisual },
             { title: 'Peek at a paused session without starting it', body: 'Click a session with no terminal here and it opens in one reused Session Preview tab. The preview shows where the session left off, its last turns, its prompts, and the commits and PRs it made. It reads the transcript and git, so it never starts Claude. Resume replaces the preview with the terminal.', Visual: PreviewVisual },
             { title: 'Let the agent say what it works on', body: 'Sessions that Overseer starts get an overseer CLI on PATH and a track skill. The agent declares the tickets it works on, the commits it makes, and the PRs it opens. It skips what it only read. For an older session, Populate all asks Haiku to read a digest of the transcript and declare the same things.', Visual: TrackingVisual },
             { title: 'Find the PRs, tickets, and artifacts a session worked on', body: 'Click Find links in the Session sidebar. Overseer scans the transcript, and a short Haiku run sorts what it found into owned, touched, and seen in passing. Nothing scans until you ask.', Visual: LinksVisual },
-            { title: 'See a session\'s links in the sidebar', body: 'The Session sidebar follows the focused session. Working on holds what the agent declared and what you pinned, with the agent\'s note. Also seen holds the rest. Links nest as parent ticket, sub-tickets, then the PRs for each ticket. Each row opens in your browser, pins, or opens a menu to open in VS Code, copy, move a ticket to another status, or remove. Drag rows to reorder them.', Visual: LinksPanelVisual },
+            { title: 'See a session\'s links in the sidebar', body: 'The Session sidebar follows the focused session. Working on holds what the agent declared and what you pinned, one line per link with its status on the right. Hover a row for the agent\'s note. Also seen is collapsed to one line until you open it. Links nest as parent ticket, sub-tickets, then the PRs for each ticket. Each row opens in your browser, pins, or opens a menu to open in VS Code, copy, move a ticket to another status, or remove. Drag rows to reorder them.', Visual: LinksPanelVisual },
             { title: 'Check PR and ticket status at a glance', body: 'Each PR and ticket shows its live status, and its icon takes the color you pick for that status. PR status comes from gh. Ticket status comes from the Jira MCP server Claude Code already uses.', Visual: LinkStatusVisual },
-            { title: 'Pin or remove a link', body: 'A pinned link moves to Working on, even when the judge thinks it does not matter. A removed link stays out, even if the agent declares it again. Both survive a rescan. Hover the Also seen header and use Filter to show removed links again, so you can restore them.', Visual: PinVisual },
+            { title: 'Pin or remove a link', body: 'A pinned link moves to Working on, even when the judge thinks it does not matter. A removed link stays out, even if the agent declares it again. Both survive a rescan. Hover the Also seen row and use Filter to show removed links again, so you can restore them.', Visual: PinVisual },
             { title: 'Pick your own icons and colors', body: 'The Settings panel sets the icon and color for each session state, a color for every status in each Jira project, a color for each PR state, and which views show. Type Overseer in the Command Palette to reach every setting.', Visual: SettingsVisual },
             { title: 'Keep plain terminals in their own view', body: 'New Terminal opens a shell in a folder you pick. Terminals get their own Terminals view, apart from your Claude sessions, with the same ticket and custom groups. Click one to bring it forward, and reopen it in the same folder after you close it. Settings can hide the Sessions, Terminals, and Repos views.', Visual: TerminalVisual },
             { title: 'Mark where each session stands', body: 'Set Status puts a session or terminal in Todo, Triage, In Progress, Blocked, AI Review, Human Review, or Ready to Ship. The status tints the row and adds a short badge. Blocked asks why, and the reason shows in the row\'s tooltip. Statuses do not follow Jira, so a status like Triage works. The Settings panel adds, renames, reorders, and recolors them.', Visual: StatusMarkVisual },
@@ -1086,7 +1148,7 @@
             { title: 'Rename a session in one step', body: 'Double-click or F2 renames the row and the tab, even while Claude is busy. When the session is idle, Overseer also sends /rename, so the tree, the tab, and Claude all use the same name.', Visual: RenameVisual },
             { title: 'See which sessions are running', body: 'Status comes from claude agents --json and updates each time a session goes busy or idle. Click a terminal tab and its row in the sidebar is selected, so you can see where you are.', Visual: StatusVisual },
             { title: 'Stop a session from running twice', body: 'Two processes writing to one transcript corrupt it. Overseer marks duplicates and offers to fork a copy instead of resuming a second time.', Visual: DuplicateVisual },
-            { title: 'Find a session from any repo it edited', body: 'A session that starts in one repo and edits another shows +N repos. Type repo:<name> in All Sessions to find it from the repo it edited.', Visual: ReposVisual },
+            { title: 'Find a session from any repo it edited', body: 'A session that starts in one repo and edits another lists the extra repos in the Session sidebar and in the row\'s tooltip. Type repo:<name> in All Sessions to find it from the repo it edited.', Visual: ReposVisual },
             { title: 'Arrange groups and sessions', body: 'Each group has a + button for a new session and a search button to add an existing one. Drag groups and sessions to reorder them. The Claude actions, like Compact and Model, live in the Session sidebar.', Visual: OrganizeVisual },
         ];
 
