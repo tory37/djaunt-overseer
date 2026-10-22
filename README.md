@@ -44,12 +44,13 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - Each group row has **+** (new session in that group) and **search** (pull an existing session into that group).
 
 ### Reorder
-- Drag a group onto another group, a session onto another session, or a link onto another link in the same session. Drop a link on its session row to move it to the top.
+- Drag a group onto another group, or a session onto another session.
 - Dragging down puts the item after the target. Dragging up puts it before. VS Code trees can't show an insertion line.
 - The order syncs across windows.
-- Pinned links stay above the rest, and removed links stay at the bottom. Your link order applies within each of those.
+- Links reorder in the Session sidebar. See [Links](#links).
 
 ### Run
+- Clicking a session with a terminal in this window focuses the terminal. Clicking any other session opens it in the [preview](#session-preview).
 - **New Session** (+) asks for a folder and an optional name, then runs `claude --session-id <id> -n <name>` in an editor terminal.
 - **New Terminal** asks the same questions, then opens a plain shell in that folder. It sits in the Terminals view, under the same groups as your sessions. It acts like a session: click to focus, drag into a group, Rename, Remove, Kill. When it is closed, **Open** starts a new shell in the same folder. Claude-only actions do not show on it.
 - Clicking a terminal tab selects that session's row in the sidebar. A row that is already selected stays, so a multi-select survives.
@@ -58,11 +59,11 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - **Rename** (F2 or double-click) renames the row and its tab. When the session is idle in this window, it also sends `/rename`. A tab that comes back from a reload without its name gets it again when you focus it.
 - **Kill and Remove** (right-click) closes the terminal, ends the process, and unpins it. The transcript stays, so All Sessions can still resume it.
 - **Remove from Sidebar** only unpins.
-- **Commands…** (right-click) sends one of your saved prompts to an idle session, like "Latest reviews are in on the PR. Pull them and evaluate." The list is the `overseer.sessionCommands` setting, as `{name, prompt}` entries. A `{ticket link}` in a prompt asks for that value first.
-- **Compact**, **Switch Model…**, **Clear Context**, and **Show Cost** (right-click) send `/compact`, `/model`, `/clear`, and `/cost`. They show only on idle sessions running in this window.
+- Hovering over a session shows its name, state, and status. Everything else is in the Session sidebar.
+- The Claude actions (Compact, Clear, Model, Cost, Run command) are in the Session sidebar. See [Session sidebar](#session-sidebar).
 
 ### Statuses
-- **Set Status…** (right-click a session or terminal, or several at once) marks it with a status. **Clear Status** removes it.
+- **Set status** (Session sidebar, or **Set Status…** in the palette for the selected rows) marks a session or terminal with a status. **Clear Status** removes it.
 - The defaults are Todo, Triage, In Progress, Blocked, AI Review, Human Review, and Ready to Ship. They do not follow Jira, so a status like Triage works.
 - A status with **Ask why** on (Blocked, by default) asks for a reason when you set it. Press Enter to skip. The reason shows in the row's tooltip and on the badge's hover. Setting another status clears it.
 - A status tints the row's label and adds a short badge on the right, like `IP`. The icon shows in the picker and the hover, so the row keeps one icon.
@@ -80,34 +81,46 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - The **Repos** view, under Terminals, lists every repo a pinned session or terminal works in. The most recently active repo is on top.
 - Each row shows the branch, commits ahead and behind its upstream, and the count of changed files, like `main · ↑2 ↓1 · 5 changed`. The icon turns amber when there are uncommitted changes.
 - Rows update a second after anything changes in the repo's `.git` folder, and when the window gets focus. Git runs only while the view is open.
-- **Open Repo in Source Control** (the inline icon, a right-click on a session or terminal, or the palette) adds that repo to VS Code's Source Control view, so its graph, changes, and diffs work there. A session that touched more than one repo asks which.
+- **Open Repo in Source Control** (the inline icon, **Open repo** in the Session sidebar, or the palette) adds that repo to VS Code's Source Control view, so its graph, changes, and diffs work there. A session that touched more than one repo asks which.
 - **Open Repo in New Window** and **Copy Repo Path** are on the right-click menu.
 - Expand a repo to see its last 20 commits on the current branch: subject, short hash, and age.
 - A commit a Claude session made shows a green sparkle and the session's name. Overseer knows a session made it when the transcript holds that commit's `git commit` output. It doesn't guess from timing.
 - Click a commit to open its diff. Right-click for **Show Session**, **Open Commit on GitHub**, and **Copy Commit Hash**.
 
+### Session sidebar
+- The **Session** view in the Secondary Side Bar (Cmd+Option+B) follows the focused session: a Claude terminal or the preview tab. It opens once on its own, the first time a Claude terminal gets focus.
+- The header shows the session's name, state, folder, and branch. Under it is the summary: Claude Code's own recap, or a Haiku summary if that one is newer. **Summarize with Haiku** writes a new one from the end of the transcript. It runs only when you click it.
+- **Suspend** or **Resume** sits under the summary. A session running in another window offers a fork instead.
+- **Actions** holds the rest:
+  - **Claude**: Compact, Clear, Model, Cost, and Run command. They send `/compact`, `/clear`, `/model`, `/cost`, or one of your saved prompts. They show only for a session running in this window, and they wait until it is idle.
+  - **Session**: Summarize, Find links, Open repo, Set status, and Rename.
+- **Run command** prompts come from the `overseer.sessionCommands` setting, as `{name, prompt}` entries, like "Latest reviews are in on the PR. Pull them and evaluate." A `{ticket link}` in a prompt asks for that value first.
+
+### Session preview
+- A session with no terminal in this window opens in one reused **Session Preview** tab. Clicking another session replaces it.
+- It shows where the session left off, its last turns, its prompts, the commits and pull requests it made, and the other repos it touched.
+- **Resume** opens the terminal in the preview's place and closes the preview.
+- The preview reads the transcript and git, so it costs nothing and never starts Claude.
+
 ### Links
-- **Find Resources** (right-click a session) finds the GitHub PRs, Jira tickets, and claude.ai artifacts it worked on. Overseer never scans on its own.
-- The session then shows one **Associated Links** row with a count like `3 links`. Click it to open that session's links panel. A second click brings the open panel forward.
-- A headless `claude -p` run with Haiku sorts the links into owned, touched, and seen in passing.
+- **Working on** lists the tickets and PRs the agent declared and the ones you pinned, with live status, summary or title, and the agent's note. **+** pins a ticket by key.
+- **Also seen** (collapsed) lists the other GitHub PRs, Jira tickets, and claude.ai artifacts in the transcript. **Find links** scans for them. Overseer never scans on its own.
+- A headless `claude -p` run with Haiku sorts the scanned links into owned, touched, and seen in passing.
 - An owned ticket names the auto-group when the title and branch have no ticket key. A ticket you pinned wins, then one the agent declared, then the judge's pick.
-- Clicking a row only selects it. Each row has buttons: **Open in VS Code**, **Open in Browser**, **Copy Link**, **Move to Status…** (tickets), **Pin**, and **Remove**.
+- Each row has **Open in Browser**, **Pin** or **Unpin**, and a **More Actions** menu: **Open in VS Code**, **Copy Link**, **Move to Status…** (tickets), and **Remove from This Session**. A removed link stays out for good, even if the agent declares it again. **Restore** brings it back.
 - **Open in VS Code** always opens a new browser tab. VS Code gives extensions no way to find an open one.
-- The panel nests links: parent ticket, then its sub-tickets, then the PRs for each ticket. Jira's parent field and the ticket key in a PR's branch or title decide the nesting. Haiku places the rest. Other tickets, PRs, and artifacts follow.
-- Drag rows to reorder them within their level. A saved order beats the computed one. Pinned links stay above the rest.
-- **Passing** and **Removed** in the panel header show those links again, dimmed. **Find again** rescans the session.
-- Each PR and ticket shows its live status, and its icon takes that status's color. Overseer checks every five minutes while a panel is open.
+- Links nest: parent ticket, then its sub-tickets, then the PRs for each ticket. Jira's parent field and the ticket key in a PR's branch or title decide the nesting. Haiku places the rest. Other tickets, PRs, and artifacts follow.
+- Drag rows to reorder them within their section. A saved order beats the computed one.
+- Hover the **Also seen** header for its tools. **Filter** shows passing mentions and removed links again, dimmed. **Scan the Transcript Again** rescans the session.
+- Each PR and ticket shows its live status, and its icon takes that status's color. Overseer checks every five minutes while the sidebar shows them.
 - PR status comes from `gh`. Ticket status comes from the Jira MCP server in your `~/.claude.json`, the same one Claude Code uses. Overseer starts it on its own and reads all visible tickets in one call.
 - **Jira Settings…** lists each Jira project Overseer has seen, like ASSMNT or CR, with its full status list and a color for each status. Turn a project off to stop its status lookups.
 - **GitHub Settings…** sets one color per PR state: draft, open, review required, approved, changes requested, merged, and closed.
 
-### Session panel
-- The **Session** view in the Secondary Side Bar (Cmd+Option+B) shows the session in the focused Claude terminal. It opens once on its own, the first time a Claude terminal gets focus.
-- **Working on** lists the tickets the agent declared and the ones you pinned, with Jira status, summary, and the agent's note.
-- **Also seen** (collapsed) lists the other tickets Find Resources found. Pin one to move it up, or remove it.
-- **+** pins a ticket by key. **Remove** keeps it out for good, even if the agent declares it again.
-- The agent declares its own work. Sessions that Overseer starts, resumes, or forks get an `overseer` CLI on PATH and a `track` skill. The agent runs `overseer ticket add PROJ-123 --note "..."` when it starts real work on a ticket, `overseer commit add <hash>` after each commit, and `overseer pr add <url>` after it opens or pushes to a PR. It skips anything it only read.
-- For an older session, **Populate all** in its preview asks Haiku to read a digest of the transcript and declare the same things. It costs cents, not a full resume. In a live session, run `/overseer:track` instead.
+### Agent tracking
+- The agent declares its own work. Sessions that Overseer starts, resumes, or forks get an `overseer` CLI on PATH and a `track` skill.
+- The agent runs `overseer ticket add PROJ-123 --note "..."` when it starts real work on a ticket. It runs `overseer commit add <hash>` after each commit, and `overseer pr add <url>` after it opens or pushes to a PR. It skips anything it only read.
+- For an older session, the sidebar says what isn't tracked yet. **Populate all** asks Haiku to read a digest of the transcript and declare the same things. It costs cents, not a full resume. In a live session, run `/overseer:track` instead.
 - `overseer ticket list` shows the agent your pins and removals. The CLI only writes files under `~/.claude/overseer/`. It needs no server and no login.
 - `claude attach` sessions can't take launch flags, so they get no CLI.
 
@@ -119,11 +132,6 @@ Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:
 - **Enable/Disable Jira Integration**, **Enable/Disable GitHub Integration**, and **Enable/Disable Artifact Links** turn a link source on or off. The palette shows only the one that applies.
 - **All Settings (Settings Editor)** opens every `overseer.*` setting in the native editor.
 - Session icons take any [Codicon](https://microsoft.github.io/vscode-codicons/dist/codicon.html) name and any color. Colors save to `workbench.colorCustomizations` as `overseer.sessionWorking`, `overseer.sessionRunning`, `overseer.sessionElsewhere`, `overseer.sessionSuspended`, `overseer.sessionDuplicate`, and `overseer.sessionCompacting`.
-
-### Hover
-- Hovering over a session shows its state, folder, branch, other repos, and first and last prompt.
-- It also shows a summary. That's Claude Code's own recap when one exists, or a Haiku summary if that one is newer.
-- **Summarize with Haiku** (in the hover, or right-click) writes a new summary from the end of the transcript. It runs only when you click it.
 
 ### Guard
 - Live status comes from `claude agents --json`: working, running here, running in another window, or suspended.
