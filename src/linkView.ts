@@ -1,4 +1,5 @@
 import { DeclaredTicket } from "./agentTickets";
+import { DeclaredPullRequest } from "./agentWork";
 import { LinkKind } from "./linkCandidates";
 import { linkKey, ResolvedLink } from "./linkJudge";
 import { LinkMark, LinkMarks } from "./registry";
@@ -87,48 +88,73 @@ export function ownedTicketKey(links: MarkedLink[]): string | undefined {
   return (pinnedTicket ?? declaredTicket ?? tickets.find((link) => link.role === "owned"))?.id;
 }
 
-// The agent knows what it works on, so a declared ticket is owned even when the transcript never mentions it.
-export function withDeclaredTickets(resolvedLinks: ResolvedLink[], declaredTickets: DeclaredTicket[]): ResolvedLink[] {
-  const declaredByKey = new Map(declaredTickets.map((ticket) => [ticket.key, ticket]));
+interface Declaration {
+  kind: LinkKind;
+  id: string;
+  url: string | undefined;
+  note: string | undefined;
+}
+
+// The agent knows what it works on, so a declared ticket or PR is owned even when the transcript never mentions it.
+export function withDeclarations(
+  resolvedLinks: ResolvedLink[],
+  declaredTickets: DeclaredTicket[],
+  declaredPullRequests: DeclaredPullRequest[] = [],
+): ResolvedLink[] {
+  const declarations: Declaration[] = [
+    ...declaredTickets.map((ticket): Declaration => ({ kind: "ticket", id: ticket.key, url: undefined, note: ticket.note })),
+    ...declaredPullRequests.map((pullRequest): Declaration => ({
+      kind: "pr",
+      id: pullRequestLinkId(pullRequest.url),
+      url: pullRequest.url,
+      note: pullRequest.note,
+    })),
+  ];
+  const declarationsByKey = new Map(declarations.map((declaration) => [`${declaration.kind}:${declaration.id}`, declaration]));
   const linksWithDeclarations = resolvedLinks.map((link) => {
-    const declaredTicket = link.kind === "ticket" ? declaredByKey.get(link.id) : undefined;
-    if (declaredTicket === undefined) {
+    const declaration = declarationsByKey.get(linkKey(link));
+    if (declaration === undefined) {
       return link;
     }
-    declaredByKey.delete(link.id);
-    return { ...link, ...declaredTicketFields(declaredTicket) };
+    declarationsByKey.delete(linkKey(link));
+    return { ...link, ...declaredFields(declaration) };
   });
-  const unscannedLinks = [...declaredByKey.values()].map((declaredTicket) => ({
-    ...unscannedTicketLink(declaredTicket.key),
-    ...declaredTicketFields(declaredTicket),
+  const unscannedLinks = [...declarationsByKey.values()].map((declaration) => ({
+    ...unscannedLink(declaration.kind, declaration.id, declaration.url),
+    ...declaredFields(declaration),
   }));
   return [...unscannedLinks, ...linksWithDeclarations];
 }
 
-export interface SessionPanelTickets {
+// Scanned PR ids are "owner/repo/pull/12", lowercased.
+function pullRequestLinkId(pullRequestUrl: string): string {
+  return pullRequestUrl.replace(/^https:\/\/github\.com\//, "").toLowerCase();
+}
+
+export interface SessionPanelLinks {
   workingOn: MarkedLink[];
   alsoSeen: MarkedLink[];
 }
 
 // Working on: what the agent declared or the user pinned, even a ticket pinned by key that no scan has seen.
-export function sessionPanelTickets(links: MarkedLink[], linkMarks: LinkMarks): SessionPanelTickets {
-  const tickets = links.filter((link) => link.kind === "ticket" && link.mark !== "removed");
-  const shownTicketKeys = new Set(tickets.map((link) => linkKey(link)));
+// A removal beats a declaration; removed links reach Also seen only when the Removed filter shows them.
+export function sessionPanelLinks(links: MarkedLink[], linkMarks: LinkMarks): SessionPanelLinks {
+  const shownKeys = new Set(links.map((link) => linkKey(link)));
   const pinnedByKeyOnly = Object.entries(linkMarks)
-    .filter(([key, mark]) => mark === "pinned" && key.startsWith("ticket:") && !shownTicketKeys.has(key))
-    .map(([key]): MarkedLink => ({ ...unscannedTicketLink(key.slice("ticket:".length)), mark: "pinned" }));
-  const isWorkingOn = (link: MarkedLink): boolean => link.mark === "pinned" || link.isAgentDeclared === true;
+    .filter(([key, mark]) => mark === "pinned" && key.startsWith("ticket:") && !shownKeys.has(key))
+    .map(([key]): MarkedLink => ({ ...unscannedLink("ticket", key.slice("ticket:".length), undefined), mark: "pinned" }));
+  const isWorkingOn = (link: MarkedLink): boolean => link.mark === "pinned" || (link.mark !== "removed" && link.isAgentDeclared === true);
   return {
-    workingOn: [...pinnedByKeyOnly, ...tickets.filter(isWorkingOn)],
-    alsoSeen: tickets.filter((link) => !isWorkingOn(link)),
+    workingOn: [...pinnedByKeyOnly, ...links.filter(isWorkingOn)],
+    alsoSeen: links.filter((link) => !isWorkingOn(link)),
   };
 }
 
-function unscannedTicketLink(ticketKey: string): ResolvedLink {
+function unscannedLink(kind: LinkKind, id: string, url: string | undefined): ResolvedLink {
   return {
-    kind: "ticket",
-    id: ticketKey,
-    url: undefined,
+    kind,
+    id,
+    url,
     title: undefined,
     signals: {},
     snippets: [],
@@ -141,8 +167,8 @@ function unscannedTicketLink(ticketKey: string): ResolvedLink {
   };
 }
 
-function declaredTicketFields(declaredTicket: DeclaredTicket): Pick<ResolvedLink, "role" | "stillRelevant" | "isAgentDeclared" | "agentNote"> {
-  return { role: "owned", stillRelevant: true, isAgentDeclared: true, agentNote: declaredTicket.note };
+function declaredFields(declaration: Declaration): Pick<ResolvedLink, "role" | "stillRelevant" | "isAgentDeclared" | "agentNote"> {
+  return { role: "owned", stillRelevant: true, isAgentDeclared: true, agentNote: declaration.note };
 }
 
 export class ConcurrencyLimiter {

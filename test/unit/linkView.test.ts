@@ -9,8 +9,8 @@ import {
   MarkedLink,
   markLinks,
   ownedTicketKey,
-  sessionPanelTickets,
-  withDeclaredTickets,
+  sessionPanelLinks,
+  withDeclarations,
   visibleLinks,
 } from "../../src/linkView";
 import { acceptedOrder, resourceRow } from "../../src/resourceRows";
@@ -129,20 +129,32 @@ describe("link labels", () => {
   });
 });
 
-describe("withDeclaredTickets", () => {
+describe("withDeclarations", () => {
   it("marks a scanned ticket as declared and owned", () => {
-    const [declaredLink] = withDeclaredTickets([TOUCHED_TICKET], [{ key: "PROJ-5", note: "fixing it", addedAt: 1 }]);
+    const [declaredLink] = withDeclarations([TOUCHED_TICKET], [{ key: "PROJ-5", note: "fixing it", addedAt: 1 }]);
     expect(declaredLink).toMatchObject({ id: "PROJ-5", role: "owned", isAgentDeclared: true, agentNote: "fixing it", judged: true });
   });
 
   it("adds declared tickets the scan never saw, first", () => {
-    const links = withDeclaredTickets([OWNED_PR], [{ key: "PROJ-77", addedAt: 1 }]);
+    const links = withDeclarations([OWNED_PR], [{ key: "PROJ-77", addedAt: 1 }]);
     expect(links.map((link) => link.id)).toEqual(["PROJ-77", OWNED_PR.id]);
     expect(links[0]).toMatchObject({ kind: "ticket", role: "owned", isAgentDeclared: true, judged: false });
   });
 
   it("leaves links alone when nothing is declared", () => {
-    expect(withDeclaredTickets([OWNED_PR, TOUCHED_TICKET], [])).toEqual([OWNED_PR, TOUCHED_TICKET]);
+    expect(withDeclarations([OWNED_PR, TOUCHED_TICKET], [], [])).toEqual([OWNED_PR, TOUCHED_TICKET]);
+  });
+
+  it("matches a declared PR to the scanned one, whatever the URL's case", () => {
+    const scannedPr = resolvedLink({ kind: "pr", id: "acme/web/pull/12", url: "https://github.com/acme/web/pull/12", role: "touched" });
+    const links = withDeclarations([scannedPr], [], [{ url: "https://github.com/Acme/Web/pull/12", note: "the fix", addedAt: 1 }]);
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({ id: "acme/web/pull/12", role: "owned", isAgentDeclared: true, agentNote: "the fix" });
+  });
+
+  it("adds a declared PR the scan never saw, with its URL", () => {
+    const [declaredPr] = withDeclarations([], [], [{ url: "https://github.com/acme/web/pull/40", addedAt: 1 }]);
+    expect(declaredPr).toMatchObject({ kind: "pr", id: "acme/web/pull/40", url: "https://github.com/acme/web/pull/40", isAgentDeclared: true });
   });
 });
 
@@ -213,23 +225,24 @@ describe("acceptedOrder", () => {
   });
 });
 
-describe("sessionPanelTickets", () => {
-  it("puts declared and pinned tickets under Working on and the rest under Also seen", () => {
+describe("sessionPanelLinks", () => {
+  it("puts declared and pinned links of every kind under Working on and the rest under Also seen", () => {
     const declaredTicket = { ...OWNED_TICKET, isAgentDeclared: true };
     const pinnedTicket = { ...TOUCHED_TICKET, mark: "pinned" as const };
+    const declaredPr = { ...OWNED_PR, id: "acme/web/pull/3", isAgentDeclared: true };
     const seenTicket = resolvedLink({ kind: "ticket", id: "PROJ-30", role: "touched" });
-    const { workingOn, alsoSeen } = sessionPanelTickets([OWNED_PR, declaredTicket, pinnedTicket, seenTicket], {});
-    expect(workingOn.map((link) => link.id)).toEqual(["PROJ-9", "PROJ-5"]);
-    expect(alsoSeen.map((link) => link.id)).toEqual(["PROJ-30"]);
+    const { workingOn, alsoSeen } = sessionPanelLinks([OWNED_PR, declaredTicket, pinnedTicket, declaredPr, seenTicket], {});
+    expect(workingOn.map((link) => link.id)).toEqual(["PROJ-9", "PROJ-5", "acme/web/pull/3"]);
+    expect(alsoSeen.map((link) => link.id)).toEqual([OWNED_PR.id, "PROJ-30"]);
   });
 
-  it("drops removed tickets, even declared ones", () => {
+  it("sends a removed link to Also seen, even a declared one", () => {
     const removedDeclared = { ...OWNED_TICKET, isAgentDeclared: true, mark: "removed" as const };
-    expect(sessionPanelTickets([removedDeclared], {})).toEqual({ workingOn: [], alsoSeen: [] });
+    expect(sessionPanelLinks([removedDeclared], {})).toEqual({ workingOn: [], alsoSeen: [removedDeclared] });
   });
 
   it("shows a ticket pinned by key that no scan has seen", () => {
-    const { workingOn } = sessionPanelTickets([TOUCHED_TICKET], { "ticket:PROJ-88": "pinned", "ticket:PROJ-5": "removed", "pr:x": "pinned" });
+    const { workingOn } = sessionPanelLinks([TOUCHED_TICKET], { "ticket:PROJ-88": "pinned", "ticket:PROJ-5": "removed", "pr:x": "pinned" });
     expect(workingOn).toHaveLength(1);
     expect(workingOn[0]).toMatchObject({ kind: "ticket", id: "PROJ-88", mark: "pinned" });
   });

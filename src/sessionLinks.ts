@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { DeclaredTicket } from "./agentTickets";
+import { SessionWork } from "./agentWork";
 import { displayTitle, SessionMeta } from "./indexer";
 import {
   judgeCacheFilePath,
@@ -28,13 +29,14 @@ import {
   markLinks,
   ownedTicketKey,
   visibleLinks,
-  withDeclaredTickets,
+  withDeclarations,
 } from "./linkView";
 import { resolveClaudeBinary } from "./liveSessions";
 import { LinkMarks } from "./registry";
 
-export interface DeclaredTicketSource {
+export interface DeclarationSource {
   declaredTickets(sessionId: string): DeclaredTicket[];
+  sessionWork(sessionId: string): SessionWork;
   onDidChange: vscode.Event<void>;
 }
 
@@ -92,7 +94,7 @@ export class SessionLinkService implements vscode.Disposable {
     private readonly findSessionMeta: (sessionId: string) => SessionMeta | undefined,
     private readonly readLinkMarks: (sessionId: string) => LinkMarks,
     private readonly readLinkOrder: (sessionId: string) => string[],
-    private readonly declaredTicketSource: DeclaredTicketSource,
+    private readonly declarationSource: DeclarationSource,
     private readonly log: vscode.OutputChannel,
   ) {
     this.cachesLoaded = this.loadCaches();
@@ -102,11 +104,11 @@ export class SessionLinkService implements vscode.Disposable {
           this.changeEmitter.fire();
         }
       }),
-      declaredTicketSource.onDidChange(() => this.changeEmitter.fire()),
+      declarationSource.onDidChange(() => this.changeEmitter.fire()),
     ];
   }
 
-  // Returns undefined until Find Resources has scanned this transcript or the agent has declared a ticket.
+  // Returns undefined until Find Resources has scanned this transcript or the agent has declared a ticket or PR.
   linksFor(meta: SessionMeta): MarkedLink[] | undefined {
     return this.visibleLinksFor(meta.sessionId, meta);
   }
@@ -138,12 +140,13 @@ export class SessionLinkService implements vscode.Disposable {
 
   private resolvedLinksFor(sessionId: string, meta: SessionMeta | undefined): ResolvedLink[] | undefined {
     const scanEntry = meta === undefined ? undefined : this.scanEntries[meta.transcriptFile];
-    const declaredTickets = this.declaredTicketSource.declaredTickets(sessionId);
-    if (scanEntry === undefined && declaredTickets.length === 0) {
+    const declaredTickets = this.declarationSource.declaredTickets(sessionId);
+    const declaredPullRequests = this.declarationSource.sessionWork(sessionId).pullRequests;
+    if (scanEntry === undefined && declaredTickets.length === 0 && declaredPullRequests.length === 0) {
       return undefined;
     }
     const scannedLinks = scanEntry === undefined ? [] : resolveLinks(this.candidatesFor(scanEntry), this.judgeEntries[sessionId]);
-    return withDeclaredTickets(scannedLinks, declaredTickets);
+    return withDeclarations(scannedLinks, declaredTickets, declaredPullRequests);
   }
 
   isFinding(sessionId: string): boolean {

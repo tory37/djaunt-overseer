@@ -7,14 +7,16 @@ import { DeclarationMonitor } from "./declarationMonitor";
 import { formatAge } from "./format";
 import { SessionMeta } from "./indexer";
 import { linkKey } from "./linkJudge";
+import { LinkStatus } from "./linkStatus";
 import { LinkStatusService } from "./linkStatusService";
-import { MarkedLink, sessionPanelTickets } from "./linkView";
+import { MarkedLink, sessionPanelLinks } from "./linkView";
 import { LiveSessionMonitor } from "./liveSessions";
-import { openInBrowser } from "./openUrl";
+import { openInBrowser, openInVscode } from "./openUrl";
 import { tildePath } from "./paths";
 import { LinkMark, Registry } from "./registry";
 import { linkStatusColor } from "./resourcesPanel";
-import { ResourceRow, resourceRow } from "./resourceRows";
+import { OrderedResource, orderResources } from "./resourceOrder";
+import { acceptedOrder, ResourceRow, resourceRow } from "./resourceRows";
 import { readLinkSettings, SessionLinkService } from "./sessionLinks";
 import { SessionFocusTracker } from "./sessionFocus";
 import { SessionPopulator } from "./sessionPopulator";
@@ -64,24 +66,34 @@ interface SessionDetails {
   isPopulating: boolean;
 }
 
+type LinkFilter = "showIrrelevant" | "showRemoved";
+
 interface PanelState {
   session: SessionDetails | undefined;
   workingOn: ResourceRow[];
   alsoSeen: ResourceRow[];
+  filters: Record<LinkFilter, boolean>;
+  isJiraEnabled: boolean;
   isFinding: boolean;
   canFind: boolean;
 }
 
 type PanelMessage =
   | { type: "ready" }
-  | { type: "open"; key: string }
+  | { type: "open"; key: string; target: "vscode" | "browser" }
+  | { type: "copy"; key: string }
   | { type: "setMark"; key: string; mark: LinkMark | null }
+  | { type: "moveStatus"; key: string }
+  | { type: "reorder"; keys: string[] }
+  | { type: "setFilter"; filter: LinkFilter; value: boolean }
   | { type: "pinByKey" }
   | { type: "findAgain" }
   | { type: "action"; action: string }
   | { type: "populate" };
 
 const LINK_MARKS = new Set<string>(["pinned", "removed"]);
+const LINK_FILTERS: LinkFilter[] = ["showIrrelevant", "showRemoved"];
+const NO_FILTERS: Record<LinkFilter, boolean> = { showIrrelevant: false, showRemoved: false };
 
 // Each sidebar action runs the same command as the tree's context menu, given the session ID.
 const ACTION_COMMANDS: Record<string, string> = {
@@ -154,17 +166,24 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
     const sessionId = this.dependencies.sessionFocus.focusedSessionId();
     if (sessionId === undefined) {
       this.shownLinks = [];
-      return { session: undefined, workingOn: [], alsoSeen: [], isFinding: false, canFind: false };
+      return { session: undefined, workingOn: [], alsoSeen: [], filters: NO_FILTERS, isJiraEnabled: false, isFinding: false, canFind: false };
     }
-    const { registry, linkService, findSessionMeta } = this.dependencies;
+    const { registry, linkService, linkStatusService, findSessionMeta } = this.dependencies;
     const meta = findSessionMeta(sessionId);
     const visibleLinks = linkService.visibleLinksFor(sessionId, meta) ?? [];
-    const { workingOn, alsoSeen } = sessionPanelTickets(visibleLinks, registry.linkMarks(sessionId));
-    this.shownLinks = [...workingOn, ...alsoSeen];
+    const { workingOn, alsoSeen } = sessionPanelLinks(visibleLinks, registry.linkMarks(sessionId));
+    const hasSavedOrder = registry.linkOrder(sessionId).length > 0;
+    const statusFor = (link: MarkedLink): LinkStatus | undefined => linkStatusService.statusFor(link);
+    const orderedWorkingOn = orderResources(workingOn, statusFor, hasSavedOrder);
+    const orderedAlsoSeen = orderResources(alsoSeen, statusFor, hasSavedOrder);
+    this.shownLinks = [...orderedWorkingOn, ...orderedAlsoSeen].map((resource) => resource.link);
+    const linkSettings = readLinkSettings();
     return {
       session: this.sessionDetails(sessionId, meta),
-      workingOn: workingOn.map((link) => this.rowFor(link)),
-      alsoSeen: alsoSeen.map((link) => this.rowFor(link)),
+      workingOn: orderedWorkingOn.map((resource) => this.rowFor(resource)),
+      alsoSeen: orderedAlsoSeen.map((resource) => this.rowFor(resource)),
+      filters: { showIrrelevant: linkSettings.showIrrelevant, showRemoved: linkSettings.showRemoved },
+      isJiraEnabled: linkSettings.enabledKinds.has("ticket"),
       isFinding: linkService.isFinding(sessionId),
       canFind: meta !== undefined,
     };
@@ -203,10 +222,15 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
     };
   }
 
-  private rowFor(link: MarkedLink): ResourceRow {
+  private rowFor({ link, depth }: OrderedResource): ResourceRow {
     const { linkStatusService, statusConfig } = this.dependencies;
     const status = linkStatusService.statusFor(link);
-    return resourceRow(link, status, linkStatusColor(statusConfig, link, status), readLinkSettings().jiraBaseUrl);
+    return resourceRow(link, status, linkStatusColor(statusConfig, link, status), readLinkSettings().jiraBaseUrl, depth);
+  }
+
+  private urlFor(key: string): string | undefined {
+    const link = this.shownLink(key);
+    return link === undefined ? undefined : resourceRow(link, undefined, undefined, readLinkSettings().jiraBaseUrl).url;
   }
 
   private shownLink(key: string): MarkedLink | undefined {
@@ -225,13 +249,40 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
     const { registry } = this.dependencies;
     switch (message.type) {
       case "open": {
-        const link = this.shownLink(message.key);
-        const url = link === undefined ? undefined : resourceRow(link, undefined, undefined, readLinkSettings().jiraBaseUrl).url;
+        const url = this.urlFor(message.key);
         if (url !== undefined) {
-          await openInBrowser(url);
+          await (message.target === "vscode" ? openInVscode(url) : openInBrowser(url));
         }
         return;
       }
+      case "copy": {
+        const link = this.shownLink(message.key);
+        if (link !== undefined) {
+          await vscode.env.clipboard.writeText(this.urlFor(message.key) ?? link.id);
+        }
+        return;
+      }
+      case "moveStatus": {
+        const link = this.shownLink(message.key);
+        if (link?.kind === "ticket") {
+          await vscode.commands.executeCommand("overseer.moveTicketStatus", link.id);
+        }
+        return;
+      }
+      case "reorder": {
+        const reorderedKeys = acceptedOrder(this.shownLinks.map(linkKey), message.keys);
+        if (reorderedKeys !== undefined) {
+          // Hidden links keep their saved place after the shown ones, so showing them again does not move them.
+          const hiddenKeys = registry.linkOrder(sessionId).filter((key) => !reorderedKeys.includes(key));
+          await registry.setLinkOrder(sessionId, [...reorderedKeys, ...hiddenKeys]);
+        }
+        return;
+      }
+      case "setFilter":
+        if (LINK_FILTERS.includes(message.filter) && typeof message.value === "boolean") {
+          await vscode.workspace.getConfiguration("overseer.links").update(message.filter, message.value, vscode.ConfigurationTarget.Global);
+        }
+        return;
       case "setMark":
         if (this.shownLink(message.key) !== undefined && (message.mark === null || LINK_MARKS.has(message.mark))) {
           await registry.setLinkMark(sessionId, [message.key], message.mark ?? undefined);
@@ -438,7 +489,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .note .codicon { font-size: 12px; margin-top: 2px; }
   .pin-mark { color: var(--vscode-descriptionForeground); }
   .actions { display: none; margin: -4px 0; }
-  .ticket:hover .actions, .ticket:focus-within .actions, .seen:hover .actions, .seen:focus-within .actions { display: flex; }
+  .ticket:hover .actions, .ticket:focus-within .actions, .seen:hover .actions, .seen:focus-within .actions, .actions:has(.menu) { display: flex; }
   .ticket:hover .pin-mark, .ticket:focus-within .pin-mark { display: none; }
   .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 4px; }
   .icon-button:hover { background: var(--vscode-toolbar-hoverBackground); }
@@ -447,12 +498,46 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .seen { display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 8px 0 28px; transition: background-color 80ms linear; }
   .seen .summary-inline { flex: 1; min-width: 0; font-size: 13px; color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .seen-list { padding-bottom: 8px; }
+  .ticket .card { min-width: 0; }
+  .ticket .card.nested { margin-left: 16px; padding-left: 8px; border-left: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-descriptionForeground)); }
+  .gripper { position: absolute; left: 0; visibility: hidden; cursor: grab; color: var(--vscode-descriptionForeground); }
+  .ticket .gripper { top: 10px; }
+  .seen .gripper { left: 8px; }
+  .ticket:hover .gripper, .seen:hover .gripper { visibility: visible; }
+  .ticket, .seen { position: relative; }
+  .dimmed { opacity: 0.5; }
+  .dimmed:hover, .dimmed:focus-within { opacity: 1; }
+  .removed .key { text-decoration: line-through; }
+  .tag { flex-shrink: 0; font-size: 11px; font-style: italic; color: var(--vscode-descriptionForeground); }
+  .seen:hover .tag, .seen:focus-within .tag { display: none; }
+  .dragging { opacity: 0.4; }
+  .drop-before { box-shadow: inset 0 2px 0 var(--vscode-focusBorder); }
+  .drop-after { box-shadow: inset 0 -2px 0 var(--vscode-focusBorder); }
+  .menu-anchor { position: relative; display: inline-flex; }
+  .menu {
+    position: absolute;
+    right: 0;
+    top: 24px;
+    z-index: 10;
+    min-width: 184px;
+    padding: 4px 0;
+    border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, transparent));
+    border-radius: 4px;
+    background: var(--vscode-menu-background);
+    color: var(--vscode-menu-foreground);
+  }
+  .menu-item { display: flex; align-items: center; gap: 8px; width: 100%; height: 22px; padding: 0 8px; font-size: 13px; text-align: left; white-space: nowrap; }
+  .menu-item:hover, .menu-item:focus-visible { background: var(--vscode-menu-selectionBackground); color: var(--vscode-menu-selectionForeground); outline: none; }
+  .menu-item .codicon { font-size: 14px; }
+  .menu-separator { height: 1px; margin: 4px 0; background: var(--vscode-menu-separatorBackground, var(--vscode-menu-border)); }
+  .section-header.is-filtering .section-tools { visibility: visible; }
+  .filter-note { margin: 0; padding: 0 12px 4px; font-size: 11px; color: var(--vscode-descriptionForeground); }
   .empty { padding: 24px 20px; font-size: 13px; line-height: 20px; color: var(--vscode-descriptionForeground); }
   .empty p { margin: 4px 0 0; }
   .empty .lead { margin-top: 8px; color: var(--vscode-foreground); }
   .empty .codicon { font-size: 16px; }
   @media (prefers-reduced-motion: reduce) {
-    .ticket, .seen, .section-toggle .codicon { transition: none; }
+    .ticket, .seen, .action, .section-toggle .codicon { transition: none; }
   }
 </style>
 </head>
@@ -478,6 +563,8 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     ["rename", "edit", "Rename"],
   ];
   let panelState = undefined;
+  let openMenuId = undefined;
+  let draggedRow = undefined;
 
   function element(tagName, className, text) {
     const created = document.createElement(tagName);
@@ -543,10 +630,14 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     vscode.postMessage(message);
   }
 
+  const MISSING_LABELS = { ticket: "Summary loads from Jira", pr: "Title loads from GitHub", artifact: "" };
+
   function keyElement(row, className) {
     if (row.url === undefined) {
       const plainKey = element("span", className + " plain", row.displayId);
-      plainKey.title = "Set overseer.links.jira.baseUrl to open tickets";
+      if (row.kind === "ticket") {
+        plainKey.title = "Set overseer.links.jira.baseUrl to open tickets";
+      }
       return plainKey;
     }
     const link = element("a", className, row.displayId);
@@ -554,13 +645,127 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     link.title = "Open " + row.displayId;
     link.addEventListener("click", (event) => {
       event.preventDefault();
-      send({ type: "open", key: row.key });
+      send({ type: "open", key: row.key, target: "browser" });
     });
     return link;
   }
 
+  function menuItem(iconName, label, onPress) {
+    const item = element("button", "menu-item");
+    item.type = "button";
+    item.setAttribute("role", "menuitem");
+    item.append(codicon(iconName), element("span", "", label));
+    item.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openMenuId = undefined;
+      render();
+      onPress();
+    });
+    return item;
+  }
+
+  function menuButton(menuId, iconName, label, buildItems) {
+    const anchor = element("span", "menu-anchor");
+    const button = iconButton(iconName, label, () => {
+      openMenuId = openMenuId === menuId ? undefined : menuId;
+      render();
+    });
+    button.setAttribute("aria-haspopup", "menu");
+    button.setAttribute("aria-expanded", String(openMenuId === menuId));
+    anchor.append(button);
+    if (openMenuId === menuId) {
+      const menu = element("div", "menu");
+      menu.setAttribute("role", "menu");
+      menu.append(...buildItems());
+      anchor.append(menu);
+    }
+    return anchor;
+  }
+
+  // Open and Pin stay on the row; the rest goes in a menu so the key keeps its room at narrow widths.
+  function rowActions(row, pinLabel) {
+    const actions = element("div", "actions");
+    if (row.mark === "removed") {
+      actions.append(iconButton("discard", "Restore", () => send({ type: "setMark", key: row.key, mark: null })));
+      return actions;
+    }
+    const isPinned = row.mark === "pinned";
+    actions.append(
+      iconButton("link-external", "Open in Browser", () => send({ type: "open", key: row.key, target: "browser" }), row.url === undefined),
+      iconButton(isPinned ? "pinned-dirty" : "pin", isPinned ? "Unpin" : pinLabel, () =>
+        send({ type: "setMark", key: row.key, mark: isPinned ? null : "pinned" }),
+      ),
+      menuButton("row:" + row.key, "ellipsis", "More Actions", () => {
+        const items = [];
+        if (row.url !== undefined) {
+          items.push(menuItem("browser", "Open in VS Code", () => send({ type: "open", key: row.key, target: "vscode" })));
+        }
+        items.push(menuItem("copy", "Copy Link", () => send({ type: "copy", key: row.key })));
+        if (row.kind === "ticket" && panelState.isJiraEnabled) {
+          items.push(menuItem("arrow-swap", "Move to Status…", () => send({ type: "moveStatus", key: row.key })));
+        }
+        items.push(element("div", "menu-separator"));
+        items.push(menuItem("close", "Remove from This Session", () => send({ type: "setMark", key: row.key, mark: "removed" })));
+        return items;
+      }),
+    );
+    return actions;
+  }
+
+  // Rows reorder only within their own section; the extension saves one order across both.
+  function makeDraggable(item, row, sectionRows) {
+    item.draggable = true;
+    item.dataset.key = row.key;
+    item.prepend(codicon("gripper", "Drag to Reorder"));
+    item.firstChild.classList.add("gripper");
+    item.addEventListener("dragstart", (event) => {
+      draggedRow = { key: row.key, sectionRows };
+      event.dataTransfer.effectAllowed = "move";
+      item.classList.add("dragging");
+    });
+    item.addEventListener("dragend", () => {
+      draggedRow = undefined;
+      item.classList.remove("dragging");
+      clearDropMarks();
+    });
+    item.addEventListener("dragover", (event) => {
+      if (draggedRow === undefined || draggedRow.sectionRows !== sectionRows || draggedRow.key === row.key) {
+        return;
+      }
+      event.preventDefault();
+      const rowBounds = item.getBoundingClientRect();
+      clearDropMarks();
+      item.classList.add(event.clientY > rowBounds.top + rowBounds.height / 2 ? "drop-after" : "drop-before");
+    });
+    item.addEventListener("drop", (event) => {
+      event.preventDefault();
+      const isAfter = item.classList.contains("drop-after");
+      clearDropMarks();
+      if (draggedRow !== undefined) {
+        moveRow(sectionRows, draggedRow.key, row.key, isAfter);
+      }
+    });
+  }
+
+  function clearDropMarks() {
+    document.querySelectorAll(".drop-before, .drop-after").forEach((item) => item.classList.remove("drop-before", "drop-after"));
+  }
+
+  function moveRow(sectionRows, movedKey, targetKey, isAfter) {
+    const movedRow = sectionRows.find((row) => row.key === movedKey);
+    if (movedRow === undefined || movedKey === targetKey) {
+      return;
+    }
+    const reorderedRows = sectionRows.filter((row) => row.key !== movedKey);
+    reorderedRows.splice(reorderedRows.findIndex((row) => row.key === targetKey) + (isAfter ? 1 : 0), 0, movedRow);
+    sectionRows.splice(0, sectionRows.length, ...reorderedRows);
+    render();
+    send({ type: "reorder", keys: [...panelState.workingOn, ...panelState.alsoSeen].map((row) => row.key) });
+  }
+
   function workingOnItem(row) {
-    const item = element("li", "ticket");
+    const item = element("li", "ticket" + (row.mark === "removed" ? " removed" : ""));
+    const card = element("div", row.depth > 0 ? "card nested" : "card");
     const keyLine = element("div", "key-line");
     keyLine.append(glyphElement(row), keyElement(row, "key"));
     if (row.statusText) {
@@ -572,39 +777,47 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       keyLine.append(codicon("pinned", "Pinned by you"));
       keyLine.lastChild.classList.add("pin-mark");
     }
-    const actions = element("div", "actions");
-    actions.append(
-      iconButton("link-external", "Open in Browser", () => send({ type: "open", key: row.key }), row.url === undefined),
-      iconButton(isPinned ? "pinned-dirty" : "pin", isPinned ? "Unpin" : "Pin", () =>
-        send({ type: "setMark", key: row.key, mark: isPinned ? null : "pinned" }),
-      ),
-      iconButton("close", "Remove from This Session", () => send({ type: "setMark", key: row.key, mark: "removed" })),
-    );
-    keyLine.append(actions);
-    item.append(keyLine);
+    keyLine.append(rowActions(row, "Pin"));
+    card.append(keyLine);
 
-    const summary = element("p", row.label ? "summary" : "summary missing", row.label || "Summary loads from Jira");
-    item.append(summary);
+    const missingLabel = MISSING_LABELS[row.kind];
+    if (row.label || missingLabel) {
+      card.append(element("p", row.label ? "summary" : "summary missing", row.label || missingLabel));
+    }
     if (row.agentNote) {
       const note = element("p", "note");
       note.append(codicon("hubot", "Declared by the agent"), element("span", "", row.agentNote));
-      item.append(note);
+      card.append(note);
     } else if (isPinned) {
-      item.append(element("p", "note", "Pinned by you"));
+      card.append(element("p", "note", "Pinned by you"));
     }
+    item.append(card);
+    makeDraggable(item, row, panelState.workingOn);
     return item;
   }
 
   function alsoSeenItem(row) {
-    const item = element("li", "seen");
+    const classNames = ["seen", row.isDimmed ? "dimmed" : "", row.mark === "removed" ? "removed" : ""].filter(Boolean).join(" ");
+    const item = element("li", classNames);
     item.append(glyphElement(row), keyElement(row, "key plain"), element("span", "summary-inline", row.label || ""));
-    const actions = element("div", "actions");
-    actions.append(
-      iconButton("pin", "Pin as Working On", () => send({ type: "setMark", key: row.key, mark: "pinned" })),
-      iconButton("close", "Remove", () => send({ type: "setMark", key: row.key, mark: "removed" })),
-    );
-    item.append(actions);
+    if (row.mark === "removed" || row.role === "irrelevant") {
+      item.append(element("span", "tag", row.mark === "removed" ? "removed" : "passing"));
+    }
+    item.append(rowActions(row, "Pin as Working On"));
+    makeDraggable(item, row, panelState.alsoSeen);
     return item;
+  }
+
+  function filterButton() {
+    const { showIrrelevant, showRemoved } = panelState.filters;
+    const filterItem = (filter, label) =>
+      menuItem(panelState.filters[filter] ? "check" : "blank", label, () =>
+        send({ type: "setFilter", filter, value: !panelState.filters[filter] }),
+      );
+    return menuButton("filter", showIrrelevant || showRemoved ? "filter-filled" : "filter", "Filter", () => [
+      filterItem("showIrrelevant", "Passing mentions"),
+      filterItem("showRemoved", "Removed"),
+    ]);
   }
 
   function emptyNote(iconName, lead, body) {
@@ -819,23 +1032,42 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
         root.append(list);
       } else {
         root.append(
-          emptyNote("hubot", "No tickets yet", "The agent declares a ticket when it starts work on it. You can also pin one from Also seen."),
+          emptyNote("hubot", "Nothing tracked yet", "The agent declares tickets and PRs as it works. You can also pin one from Also seen."),
         );
       }
     }
 
     const findLabel = panelState.isFinding ? "Scanning the Transcript…" : "Scan the Transcript Again";
-    root.append(
-      sectionHeader("Also seen", panelState.alsoSeen.length, "isAlsoSeenExpanded", [
-        iconButton("refresh", findLabel, () => send({ type: "findAgain" }), panelState.isFinding || !panelState.canFind),
-      ]),
-    );
+    const { showIrrelevant, showRemoved } = panelState.filters;
+    const alsoSeenHeader = sectionHeader("Also seen", panelState.alsoSeen.length, "isAlsoSeenExpanded", [
+      filterButton(),
+      iconButton("refresh", findLabel, () => send({ type: "findAgain" }), panelState.isFinding || !panelState.canFind),
+    ]);
+    alsoSeenHeader.classList.toggle("is-filtering", showIrrelevant || showRemoved || openMenuId === "filter");
+    root.append(alsoSeenHeader);
+    if (savedViewState.isAlsoSeenExpanded && (showIrrelevant || showRemoved)) {
+      const shownExtras = [showIrrelevant && "passing mentions", showRemoved && "removed"].filter(Boolean).join(" and ");
+      root.append(element("p", "filter-note", "Showing " + shownExtras));
+    }
     if (savedViewState.isAlsoSeenExpanded && panelState.alsoSeen.length > 0) {
       const list = element("ul", "list seen-list");
       list.append(...panelState.alsoSeen.map(alsoSeenItem));
       root.append(list);
     }
   }
+
+  document.addEventListener("click", () => {
+    if (openMenuId !== undefined) {
+      openMenuId = undefined;
+      render();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && openMenuId !== undefined) {
+      openMenuId = undefined;
+      render();
+    }
+  });
 
   window.addEventListener("message", (event) => {
     if (event.data.type === "state") {
