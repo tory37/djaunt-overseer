@@ -235,6 +235,122 @@
             );
         };
 
+        const SESSION_DETAILS = {
+            '5f1c9a2e': {
+                summary: 'Extended the refresh window in src/auth/session.ts. Tests pass. Next: open the PR.',
+                workingOn: [
+                    { depth: 0, icon: 'Ticket', color: 'gold', label: 'PROJ-2567', detail: 'In Progress', note: 'fixing the refresh window' },
+                    { depth: 1, icon: 'GitPullRequest', color: 'green', label: 'web-app#412', detail: 'approved' },
+                ],
+                alsoSeen: [{ depth: 0, icon: 'TicketCheck', color: 'green', label: 'PROJ-2571', detail: 'Done' }],
+            },
+            'a83d0b17': {
+                summary: 'Collecting review notes on web-app#412 before the merge.',
+                workingOn: [{ depth: 0, icon: 'GitPullRequest', color: 'green', label: 'web-app#412', detail: 'approved' }],
+                alsoSeen: [],
+            },
+            'c27e4f90': {
+                summary: 'Streaming the billing export to S3 in chunks. Infra change pending.',
+                workingOn: [
+                    { depth: 0, icon: 'Ticket', color: 'gold', label: 'OPS-4410', detail: 'In Progress', note: 'chunked export' },
+                    { depth: 1, icon: 'GitPullRequestDraft', color: 'gray', label: 'api#388', detail: 'draft' },
+                ],
+                alsoSeen: [{ depth: 0, icon: 'GitPullRequest', color: 'green', label: 'infra#77', detail: 'open' }],
+            },
+            '0d9b6c33': {
+                summary: 'Moved the limiter to a token bucket in src/middleware/limit.ts. Waiting on review of api#391.',
+                lastTurns: [{ kind: 'input', text: '> bump the burst to 20 and rerun' }, { kind: 'muted', text: 'Done. 48 tests pass.' }],
+                workingOn: [{ depth: 0, icon: 'GitPullRequest', color: 'green', label: 'api#391', detail: 'review required' }],
+                alsoSeen: [],
+            },
+            '7e15a2c8': {
+                summary: 'Porting the docs site to the new build. Running in another window.',
+                lastTurns: [{ kind: 'input', text: '> fix the broken sidebar links' }, { kind: 'muted', text: 'Fixed 12 links in nav.json.' }],
+                workingOn: [],
+                alsoSeen: [{ depth: 0, icon: 'Ticket', color: 'gray', label: 'DOCS-88', detail: 'To Do' }],
+            },
+            '9a4c7d21': {
+                summary: 'Two copies are running. Fork one or close the other.',
+                workingOn: [],
+                alsoSeen: [],
+            },
+        };
+
+        const SidebarMainAction = ({ session, onToggle }) => {
+            const actionLabel = isLiveHere(session) ? 'Suspend' : session.state === 'elsewhere' ? 'Fork here' : 'Resume';
+            return (
+                <button
+                    onClick={() => onToggle(session.id)}
+                    className="flex items-center gap-1 px-2 h-6 border border-line text-bone hover:border-accent hover:text-accent transition-colors duration-200 ease-dj"
+                >
+                    <Icon name={isLiveHere(session) ? 'Pause' : 'Play'} className="w-3 h-3" />{actionLabel}
+                </button>
+            );
+        };
+
+        const SessionSidebar = ({ session, onToggle }) => {
+            const stateIcon = STATE_ICONS[session.state];
+            const details = SESSION_DETAILS[session.id];
+            return (
+                <div className="hidden xl:flex flex-col min-w-0 border-l border-line bg-surface">
+                    <div className="flex items-center h-8 px-3 text-muted">
+                        <span className="uppercase tracking-label">Session</span>
+                    </div>
+                    <div className="px-3 pb-2 space-y-2 border-b border-line">
+                        <div className="flex items-center gap-2">
+                            <Icon name={stateIcon.name} className={`w-4 h-4 ${stateIcon.className}`} />
+                            <span className="text-bone truncate">{session.title}</span>
+                        </div>
+                        <p className="text-muted truncate">~/src/{session.repo} · {session.branch}</p>
+                        <p className="text-bone leading-relaxed">{details.summary}</p>
+                        <div className="flex">
+                            <SidebarMainAction session={session} onToggle={onToggle} />
+                        </div>
+                    </div>
+                    <SidebarActions showClaude={session.state === 'running'} />
+                    <div className="border-t border-line">
+                        <PanelSectionHeader title="Working on" count={details.workingOn.length} tools={<Icon name="Plus" className="w-4 h-4" />} />
+                        {details.workingOn.length === 0
+                            ? <p className="px-3 pb-2 text-muted">Nothing tracked yet.</p>
+                            : details.workingOn.map((row) => <PanelLinkRow key={row.label} row={row} />)}
+                    </div>
+                    <div className="border-t border-line pb-2">
+                        <PanelSectionHeader
+                            title="Also seen"
+                            count={details.alsoSeen.length}
+                            tools={<><Icon name="ListFilter" className="w-4 h-4" /><Icon name="RefreshCw" className="w-4 h-4" /></>}
+                        />
+                        {details.alsoSeen.map((row) => <PanelLinkRow key={row.label} row={row} />)}
+                    </div>
+                </div>
+            );
+        };
+
+        const SessionPreviewBody = ({ session, onToggle }) => {
+            const details = SESSION_DETAILS[session.id];
+            return (
+                <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                        <span className="text-muted truncate">
+                            {session.state === 'elsewhere' ? 'Running in another window' : 'Suspended'} · ~/src/{session.repo} · {session.branch}
+                        </span>
+                        <button
+                            onClick={() => onToggle(session.id)}
+                            className="ml-auto flex items-center gap-1 px-2 h-6 bg-accent text-on-accent transition-transform duration-200 ease-dj hover:scale-[1.02]"
+                        >
+                            <Icon name="Play" className="w-3 h-3" />{session.state === 'elsewhere' ? 'Fork here' : 'Resume'}
+                        </button>
+                    </div>
+                    <p className="text-bone">{details.summary}</p>
+                    <div className="space-y-1">
+                        <div className="uppercase tracking-label text-muted">Last turns</div>
+                        {(details.lastTurns ?? []).map((line, lineIndex) => <TerminalLine key={lineIndex} line={line} />)}
+                    </div>
+                    <p className="text-muted">Reads the transcript and git. Claude does not start until you resume.</p>
+                </div>
+            );
+        };
+
         const TerminalLine = ({ line }) => {
             const lineColors = { prompt: 'text-accent', muted: 'text-muted', input: 'text-bone', out: 'text-bone', system: 'text-success' };
             return <div className={`whitespace-pre-wrap break-words ${lineColors[line.kind]}`}>{line.text}</div>;
@@ -250,6 +366,11 @@
             });
 
             const [terminals, setTerminals] = useState(INITIAL_TERMINALS);
+            const [focusedSessionId, setFocusedSessionId] = useState(INITIAL_SESSIONS[0].id);
+            useEffect(() => {
+                if (sessions.some((session) => session.id === selectedId)) setFocusedSessionId(selectedId);
+            }, [selectedId]);
+            const focusedSession = sessions.find((session) => session.id === focusedSessionId);
             const selectedSession = sessions.find((session) => session.id === selectedId);
             const selectedTerminal = terminals.find((terminal) => terminal.id === selectedId);
             const openTabs = sessions.filter(isLiveHere);
@@ -293,7 +414,7 @@
                         <span className="w-2.5 h-2.5 rounded-full bg-line" />
                         <span className="flex-1 text-center text-muted truncate">agent-tools — Visual Studio Code</span>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-[3rem_26rem_1fr]">
+                    <div className="grid grid-cols-1 md:grid-cols-[3rem_22rem_1fr] xl:grid-cols-[3rem_22rem_1fr_18rem]">
                         <div className="hidden md:flex flex-col items-center gap-4 py-3 border-r border-line bg-surface text-muted">
                             <Icon name="Files" className="w-5 h-5" />
                             <Icon name="Search" className="w-5 h-5" />
@@ -370,6 +491,12 @@
                         </div>
                         <div className="flex flex-col min-w-0 min-h-72">
                             <div className="flex h-8 border-b border-line bg-surface overflow-hidden">
+                                {selectedSession !== undefined && !isSelectedLive && (
+                                    <span className="flex items-center gap-2 px-3 border-r border-line max-w-48 bg-bg text-bone border-t border-t-accent italic">
+                                        <Icon name="Eye" className="w-4 h-4" />
+                                        <span className="truncate">{selectedSession.title}</span>
+                                    </span>
+                                )}
                                 {openTabs.map((session) => (
                                     <button
                                         key={session.id}
@@ -410,19 +537,11 @@
                                 ) : isSelectedLive ? (
                                     terminalLines[selectedId].map((line, lineIndex) => <TerminalLine key={lineIndex} line={line} />)
                                 ) : (
-                                    <div className="flex flex-col items-start gap-3 text-muted">
-                                        <span>{selectedSession.state === 'elsewhere' ? 'Running in another window.' : 'Suspended. No process, no memory. The transcript is on disk.'}</span>
-                                        <button
-                                            onClick={() => toggleSession(selectedId)}
-                                            className="flex items-center gap-2 px-3 h-7 border border-line text-bone hover:border-accent hover:text-accent transition-colors duration-200 ease-dj"
-                                        >
-                                            <Icon name="Play" className="w-4 h-4" />
-                                            {selectedSession.state === 'elsewhere' ? 'Fork a copy here' : 'Resume'}
-                                        </button>
-                                    </div>
+                                    <SessionPreviewBody session={selectedSession} onToggle={toggleSession} />
                                 )}
                             </div>
                         </div>
+                        <SessionSidebar session={focusedSession} onToggle={toggleSession} />
                     </div>
                 </div>
             );
@@ -572,9 +691,9 @@
             { label: 'Session', actions: [['Sparkles', 'Summarize'], ['Search', 'Find links'], ['FolderGit2', 'Open repo'], ['Tag', 'Set status'], ['Pencil', 'Rename']] },
         ];
 
-        const SidebarActions = ({ highlighted }) => (
+        const SidebarActions = ({ highlighted, showClaude = true }) => (
             <div className="px-3 py-2 space-y-2">
-                {SIDEBAR_ACTION_GROUPS.map((group) => (
+                {SIDEBAR_ACTION_GROUPS.filter((group) => showClaude || group.label !== 'Claude').map((group) => (
                     <div key={group.label}>
                         <div className="uppercase tracking-label text-muted mb-1">{group.label}</div>
                         <div className="flex flex-wrap gap-1">
