@@ -87,6 +87,7 @@ type PanelMessage =
   | { type: "setFilter"; filter: LinkFilter; value: boolean }
   | { type: "pinByKey" }
   | { type: "findAgain" }
+  | { type: "refreshWorkingOn" }
   | { type: "action"; action: string }
   | { type: "populate" };
 
@@ -299,6 +300,10 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
         }
         return;
       }
+      case "refreshWorkingOn":
+        this.dependencies.declarationMonitor.rescan();
+        this.dependencies.linkStatusService.refresh(this.shownLinks);
+        return;
       case "findAgain":
         await vscode.commands.executeCommand("overseer.findResources", sessionId);
         return;
@@ -1021,6 +1026,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
 
     root.append(
       sectionHeader("Working on", panelState.workingOn.length, "isWorkingOnExpanded", [
+        iconButton("refresh", "Refresh Statuses and Declarations", () => send({ type: "refreshWorkingOn" })),
         iconButton("add", "Pin a Ticket by Key", () => send({ type: "pinByKey" })),
       ]),
     );

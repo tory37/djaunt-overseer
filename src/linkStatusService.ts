@@ -82,6 +82,17 @@ export class LinkStatusService implements vscode.Disposable {
     this.changeEmitter.fire();
   }
 
+  // Marks these links stale and redraws, so the next render refetches them without blanking the shown status.
+  refresh(links: ResolvedLink[]): void {
+    for (const link of links) {
+      const cachedEntry = this.statusCache.get(`${link.kind}:${link.id}`);
+      if (cachedEntry !== undefined) {
+        cachedEntry.fetchedAtMs = 0;
+      }
+    }
+    this.changeEmitter.fire();
+  }
+
   forgetTicket(ticketKey: string): void {
     this.statusCache.delete(`ticket:${ticketKey}`);
     this.changeEmitter.fire();
