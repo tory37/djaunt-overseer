@@ -50,6 +50,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `claudeLaunch.ts` | Pure: the launch shell command (`--plugin-dir`, `--allowedTools`, PATH) and env, plus `quoteForShell`. |
 | `sessionFocus.ts` / `sessionFocusState.ts` | The focused session: the active Claude terminal or the preview tab. The state rules are pure. |
 | `sessionPanel.ts` | Secondary Side Bar webview for the focused session: header, summary, resume or suspend, actions, and links of every kind in Working on and Also seen. |
+| `sessionSidebarText.ts` | Pure: the Session sidebar's meta line, state sentence, short link status, and row hover text. |
 | `resourceRows.ts` / `resourceOrder.ts` | Pure: sidebar link rows, nesting depth, saved order, and stale-drag checks. |
 | `sessionPreview.ts` / `sessionPreviewModel.ts` | One reused editor tab for sessions with no terminal here: summary, last turns, prompts, commits, PRs. Resume replaces it with the terminal. The model is pure. |
 | `plugin/` | Claude plugin with the `track` skill. Loaded per launch with `--plugin-dir`. |
@@ -62,7 +63,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 - Send slash commands only when the session is idle. Typed input is lost while Claude is busy.
 - Never resume a session that is live elsewhere. Two processes on one transcript corrupt it. Offer a fork.
 - Session names reach the shell. Quote with `quoteForShell` and strip newlines.
-- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `linkView`, `linkStatus`, `agentTickets`, `agentWork`, `claudeLaunch`, `populateDigest`, `resourceRows`, `resourceOrder`, `sessionFocusState`, `sessionPreviewModel`) and test it there. `vscode` can't be imported in unit tests.
+- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `linkView`, `linkStatus`, `agentTickets`, `agentWork`, `claudeLaunch`, `populateDigest`, `resourceRows`, `resourceOrder`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`) and test it there. `vscode` can't be imported in unit tests.
 - The agent talks to the extension through the `overseer` CLI and files, not MCP or a server. Add agent features as CLI subcommands and teach them in the skill. Keep the skill short; it loads into the agent's context.
 - New commands need an entry in `contributes.commands`, a menu `when` clause, and `"when": "false"` under `commandPalette` if they need a tree node.
 

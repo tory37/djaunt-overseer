@@ -1,0 +1,95 @@
+import { describe, expect, it } from "vitest";
+import { linkRowTitle, metaLine, metaTitle, shortLinkStatus, stateSentence } from "../../src/sessionSidebarText";
+
+describe("metaLine", () => {
+  it("joins the repo, branch, and other repos", () => {
+    expect(metaLine("~/src/web-app", "fix/proj-2567-login-timeout", ["api"])).toBe("web-app · fix/proj-2567-login-timeout · +api");
+  });
+
+  it("lists every other repo after one plus sign", () => {
+    expect(metaLine("~/src/web-app", "main", ["api", "infra"])).toBe("web-app · main · +api, infra");
+  });
+
+  it("drops the parts that are missing", () => {
+    expect(metaLine("~/src/docs", undefined, [])).toBe("docs");
+    expect(metaLine(undefined, "main", [])).toBe("main");
+    expect(metaLine(undefined, undefined, [])).toBe("");
+  });
+});
+
+describe("metaTitle", () => {
+  it("shows the full path and the branch", () => {
+    expect(metaTitle("~/src/web-app", "main")).toBe("~/src/web-app · main");
+  });
+
+  it("drops a missing branch", () => {
+    expect(metaTitle("~/src/web-app", undefined)).toBe("~/src/web-app");
+  });
+});
+
+describe("stateSentence", () => {
+  it("names a live session in this window", () => {
+    expect(stateSentence({ runKind: "idle", lastActive: "now", isBackgroundAgent: false })).toBe("Idle in this window");
+    expect(stateSentence({ runKind: "busy", lastActive: "now", isBackgroundAgent: false })).toBe("Working in this window");
+  });
+
+  it("gives a paused session its last activity", () => {
+    expect(stateSentence({ runKind: "paused", lastActive: "2d ago", isBackgroundAgent: false })).toBe("Paused · last active 2d ago");
+  });
+
+  it("says only Paused when the last activity is unknown", () => {
+    expect(stateSentence({ runKind: "paused", lastActive: undefined, isBackgroundAgent: false })).toBe("Paused");
+  });
+
+  it("offers a fork for a session running in another terminal", () => {
+    expect(stateSentence({ runKind: "elsewhere", lastActive: "4m ago", isBackgroundAgent: false })).toBe(
+      "Running in another terminal · fork to work on it here",
+    );
+  });
+
+  it("offers attach or fork for a background agent", () => {
+    expect(stateSentence({ runKind: "elsewhere", lastActive: "4m ago", isBackgroundAgent: true })).toBe(
+      "Running as a background agent · attach or fork to work on it here",
+    );
+  });
+});
+
+describe("shortLinkStatus", () => {
+  it("strips a leading open state", () => {
+    expect(shortLinkStatus("open · approved")).toBe("approved");
+    expect(shortLinkStatus("open · review required")).toBe("review required");
+  });
+
+  it("keeps any other status as is", () => {
+    expect(shortLinkStatus("In Progress")).toBe("In Progress");
+    expect(shortLinkStatus("merged")).toBe("merged");
+  });
+
+  it("passes a missing status through", () => {
+    expect(shortLinkStatus(undefined)).toBeUndefined();
+  });
+});
+
+describe("linkRowTitle", () => {
+  const row = {
+    displayId: "PROJ-2567",
+    label: "Session times out",
+    statusText: "In Progress",
+    agentNote: undefined,
+    mark: undefined,
+  };
+
+  it("joins the key, label, and status", () => {
+    expect(linkRowTitle(row)).toBe("PROJ-2567 — Session times out — In Progress");
+  });
+
+  it("adds the agent note and the pin note", () => {
+    expect(linkRowTitle({ ...row, agentNote: "owns the fix", mark: "pinned" })).toBe(
+      "PROJ-2567 — Session times out — In Progress — Agent: owns the fix — Pinned by you",
+    );
+  });
+
+  it("drops the parts that are missing", () => {
+    expect(linkRowTitle({ ...row, label: undefined, statusText: undefined, mark: "removed" })).toBe("PROJ-2567");
+  });
+});
