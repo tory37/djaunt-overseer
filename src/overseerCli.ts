@@ -25,6 +25,17 @@ import {
   withoutDeclaredPullRequest,
 } from "./agentWork";
 import { loadVersionedCache, saveVersionedCache } from "./linkCache";
+import {
+  clipReason,
+  formatStatusList,
+  readStatusContext,
+  readStatusOptions,
+  resolveStatusOption,
+  STATUS_SYNC_SCHEMA_VERSION,
+  statusContextFile,
+  statusOptionsFile,
+  statusRequestFile,
+} from "./sessionStatusSync";
 
 export const OVERSEER_USAGE = `overseer: tell the Overseer VS Code extension about this Claude session.
 
@@ -44,6 +55,11 @@ Usage:
       Undeclare one you declared by mistake.
   overseer commit list / overseer pr list
       Show this session's declared commits and pull requests.
+  overseer status list
+      Show the status options, the session's current status, and its tickets' Jira statuses.
+  overseer status set <ID> [--reason "<why>"]
+      Set the session's overall status. It is an overall watcher: with one ticket, mirror it;
+      with several, condense them into where the whole session stands.
 
 The session comes from CLAUDE_CODE_SESSION_ID, or OVERSEER_SESSION_ID when that is unset.`;
 
@@ -66,7 +82,7 @@ export async function runOverseerCli(
   if (area === undefined || area === "--help" || area === "-h" || area === "help") {
     return { exitCode: EXIT_OK, output: OVERSEER_USAGE };
   }
-  const isKnownArea = area === "ticket" || area === "commit" || area === "pr";
+  const isKnownArea = area === "ticket" || area === "commit" || area === "pr" || area === "status";
   if (!isKnownArea || action === undefined) {
     return usageFailure(`Unknown command: ${args.join(" ")}`);
   }
@@ -76,6 +92,9 @@ export async function runOverseerCli(
     return { exitCode: EXIT_FAILURE, output: "No Claude session found: CLAUDE_CODE_SESSION_ID is not set." };
   }
 
+  if (area === "status") {
+    return runStatusCommand(action, rest, claudeHome, sessionId);
+  }
   if (area !== "ticket") {
     return runWorkCommand(area, action, rest, declaredWorkFile(claudeHome, sessionId), now);
   }
@@ -101,6 +120,32 @@ export async function runOverseerCli(
     default:
       return usageFailure(`Unknown ticket action: ${action}`);
   }
+}
+
+async function runStatusCommand(action: string, rest: string[], claudeHome: string, sessionId: string): Promise<CliResult> {
+  const options = readStatusOptions(await loadVersionedCache<unknown>(statusOptionsFile(claudeHome), STATUS_SYNC_SCHEMA_VERSION));
+  if (action === "list") {
+    const context = readStatusContext(await loadVersionedCache<unknown>(statusContextFile(claudeHome, sessionId), STATUS_SYNC_SCHEMA_VERSION));
+    return { exitCode: EXIT_OK, output: formatStatusList(options, context) };
+  }
+  if (action !== "set") {
+    return usageFailure(`Unknown status action: ${action}`);
+  }
+  const [requested, ...optionWords] = rest;
+  if (requested === undefined) {
+    return usageFailure("Missing status.");
+  }
+  const { note: reason, error } = parseOption(optionWords, "--reason");
+  if (error !== undefined) {
+    return usageFailure(error);
+  }
+  const option = resolveStatusOption(options, requested);
+  if (option === undefined) {
+    return { exitCode: EXIT_FAILURE, output: `Not a status: ${requested}\n${formatStatusList(options, { tickets: [] })}` };
+  }
+  const request = { statusId: option.id, ...(reason === undefined ? {} : { reason: clipReason(reason) }) };
+  await saveVersionedCache(statusRequestFile(claudeHome, sessionId), request, STATUS_SYNC_SCHEMA_VERSION);
+  return { exitCode: EXIT_OK, output: `Set the session status to ${option.name}.` };
 }
 
 const WORK_ITEMS = {
@@ -162,11 +207,15 @@ function parseTicketArguments(rest: string[], allowsNote: boolean): TicketArgume
 }
 
 function parseNoteOption(options: string[], allowsNote: boolean): { note?: string; error?: string } {
+  return allowsNote ? parseOption(options, "--note") : parseOption(options, undefined);
+}
+
+function parseOption(options: string[], flag: string | undefined): { note?: string; error?: string } {
   if (options.length === 0) {
     return {};
   }
   const [optionName, ...noteWords] = options;
-  if (!allowsNote || optionName !== "--note" || noteWords.length === 0) {
+  if (flag === undefined || optionName !== flag || noteWords.length === 0) {
     return { error: `Unexpected arguments: ${options.join(" ")}` };
   }
   return { note: noteWords.join(" ").replace(/\s+/g, " ").trim() };

@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { AGENT_TICKETS_SCHEMA_VERSION, declaredTicketsFile, userTicketMarksFile } from "../../src/agentTickets";
 import { AGENT_WORK_SCHEMA_VERSION, declaredWorkFile } from "../../src/agentWork";
 import { OVERSEER_USAGE, runOverseerCli } from "../../src/overseerCli";
+import { saveVersionedCache } from "../../src/linkCache";
+import { STATUS_SYNC_SCHEMA_VERSION, statusContextFile, statusOptionsFile, statusRequestFile } from "../../src/sessionStatusSync";
 
 const SESSION_ID = "0b1e7a6c-1f7e-4a5e-9d7e-2b8c3f1a9e10";
 const SESSION_ENV = { CLAUDE_CODE_SESSION_ID: SESSION_ID };
@@ -102,5 +104,47 @@ describe("runOverseerCli", () => {
     const added = await runOverseerCli(["ticket", "add", "PROJ-3"], SESSION_ENV, claudeHome, 9);
     expect(added.exitCode).toBe(0);
     expect(readDeclaredFile()).toEqual({ version: AGENT_TICKETS_SCHEMA_VERSION, entries: [{ key: "PROJ-3", addedAt: 9 }] });
+  });
+});
+
+describe("overseer status", () => {
+  const options = [
+    { id: "in-progress", name: "In Progress", asksReason: false },
+    { id: "blocked", name: "Blocked", asksReason: true },
+  ];
+
+  it("lists options, current status, and ticket statuses", async () => {
+    await saveVersionedCache(statusOptionsFile(claudeHome), options, STATUS_SYNC_SCHEMA_VERSION);
+    await saveVersionedCache(
+      statusContextFile(claudeHome, SESSION_ID),
+      { currentStatusId: "in-progress", tickets: [{ key: "AB-1", status: "Peer Review" }] },
+      STATUS_SYNC_SCHEMA_VERSION,
+    );
+    const listed = await runOverseerCli(["status", "list"], SESSION_ENV, claudeHome);
+    expect(listed.exitCode).toBe(0);
+    expect(listed.output).toContain("Session status: in-progress (In Progress)");
+    expect(listed.output).toContain("AB-1  Peer Review");
+  });
+
+  it("writes a request for a status by name, with a reason", async () => {
+    await saveVersionedCache(statusOptionsFile(claudeHome), options, STATUS_SYNC_SCHEMA_VERSION);
+    const result = await runOverseerCli(["status", "set", "Blocked", "--reason", "waiting", "on", "QA"], SESSION_ENV, claudeHome);
+    expect(result).toEqual({ exitCode: 0, output: "Set the session status to Blocked." });
+    expect(JSON.parse(fs.readFileSync(statusRequestFile(claudeHome, SESSION_ID), "utf8"))).toEqual({
+      version: STATUS_SYNC_SCHEMA_VERSION,
+      entries: { statusId: "blocked", reason: "waiting on QA" },
+    });
+  });
+
+  it("refuses a status that is not an option", async () => {
+    await saveVersionedCache(statusOptionsFile(claudeHome), options, STATUS_SYNC_SCHEMA_VERSION);
+    const result = await runOverseerCli(["status", "set", "done"], SESSION_ENV, claudeHome);
+    expect(result.exitCode).toBe(1);
+    expect(fs.existsSync(statusRequestFile(claudeHome, SESSION_ID))).toBe(false);
+  });
+
+  it("rejects an unknown action and a bad option", async () => {
+    expect((await runOverseerCli(["status", "nope"], SESSION_ENV, claudeHome)).exitCode).toBe(2);
+    expect((await runOverseerCli(["status", "set", "blocked", "--why", "x"], SESSION_ENV, claudeHome)).exitCode).toBe(2);
   });
 });

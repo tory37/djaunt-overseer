@@ -25,7 +25,8 @@ import {
 import { RepoTreeNode } from "./repoTree";
 import { fillPrompt, parseSessionCommands, promptParameters } from "./sessionCommands";
 import { SessionPreview } from "./sessionPreview";
-import { askStatusReason, configuredStatuses, pickSessionStatus } from "./sessionStatusView";
+import { SessionStatusRelay } from "./sessionStatusRelay";
+import { askStatusReason, AUTO_STATUS_ID, configuredStatuses, pickSessionStatus } from "./sessionStatusView";
 import { busySessions, confirmStopBusySessions, runningClaudeSessions, suspendSessions } from "./suspend";
 import { TreeNode } from "./tree";
 import { pickTargetWorkspace } from "./workspaceCommands";
@@ -40,6 +41,7 @@ export interface CommandDependencies {
   sessionViews: vscode.TreeView<TreeNode>[];
   sessionPreview: SessionPreview;
   pinnedSessions: () => PinnedSession[];
+  statusRelay: SessionStatusRelay;
   log: vscode.OutputChannel;
 }
 
@@ -71,6 +73,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     registry,
     linkService,
     linkStatusService,
+    statusRelay,
     summaryService,
     sessionViews,
     sessionPreview,
@@ -611,6 +614,10 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       const statusIdBySession = registry.sessionStatusIds();
       const pickedStatusId = await pickSessionStatus(new Set(sessionIds.map((sessionId) => statusIdBySession[sessionId])));
       if (pickedStatusId === null) {
+        return;
+      }
+      if (pickedStatusId === AUTO_STATUS_ID) {
+        await statusRelay.autoSetStatus(sessionIds);
         return;
       }
       const pickedStatus = configuredStatuses().find((status) => status.id === pickedStatusId);

@@ -30,6 +30,7 @@ import { CommitAuthorship, indexCommitAuthorship } from "./gitStatus";
 import { HistoryPanel } from "./historyPanel";
 import { SessionFocusTracker } from "./sessionFocus";
 import { SessionPopulator } from "./sessionPopulator";
+import { SessionStatusRelay } from "./sessionStatusRelay";
 import { SessionPreview } from "./sessionPreview";
 import { SESSION_PANEL_VIEW_ID, SessionPanelProvider } from "./sessionPanel";
 import { SessionTreeProvider } from "./tree";
@@ -136,6 +137,15 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   registry.onDidChange(refreshTree);
   const sessionPopulator = new SessionPopulator(claudeHome, registry, declarationMonitor, log);
+  const statusRelay = new SessionStatusRelay({
+    claudeHome,
+    registry,
+    linkService,
+    linkStatusService,
+    jiraService,
+    findSessionMeta: findIndexedSession,
+    log,
+  });
   const sessionPreview = new SessionPreview({
     extensionUri: context.extensionUri,
     registry,
@@ -189,6 +199,7 @@ export function activate(context: vscode.ExtensionContext): void {
     linkService,
     linkStatusService,
     jiraService,
+    statusRelay,
     summaryService,
     treeProvider,
     treeView,
@@ -272,6 +283,7 @@ export function activate(context: vscode.ExtensionContext): void {
       sessionViews: [treeView, terminalTreeView],
       sessionPreview,
       pinnedSessions,
+      statusRelay,
       log,
     }),
     ...registerWorkspaceCommands({ registry, sessionIndex, liveMonitor, pinnedSessions, log }),

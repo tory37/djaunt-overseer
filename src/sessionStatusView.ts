@@ -63,6 +63,8 @@ export class SessionStatusDecorations implements vscode.FileDecorationProvider, 
 }
 
 const CLEAR_STATUS_ID = "";
+// Not a valid slug, so no configured status can share it.
+export const AUTO_STATUS_ID = "\0auto";
 
 export async function pickSessionStatus(currentStatusIds: Set<string | undefined>): Promise<string | undefined | null> {
   const statuses = configuredStatuses();
@@ -80,6 +82,7 @@ export async function pickSessionStatus(currentStatusIds: Set<string | undefined
       statusId: status.id,
     })),
     { label: "", kind: vscode.QuickPickItemKind.Separator, statusId: CLEAR_STATUS_ID },
+    { label: "$(sparkle) Auto (Haiku)", description: "From the session's tickets", statusId: AUTO_STATUS_ID },
     { label: "$(close) Clear Status", description: undefined, statusId: CLEAR_STATUS_ID },
   ];
   const picked = await vscode.window.showQuickPick(items, { placeHolder: "Set the session's status" });
