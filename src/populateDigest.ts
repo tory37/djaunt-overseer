@@ -1,5 +1,6 @@
 import { normalizeTicketKey } from "./agentTickets";
-import { normalizeCommitHash, normalizePullRequestUrl } from "./agentWork";
+import { normalizeArtifactParentKey, normalizeArtifactUrl, normalizeCommitHash, normalizePullRequestUrl } from "./agentWork";
+import { artifactUrlsIn } from "./linkCandidates";
 import { clipText } from "./sessionSummary";
 
 export interface PopulateContext {
@@ -12,12 +13,14 @@ export interface PopulateContext {
 export interface PopulatedItem {
   id: string;
   note?: string;
+  parentKey?: string;
 }
 
 export interface PopulateResult {
   tickets: PopulatedItem[];
   commits: PopulatedItem[];
   pullRequests: PopulatedItem[];
+  artifacts: PopulatedItem[];
 }
 
 interface DigestEvent {
@@ -45,22 +48,26 @@ interface ContentBlock {
 }
 
 const MAX_DIGEST_BYTES = 48 * 1024;
+export const RECHECK_DIGEST_BYTES = 128 * 1024;
 const MAX_TEXT_CHARS = 400;
 const MAX_COMMAND_CHARS = 300;
 const MAX_RESULT_CHARS = 400;
 const MAX_NOTE_CHARS = 120;
 // Commands and tools whose results show the session creating work, not just reading it.
-const EVIDENCE_COMMAND_PATTERN = /\bgit\s+(?:-C\s+\S+\s+)?(?:commit|cherry-pick|revert|merge|push)\b|\bgh\s+pr\b|\bacli\b/;
-const EVIDENCE_TOOL_PATTERN = /jira|atlassian|github/i;
+// overseer commands count too, so a declaration that failed still shows up.
+const EVIDENCE_COMMAND_PATTERN = /\bgit\s+(?:-C\s+\S+\s+)?(?:commit|cherry-pick|revert|merge|push)\b|\bgh\s+pr\b|\bacli\b|\boverseer\b/;
+const EVIDENCE_TOOL_PATTERN = /jira|atlassian|github|^Artifact$/i;
 
 const POPULATE_SYSTEM_PROMPT = `You read a digest of one Claude Code session and list the work that session did.
 Reply with only this JSON, no markdown:
-{"tickets":[{"key":"PROJ-1","note":"..."}],"commits":[{"hash":"abc1234","note":"..."}],"pullRequests":[{"url":"https://github.com/owner/repo/pull/1","note":"..."}]}
+{"tickets":[{"key":"PROJ-2","note":"...","parent":"PROJ-1"}],"commits":[{"hash":"abc1234","note":"..."}],"pullRequests":[{"url":"https://github.com/owner/repo/pull/1","note":"...","parent":"PROJ-2"}],"artifacts":[{"url":"https://claude.ai/artifact/...","note":"...","parent":"PROJ-2"}]}
 Rules:
 - tickets: Jira tickets the session implemented, fixed, investigated, reviewed, or test-planned. Not tickets it only read for context, such as linked tickets, parent epics, or similar past bugs. Never list a ticket under "Removed by the user".
 - commits: commits this session created, as shown by git commit, cherry-pick, revert, or merge output. Not commits it only saw in logs, diffs, or other output.
 - pullRequests: GitHub PRs this session opened, pushed commits to, or reviewed. Not PRs it only mentioned.
-- note: one short line on what the item was for.
+- artifacts: claude.ai artifact URLs this session published. Not ones it only read.
+- note: one short line on the item's current state and purpose. Use the latest events.
+- parent: optional. For a ticket, its epic or parent ticket. For a PR, the ticket it implements. For an artifact, a ticket key or PR URL. Only keys and URLs that appear in the digest.
 - Use empty arrays when there is nothing.`;
 
 export function populateArgs(model: string): string[] {
@@ -120,13 +127,30 @@ export function parsePopulateOutput(stdout: string): PopulateResult {
   }
   const fields = JSON.parse(resultText.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>;
   return {
-    tickets: readItems(fields.tickets, "key", normalizeTicketKey),
+    tickets: readItems(fields.tickets, "key", normalizeTicketKey, normalizeTicketKey),
     commits: readItems(fields.commits, "hash", normalizeCommitHash),
-    pullRequests: readItems(fields.pullRequests, "url", normalizePullRequestUrl),
+    pullRequests: readItems(fields.pullRequests, "url", normalizePullRequestUrl, normalizeTicketKey),
+    artifacts: readItems(fields.artifacts, "url", normalizeArtifactUrl, normalizeArtifactParentKey),
   };
 }
 
-function readItems(value: unknown, idField: string, normalizeId: (rawId: string) => string | undefined): PopulatedItem[] {
+export function populateFailureReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/ENOENT/.test(message)) {
+    return "Couldn't find the claude CLI.";
+  }
+  if (/timed out/i.test(message)) {
+    return "Haiku timed out.";
+  }
+  if (/JSON/.test(message)) {
+    return "Haiku's reply had no usable list.";
+  }
+  return "Haiku run failed. See the Overseer output.";
+}
+
+type Normalizer = (rawValue: string) => string | undefined;
+
+function readItems(value: unknown, idField: string, normalizeId: Normalizer, normalizeParentKey?: Normalizer): PopulatedItem[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -139,7 +163,14 @@ function readItems(value: unknown, idField: string, normalizeId: (rawId: string)
       continue;
     }
     const note = typeof fields.note === "string" && fields.note.trim() !== "" ? clipText(fields.note, MAX_NOTE_CHARS) : undefined;
-    items.set(id, { id, ...(note !== undefined ? { note } : {}) });
+    const rawParentKey = fields.parent;
+    const parentKey =
+      normalizeParentKey !== undefined && typeof rawParentKey === "string" ? normalizeParentKey(rawParentKey) : undefined;
+    items.set(id, {
+      id,
+      ...(note !== undefined ? { note } : {}),
+      ...(parentKey !== undefined && parentKey !== id ? { parentKey } : {}),
+    });
   }
   return [...items.values()];
 }
@@ -193,11 +224,22 @@ function userBlockEvents(block: ContentBlock, evidenceToolIds: Set<string>): Omi
   if (block?.type === "text" && typeof block.text === "string") {
     return promptEvents(block.text);
   }
-  if (block?.type === "tool_result" && typeof block.tool_use_id === "string" && evidenceToolIds.has(block.tool_use_id)) {
-    const resultText = toolResultText(block.content);
-    return resultText === "" ? [] : [{ text: `Result: ${clipText(resultText, MAX_RESULT_CHARS)}`, isEvidence: true }];
+  if (block?.type !== "tool_result" || typeof block.tool_use_id !== "string") {
+    return [];
   }
-  return [];
+  const resultText = toolResultText(block.content);
+  if (evidenceToolIds.has(block.tool_use_id)) {
+    return resultText === "" ? [] : [{ text: `Result: ${evidenceResultText(resultText)}`, isEvidence: true }];
+  }
+  const artifactUrls = artifactUrlsIn(resultText);
+  return artifactUrls.length === 0 ? [] : [{ text: `Tool result names artifacts: ${artifactUrls.join(" ")}`, isEvidence: true }];
+}
+
+// A long result can push its artifact URL past the clip, so missing URLs go on the end.
+function evidenceResultText(resultText: string): string {
+  const clippedText = clipText(resultText, MAX_RESULT_CHARS);
+  const clippedArtifactUrls = artifactUrlsIn(resultText).filter((url) => !clippedText.includes(url));
+  return clippedArtifactUrls.length === 0 ? clippedText : `${clippedText} (artifacts: ${clippedArtifactUrls.join(" ")})`;
 }
 
 function assistantBlockEvents(block: ContentBlock, evidenceToolIds: Set<string>): Omit<DigestEvent, "order">[] {

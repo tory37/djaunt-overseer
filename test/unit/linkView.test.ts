@@ -144,6 +144,34 @@ describe("withDeclarations", () => {
     expect(links[0]).toMatchObject({ id: "acme/web/pull/12", role: "owned", isAgentDeclared: true, agentNote: "the fix" });
   });
 
+  it("passes the declared parent through as a link key", () => {
+    const links = withDeclarations(
+      [TOUCHED_TICKET],
+      [{ key: "PROJ-5", parentKey: "PROJ-1", addedAt: 1 }],
+      [{ url: "https://github.com/acme/web/pull/40", parentKey: "PROJ-5", addedAt: 1 }],
+      [{ url: "https://claude.ai/artifact/abc-1", parentKey: "https://github.com/Acme/Web/pull/40", addedAt: 1 }],
+    );
+    const parentsById = Object.fromEntries(links.map((link) => [link.id, link.declaredParentKey]));
+    expect(parentsById).toEqual({ "PROJ-5": "ticket:PROJ-1", "acme/web/pull/40": "ticket:PROJ-5", "abc-1": "pr:acme/web/pull/40" });
+  });
+
+  it("adds declared artifacts as owned links that land in Working on", () => {
+    const scannedArtifact = resolvedLink({ kind: "artifact", id: "seen", url: "https://claude.ai/artifact/seen", role: "irrelevant" });
+    const links = withDeclarations(
+      [scannedArtifact],
+      [],
+      [],
+      [
+        { url: "https://claude.ai/code/artifact/seen", note: "report", addedAt: 1 },
+        { url: "https://claude.ai/artifact/new-1", addedAt: 1 },
+      ],
+    );
+    expect(links.map((link) => link.id)).toEqual(["new-1", "seen"]);
+    expect(links[0]).toMatchObject({ kind: "artifact", url: "https://claude.ai/artifact/new-1", isAgentDeclared: true, judged: false });
+    expect(links[1]).toMatchObject({ role: "owned", isAgentDeclared: true, agentNote: "report" });
+    expect(sessionPanelLinks(markLinks(links, {}), {}).workingOn).toHaveLength(2);
+  });
+
   it("adds a declared PR the scan never saw, with its URL", () => {
     const [declaredPr] = withDeclarations([], [], [{ url: "https://github.com/acme/web/pull/40", addedAt: 1 }]);
     expect(declaredPr).toMatchObject({ kind: "pr", id: "acme/web/pull/40", url: "https://github.com/acme/web/pull/40", isAgentDeclared: true });

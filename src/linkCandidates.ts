@@ -93,6 +93,21 @@ const PENDING_SIGNAL_RANK: Record<PendingToolSignal, number> = {
 const ISSUE_KEY_FIELDS = new Set(["issue_keys", "issue_key", "issueIdOrKey", "source_issue", "target_issue", "key"]);
 const ISSUE_KEY_LIST_FIELDS = new Set(["comments", "issues", "links", "transitions", "conversions"]);
 
+export interface ArtifactUrlParts {
+  id: string;
+  url: string;
+}
+
+// Uses the scanner's own pattern, so a declared artifact and a scanned one share a link id.
+export function artifactUrlParts(rawUrl: string): ArtifactUrlParts | undefined {
+  const match = rawUrl.trim().matchAll(ARTIFACT_URL_PATTERN).next().value;
+  return match === undefined ? undefined : { id: match[1], url: match[0] };
+}
+
+export function artifactUrlsIn(text: string): string[] {
+  return [...new Set([...text.matchAll(ARTIFACT_URL_PATTERN)].map((match) => match[0]))];
+}
+
 export function createLinkScanState(): LinkScanState {
   return { candidates: {}, pendingToolCalls: {}, gitBranch: undefined, jiraSite: undefined };
 }

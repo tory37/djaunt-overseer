@@ -13,7 +13,7 @@ const PARENT_TICKET_RANK = 0;
 const KIND_RANK: Record<MarkedLink["kind"], number> = { ticket: 1, pr: 2, artifact: 3 };
 
 // Builds the tree: parent ticket → sub-tickets → PRs for each ticket, then leftovers, then artifacts.
-// Jira parent data and ticket keys in a PR's branch or title win over the judge's guess.
+// Jira parent data and ticket keys in a PR's branch or title win over the agent's declared parent, which wins over the judge's guess.
 // With a saved user order, siblings keep the input order instead of the computed one.
 export function orderResources(
   links: MarkedLink[],
@@ -23,7 +23,8 @@ export function orderResources(
   const linksByKey = new Map(links.map((link) => [linkKey(link), link]));
   const parentKeys = new Map<string, string>();
   for (const link of links) {
-    const parentKey = factParentKey(link, statusFor(link), linksByKey) ?? judgedParentKey(link, linksByKey);
+    const parentKey =
+      factParentKey(link, statusFor(link), linksByKey) ?? declaredParentKey(link, linksByKey) ?? judgedParentKey(link, linksByKey);
     if (parentKey !== undefined) {
       parentKeys.set(linkKey(link), parentKey);
     }
@@ -73,6 +74,10 @@ function factParentKey(
     return ticketKeys.map((ticketKey) => shownKey(`ticket:${ticketKey}`, link, linksByKey)).find((key) => key !== undefined);
   }
   return undefined;
+}
+
+function declaredParentKey(link: MarkedLink, linksByKey: Map<string, MarkedLink>): string | undefined {
+  return link.declaredParentKey === undefined ? undefined : shownKey(link.declaredParentKey, link, linksByKey);
 }
 
 function judgedParentKey(link: MarkedLink, linksByKey: Map<string, MarkedLink>): string | undefined {

@@ -141,12 +141,13 @@ export class SessionLinkService implements vscode.Disposable {
   private resolvedLinksFor(sessionId: string, meta: SessionMeta | undefined): ResolvedLink[] | undefined {
     const scanEntry = meta === undefined ? undefined : this.scanEntries[meta.transcriptFile];
     const declaredTickets = this.declarationSource.declaredTickets(sessionId);
-    const declaredPullRequests = this.declarationSource.sessionWork(sessionId).pullRequests;
-    if (scanEntry === undefined && declaredTickets.length === 0 && declaredPullRequests.length === 0) {
+    const { pullRequests: declaredPullRequests, artifacts: declaredArtifacts } = this.declarationSource.sessionWork(sessionId);
+    const hasDeclarations = declaredTickets.length > 0 || declaredPullRequests.length > 0 || declaredArtifacts.length > 0;
+    if (scanEntry === undefined && !hasDeclarations) {
       return undefined;
     }
     const scannedLinks = scanEntry === undefined ? [] : resolveLinks(this.candidatesFor(scanEntry), this.judgeEntries[sessionId]);
-    return withDeclarations(scannedLinks, declaredTickets, declaredPullRequests);
+    return withDeclarations(scannedLinks, declaredTickets, declaredPullRequests, declaredArtifacts);
   }
 
   isFinding(sessionId: string): boolean {

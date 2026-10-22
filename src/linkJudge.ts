@@ -33,6 +33,7 @@ export interface ResolvedLink extends LinkCandidate {
   label: string | undefined;
   judged: boolean;
   parentKey?: string;
+  declaredParentKey?: string;
   isAgentDeclared?: boolean;
   agentNote?: string;
 }

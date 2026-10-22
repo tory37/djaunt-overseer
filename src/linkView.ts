@@ -1,6 +1,6 @@
 import { DeclaredTicket } from "./agentTickets";
-import { DeclaredPullRequest } from "./agentWork";
-import { LinkKind } from "./linkCandidates";
+import { DeclaredArtifact, DeclaredPullRequest, normalizePullRequestUrl } from "./agentWork";
+import { artifactUrlParts, LinkKind } from "./linkCandidates";
 import { linkKey, ResolvedLink } from "./linkJudge";
 import { LinkMark, LinkMarks } from "./registry";
 import { sortBySavedOrder } from "./reorder";
@@ -78,22 +78,39 @@ interface Declaration {
   id: string;
   url: string | undefined;
   note: string | undefined;
+  parentLinkKey: string | undefined;
 }
 
-// The agent knows what it works on, so a declared ticket or PR is owned even when the transcript never mentions it.
+// The agent knows what it works on, so a declared ticket, PR, or artifact is owned even when the transcript never mentions it.
 export function withDeclarations(
   resolvedLinks: ResolvedLink[],
   declaredTickets: DeclaredTicket[],
   declaredPullRequests: DeclaredPullRequest[] = [],
+  declaredArtifacts: DeclaredArtifact[] = [],
 ): ResolvedLink[] {
   const declarations: Declaration[] = [
-    ...declaredTickets.map((ticket): Declaration => ({ kind: "ticket", id: ticket.key, url: undefined, note: ticket.note })),
+    ...declaredTickets.map((ticket): Declaration => ({
+      kind: "ticket",
+      id: ticket.key,
+      url: undefined,
+      note: ticket.note,
+      parentLinkKey: declaredParentLinkKey(ticket.parentKey),
+    })),
     ...declaredPullRequests.map((pullRequest): Declaration => ({
       kind: "pr",
       id: pullRequestLinkId(pullRequest.url),
       url: pullRequest.url,
       note: pullRequest.note,
+      parentLinkKey: declaredParentLinkKey(pullRequest.parentKey),
     })),
+    ...declaredArtifacts.flatMap((artifact): Declaration[] => {
+      const artifactParts = artifactUrlParts(artifact.url);
+      if (artifactParts === undefined) {
+        return [];
+      }
+      const parentLinkKey = declaredParentLinkKey(artifact.parentKey);
+      return [{ kind: "artifact", id: artifactParts.id, url: artifactParts.url, note: artifact.note, parentLinkKey }];
+    }),
   ];
   const declarationsByKey = new Map(declarations.map((declaration) => [`${declaration.kind}:${declaration.id}`, declaration]));
   const linksWithDeclarations = resolvedLinks.map((link) => {
@@ -114,6 +131,15 @@ export function withDeclarations(
 // Scanned PR ids are "owner/repo/pull/12", lowercased.
 function pullRequestLinkId(pullRequestUrl: string): string {
   return pullRequestUrl.replace(/^https:\/\/github\.com\//, "").toLowerCase();
+}
+
+// Declared parents are a ticket key or a PR URL; links name their parent by link key.
+function declaredParentLinkKey(parentKey: string | undefined): string | undefined {
+  if (parentKey === undefined) {
+    return undefined;
+  }
+  const pullRequestUrl = normalizePullRequestUrl(parentKey);
+  return pullRequestUrl === undefined ? `ticket:${parentKey}` : `pr:${pullRequestLinkId(pullRequestUrl)}`;
 }
 
 export interface SessionPanelLinks {
@@ -152,8 +178,16 @@ function unscannedLink(kind: LinkKind, id: string, url: string | undefined): Res
   };
 }
 
-function declaredFields(declaration: Declaration): Pick<ResolvedLink, "role" | "stillRelevant" | "isAgentDeclared" | "agentNote"> {
-  return { role: "owned", stillRelevant: true, isAgentDeclared: true, agentNote: declaration.note };
+function declaredFields(
+  declaration: Declaration,
+): Pick<ResolvedLink, "role" | "stillRelevant" | "isAgentDeclared" | "agentNote" | "declaredParentKey"> {
+  return {
+    role: "owned",
+    stillRelevant: true,
+    isAgentDeclared: true,
+    agentNote: declaration.note,
+    ...(declaration.parentLinkKey !== undefined ? { declaredParentKey: declaration.parentLinkKey } : {}),
+  };
 }
 
 export class ConcurrencyLimiter {

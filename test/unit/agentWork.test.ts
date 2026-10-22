@@ -8,9 +8,44 @@ import {
   readSessionWork,
   untrackedKinds,
   withDeclaredCommit,
+  withDeclaredPullRequest,
 } from "../../src/agentWork";
 
 describe("readSessionWork", () => {
+  it("reads a file written before parents and artifacts existed", () => {
+    const work = readSessionWork({ commits: [], pullRequests: [{ url: "https://github.com/o/r/pull/3", note: "fix", addedAt: 1 }] });
+    expect(work).toEqual({ commits: [], pullRequests: [{ url: "https://github.com/o/r/pull/3", note: "fix", addedAt: 1 }], artifacts: [] });
+  });
+
+  it("keeps valid parents and artifacts and drops bad ones", () => {
+    const work = readSessionWork({
+      pullRequests: [
+        { url: "https://github.com/o/r/pull/3", parentKey: "proj-1", addedAt: 1 },
+        { url: "https://github.com/o/r/pull/4", parentKey: "not a key", addedAt: 1 },
+      ],
+      artifacts: [
+        { url: "https://claude.ai/artifact/a-1", note: "report", parentKey: "https://github.com/o/r/pull/3", addedAt: 2 },
+        { url: "https://claude.ai/code/artifact/a-2", parentKey: 7 },
+        { url: "https://example.com/artifact/x" },
+      ],
+    });
+    expect(work.pullRequests).toEqual([
+      { url: "https://github.com/o/r/pull/3", parentKey: "PROJ-1", addedAt: 1 },
+      { url: "https://github.com/o/r/pull/4", addedAt: 1 },
+    ]);
+    expect(work.artifacts).toEqual([
+      { url: "https://claude.ai/artifact/a-1", note: "report", parentKey: "https://github.com/o/r/pull/3", addedAt: 2 },
+      { url: "https://claude.ai/code/artifact/a-2", addedAt: 0 },
+    ]);
+  });
+
+  it("keeps a PR's parent when the agent declares it again without one", () => {
+    const withParent = withDeclaredPullRequest(EMPTY_SESSION_WORK, "https://github.com/o/r/pull/3", "draft", 1, "PROJ-1");
+    expect(withDeclaredPullRequest(withParent, "https://github.com/o/r/pull/3", "merged", 2).pullRequests).toEqual([
+      { url: "https://github.com/o/r/pull/3", note: "merged", parentKey: "PROJ-1", addedAt: 1 },
+    ]);
+  });
+
   it("keeps valid entries and skips the rest", () => {
     const work = readSessionWork({
       commits: [{ hash: "ABC1234", note: "fix", addedAt: 5 }, { hash: "nope" }, "abc1234", null],
@@ -20,6 +55,7 @@ describe("readSessionWork", () => {
     expect(work).toEqual({
       commits: [{ hash: "abc1234", note: "fix", addedAt: 5 }],
       pullRequests: [{ url: "https://github.com/o/r/pull/3", addedAt: 0 }],
+      artifacts: [],
       populatedAt: 9,
     });
   });
@@ -52,11 +88,17 @@ describe("declaring work", () => {
   });
 
   it("merges a copied session without losing the target's entries", () => {
-    const target = { commits: [{ hash: "abc1234", addedAt: 1 }], pullRequests: [] };
-    const incoming = { commits: [{ hash: "abc1234", note: "dup", addedAt: 2 }, { hash: "def5678", addedAt: 3 }], pullRequests: [], populatedAt: 4 };
+    const target = { commits: [{ hash: "abc1234", addedAt: 1 }], pullRequests: [], artifacts: [] };
+    const incoming = {
+      commits: [{ hash: "abc1234", note: "dup", addedAt: 2 }, { hash: "def5678", addedAt: 3 }],
+      pullRequests: [],
+      artifacts: [{ url: "https://claude.ai/artifact/a1", addedAt: 5 }],
+      populatedAt: 4,
+    };
     expect(mergeSessionWork(target, incoming)).toEqual({
       commits: [{ hash: "abc1234", addedAt: 1 }, { hash: "def5678", addedAt: 3 }],
       pullRequests: [],
+      artifacts: [{ url: "https://claude.ai/artifact/a1", addedAt: 5 }],
       populatedAt: 4,
     });
   });

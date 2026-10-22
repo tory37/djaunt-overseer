@@ -11,6 +11,7 @@ const TICKET_LINK_KEY_PREFIX = "ticket:";
 export interface DeclaredTicket {
   key: string;
   note?: string;
+  parentKey?: string;
   addedAt: number;
 }
 
@@ -50,13 +51,15 @@ export function readDeclaredTickets(entries: unknown): DeclaredTicket[] {
     if (typeof entry !== "object" || entry === null) {
       continue;
     }
-    const { key, note, addedAt } = entry as Record<string, unknown>;
+    const { key, note, parentKey, addedAt } = entry as Record<string, unknown>;
     if (typeof key !== "string" || !isTicketKey(key)) {
       continue;
     }
+    const isValidParent = typeof parentKey === "string" && isTicketKey(parentKey) && parentKey !== key;
     declaredTickets.push({
       key,
       ...(typeof note === "string" && note.length > 0 ? { note } : {}),
+      ...(isValidParent ? { parentKey } : {}),
       addedAt: typeof addedAt === "number" ? addedAt : 0,
     });
   }
@@ -68,18 +71,21 @@ export function readUserTicketMarks(entries: unknown): UserTicketMarks {
   return { pinned: ticketKeysIn(marks.pinned), removed: ticketKeysIn(marks.removed) };
 }
 
-// Declaring a ticket again updates its note but keeps when it was first declared.
+// Declaring a ticket again updates its note and parent but keeps when it was first declared.
 export function withDeclaredTicket(
   declaredTickets: DeclaredTicket[],
   key: string,
   note: string | undefined,
   now: number,
+  parentKey?: string,
 ): DeclaredTicket[] {
   const existingTicket = declaredTickets.find((ticket) => ticket.key === key);
   const resolvedNote = note ?? existingTicket?.note;
+  const resolvedParentKey = parentKey ?? existingTicket?.parentKey;
   const updatedTicket: DeclaredTicket = {
     key,
     ...(resolvedNote !== undefined ? { note: resolvedNote } : {}),
+    ...(resolvedParentKey !== undefined ? { parentKey: resolvedParentKey } : {}),
     addedAt: existingTicket?.addedAt ?? now,
   };
   if (existingTicket === undefined) {

@@ -83,6 +83,7 @@ describe("runOverseerCli", () => {
       entries: {
         commits: [{ hash: "abc1234", note: "fix the loop", addedAt: 100 }],
         pullRequests: [{ url: "https://github.com/o/r/pull/12", addedAt: 200 }],
+        artifacts: [],
       },
     });
 

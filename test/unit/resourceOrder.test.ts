@@ -67,6 +67,24 @@ describe("orderResources", () => {
     ]);
   });
 
+  it("ranks the Jira and branch facts over the agent's declared parent, and the declared parent over the judge", () => {
+    const declaredSubtask = link({ kind: "ticket", id: "PROJ-2", declaredParentKey: "ticket:OTHER-5" });
+    const declaredPr = link({ kind: "pr", id: "acme/web/pull/9", declaredParentKey: "ticket:OTHER-5", parentKey: "ticket:PROJ-1" });
+    const declaredArtifact = link({ kind: "artifact", id: "art", declaredParentKey: "pr:acme/web/pull/9" });
+    expect(layout([declaredArtifact, declaredPr, declaredSubtask, EPIC, LONE_TICKET])).toEqual([
+      "0:PROJ-1",
+      "1:PROJ-2",
+      "0:OTHER-5",
+      "1:acme/web/pull/9",
+      "2:art",
+    ]);
+  });
+
+  it("ignores a declared parent that isn't shown", () => {
+    const orphanedPr = link({ kind: "pr", id: "acme/web/pull/9", declaredParentKey: "ticket:GONE-1", parentKey: "ticket:OTHER-5" });
+    expect(layout([orphanedPr, LONE_TICKET])).toEqual(["0:OTHER-5", "1:acme/web/pull/9"]);
+  });
+
   it("keeps the input order among siblings when the user saved an order", () => {
     expect(layout([ORPHAN_PR, SUBTASK, ARTIFACT, EPIC], true)).toEqual(["0:acme/web/pull/9", "0:art", "0:PROJ-1", "1:PROJ-2"]);
   });

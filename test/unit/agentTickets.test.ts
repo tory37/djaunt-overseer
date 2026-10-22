@@ -17,6 +17,19 @@ import {
 const NO_MARKS = { pinned: [], removed: [] };
 
 describe("readDeclaredTickets", () => {
+  it("keeps a valid parent and drops a bad or self parent", () => {
+    const entries = [
+      { key: "PROJ-2", parentKey: "PROJ-1", addedAt: 1 },
+      { key: "PROJ-3", parentKey: "nope", addedAt: 1 },
+      { key: "PROJ-4", parentKey: "PROJ-4", addedAt: 1 },
+    ];
+    expect(readDeclaredTickets(entries)).toEqual([
+      { key: "PROJ-2", parentKey: "PROJ-1", addedAt: 1 },
+      { key: "PROJ-3", addedAt: 1 },
+      { key: "PROJ-4", addedAt: 1 },
+    ]);
+  });
+
   it("keeps valid entries and skips the rest", () => {
     const entries = [
       { key: "PROJ-1", note: "fixing login", addedAt: 5 },
