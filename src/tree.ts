@@ -258,7 +258,7 @@ function sessionTreeItem(
   const copyCount = liveSession?.processCount ?? 0;
   if (copyCount > 1) {
     treeItem.iconPath = sessionStateIcon("duplicate");
-    treeItem.description = `${copyCount} copies running · ${treeItem.description}`;
+    treeItem.description = [`${copyCount} copies running`, treeItem.description].filter(Boolean).join(" · ");
   }
   treeItem.command = { command: "overseer.clickSession", title: "Open", arguments: [pinned.sessionId] };
   return treeItem;
@@ -269,7 +269,8 @@ function terminalTreeItem(pinned: PinnedSession, terminalSession: TerminalSessio
   const treeItem = new vscode.TreeItem(pinnedSessionTitle(pinned), vscode.TreeItemCollapsibleState.None);
   treeItem.id = `session:${pinned.sessionId}`;
   treeItem.resourceUri = sessionStatusUri(pinned.sessionId);
-  treeItem.description = `${path.basename(terminalSession.cwd)} · terminal`;
+  const repoName = path.basename(terminalSession.cwd);
+  treeItem.description = isOpen ? repoName : `${repoName} · closed`;
   const iconColorId = sessionIconSpec(isOpen ? "running" : "suspended").colorId;
   treeItem.iconPath = new vscode.ThemeIcon("terminal-bash", new vscode.ThemeColor(iconColorId));
   treeItem.tooltip = sessionTooltip(pinned, `Terminal ${isOpen ? "open" : "closed"}`, status);
@@ -279,9 +280,16 @@ function terminalTreeItem(pinned: PinnedSession, terminalSession: TerminalSessio
 }
 
 function sessionDescription(pinned: PinnedSession): string {
+  if (pinned.meta !== undefined) {
+    return "";
+  }
+  return pinned.pending ? `${path.basename(pinned.pending.cwd)} · new` : "not found in index";
+}
+
+function sessionPlace(pinned: PinnedSession): string {
   const meta = pinned.meta;
   if (meta === undefined) {
-    return pinned.pending ? `${path.basename(pinned.pending.cwd)} · new` : "not found in index";
+    return "";
   }
   const repoName = path.basename(meta.resumeCwd ?? meta.startCwd);
   return [repoName, meta.gitBranch, otherReposLabel(meta)]
@@ -289,10 +297,12 @@ function sessionDescription(pinned: PinnedSession): string {
     .join(" · ");
 }
 
-// The Session sidebar holds the details; the hover only names the session and its state.
+// The Session sidebar holds the details; the hover names the session, its state, and where it runs.
 function sessionTooltip(pinned: PinnedSession, stateLabel: string, status: MarkedStatus | undefined): vscode.MarkdownString {
   const statusSuffix = status === undefined ? "" : ` · $(${status.icon}) ${escapeMarkdown(status.name)}`;
-  const tooltip = new vscode.MarkdownString(`**${escapeMarkdown(pinnedSessionTitle(pinned))}** · ${stateLabel}${statusSuffix}`);
+  const place = sessionPlace(pinned);
+  const placeLine = place === "" ? "" : `\n\n${escapeMarkdown(place)}`;
+  const tooltip = new vscode.MarkdownString(`**${escapeMarkdown(pinnedSessionTitle(pinned))}** · ${stateLabel}${statusSuffix}${placeLine}`);
   tooltip.supportThemeIcons = true;
   return tooltip;
 }

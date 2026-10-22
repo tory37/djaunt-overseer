@@ -435,17 +435,17 @@
         {
           "command": "overseer.newGroup",
           "when": "view == overseer.sessions",
-          "group": "navigation@2"
+          "group": "2_manage@1"
         },
         {
           "command": "overseer.refreshIndex",
           "when": "view == overseer.sessions",
-          "group": "navigation@9"
+          "group": "2_manage@3"
         },
         {
           "command": "overseer.switchWorkspace",
           "when": "view =~ /^overseer\\.(sessions|terminals)$/",
-          "group": "navigation@8"
+          "group": "2_manage@2"
         },
         {
           "command": "overseer.openSettings",
