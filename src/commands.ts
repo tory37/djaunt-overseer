@@ -217,6 +217,10 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     if (!newName || newName === currentTitle) {
       return;
     }
+    await applyName(pinned, newName);
+  };
+
+  const applyName = async (pinned: PinnedSession, newName: string): Promise<void> => {
     await registry.setLabel(pinned.sessionId, newName);
     const terminal = findSessionTerminal(pinned.sessionId);
     if (terminal === undefined) {
@@ -443,6 +447,15 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       const pinned = targetSessions(clicked)[0];
       if (pinned) {
         await renameSession(pinned);
+      }
+    }),
+    // /clear forks a new session. The row keeps the old name unless the user types another one.
+    vscode.commands.registerCommand("overseer.nameClearedSession", async (sessionId: string, previousTitle: string) => {
+      const enteredName = (await vscode.window.showInputBox({ prompt: "Change session name?", value: previousTitle }))?.trim();
+      await registry.setLabel(sessionId, previousTitle);
+      const pinned = findPinnedSession(sessionId);
+      if (pinned && enteredName && enteredName !== previousTitle) {
+        await applyName(pinned, enteredName);
       }
     }),
     vscode.commands.registerCommand("overseer.renameTerminal", async (clickedNode?: TreeNode) => {

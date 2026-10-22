@@ -205,6 +205,11 @@
         "category": "Overseer"
       },
       {
+        "command": "overseer.nameClearedSession",
+        "title": "Name Cleared Session",
+        "category": "Overseer"
+      },
+      {
         "command": "overseer.compactSession",
         "title": "Compact",
         "category": "Overseer"
@@ -661,6 +666,10 @@
         },
         {
           "command": "overseer.clickSession",
+          "when": "false"
+        },
+        {
+          "command": "overseer.nameClearedSession",
           "when": "false"
         },
         {

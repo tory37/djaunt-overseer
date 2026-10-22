@@ -132,7 +132,12 @@ export function activate(context: vscode.ExtensionContext): void {
       log.appendLine(`Session ${fromSessionId} became ${toSessionId} in the same terminal; moving its row`);
       await registry.copyTicketMarks(fromSessionId, toSessionId);
       await declarationMonitor.copySession(fromSessionId, toSessionId);
+      const previousTitle = sessionTitle(fromSessionId, registry, findIndexedSession);
+      const isNewSession = !registry.isPinned(toSessionId) && findIndexedSession(toSessionId) === undefined;
       await registry.moveSession(fromSessionId, toSessionId);
+      if (isNewSession) {
+        void vscode.commands.executeCommand("overseer.nameClearedSession", toSessionId, previousTitle);
+      }
     }
   };
   registry.onDidChange(refreshTree);
