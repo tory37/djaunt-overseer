@@ -19,6 +19,7 @@ import { acceptedOrder, linkStatusColor, ResourceRow, resourceRow } from "./reso
 import { readLinkSettings, SessionLinkService } from "./sessionLinks";
 import { SessionFocusTracker } from "./sessionFocus";
 import { SessionPopulator } from "./sessionPopulator";
+import { linkRowTitle, metaLine, metaTitle, shortLinkStatus, stateSentence } from "./sessionSidebarText";
 import { SessionPreview } from "./sessionPreview";
 import { previewRunState, SidebarRunKind, sidebarRunKind } from "./sessionPreviewModel";
 import { statusColorId } from "./sessionStatuses";
@@ -49,6 +50,7 @@ export interface SessionPanelDependencies {
 }
 
 interface SessionDetails {
+  sessionId: string;
   title: string;
   runKind: SidebarRunKind;
   stateLabel: string;
@@ -57,6 +59,9 @@ interface SessionDetails {
   cwd: string | undefined;
   branch: string | undefined;
   otherRepos: string[];
+  metaLine: string;
+  metaTitle: string;
+  stateSentence: string;
   status: { name: string; icon: string; color: string; reason: string | undefined } | undefined;
   summary: { text: string; caption: string; isStale: boolean } | undefined;
   isSummarizing: boolean;
@@ -65,12 +70,17 @@ interface SessionDetails {
   isPopulating: boolean;
 }
 
+interface PanelRow extends ResourceRow {
+  shortStatus: string | undefined;
+  hoverTitle: string;
+}
+
 type LinkFilter = "showIrrelevant" | "showRemoved";
 
 interface PanelState {
   session: SessionDetails | undefined;
-  workingOn: ResourceRow[];
-  alsoSeen: ResourceRow[];
+  workingOn: PanelRow[];
+  alsoSeen: PanelRow[];
   filters: Record<LinkFilter, boolean>;
   isJiraEnabled: boolean;
   isFinding: boolean;
@@ -198,15 +208,24 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
     const status = sessionStatusFor(registry, sessionId);
     const summary = meta && pickHoverSummary(meta.recap, summaryService.summaryFor(sessionId), meta.sizeBytes);
     const untracked = untrackedKinds(declarationMonitor.sessionWork(sessionId), declarationMonitor.declaredTickets(sessionId).length);
+    const lastActive = meta === undefined ? undefined : formatAge(meta.lastActivityMs);
+    const cwd = meta === undefined ? undefined : tildePath(meta.resumeCwd ?? meta.startCwd);
+    const branch = meta?.gitBranch || undefined;
+    const otherRepos = (meta?.otherReposTouched ?? []).map((repoRoot) => path.basename(repoRoot));
+    const isBackgroundAgent = !isLive && liveSession?.kind === "background" && liveSession.agentId !== undefined;
     return {
+      sessionId,
       title: sessionTitle(sessionId),
       runKind,
       stateLabel: isLive ? (runKind === "busy" ? "Working" : "Idle") : stateLabel,
       resumeLabel,
-      lastActive: meta === undefined ? undefined : formatAge(meta.lastActivityMs),
-      cwd: meta === undefined ? undefined : tildePath(meta.resumeCwd ?? meta.startCwd),
-      branch: meta?.gitBranch || undefined,
-      otherRepos: (meta?.otherReposTouched ?? []).map((repoRoot) => path.basename(repoRoot)),
+      lastActive,
+      cwd,
+      branch,
+      otherRepos,
+      metaLine: metaLine(cwd, branch, otherRepos),
+      metaTitle: metaTitle(cwd, branch),
+      stateSentence: stateSentence({ runKind, lastActive, isBackgroundAgent }),
       status:
         status === undefined
           ? undefined
@@ -222,10 +241,11 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
     };
   }
 
-  private rowFor({ link, depth }: OrderedResource): ResourceRow {
+  private rowFor({ link, depth }: OrderedResource): PanelRow {
     const { linkStatusService, statusConfig } = this.dependencies;
     const status = linkStatusService.statusFor(link);
-    return resourceRow(link, status, linkStatusColor(statusConfig, link, status), readLinkSettings().jiraBaseUrl, depth);
+    const row = resourceRow(link, status, linkStatusColor(statusConfig, link, status), readLinkSettings().jiraBaseUrl, depth);
+    return { ...row, shortStatus: shortLinkStatus(row.statusText), hoverTitle: linkRowTitle(row) };
   }
 
   private urlFor(key: string): string | undefined {
@@ -349,7 +369,12 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
 <title>Session</title>
 <link rel="stylesheet" href="${codiconStylesheet}">
 <style nonce="${nonce}">
-  :root { color-scheme: light dark; }
+  :root {
+    color-scheme: light dark;
+    --hairline: var(--vscode-sideBarSectionHeader-border, var(--vscode-widget-border, transparent));
+    --outline: var(--vscode-button-border, var(--vscode-contrastBorder, var(--vscode-widget-border, var(--vscode-descriptionForeground))));
+  }
+  html, body, #root { height: 100%; }
   body {
     margin: 0;
     padding: 0;
@@ -358,162 +383,84 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     color: var(--vscode-foreground);
     background: var(--vscode-sideBar-background);
   }
+  #root { display: flex; flex-direction: column; }
   button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
   :focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
-  .header { padding: 12px 12px 8px; }
+  .scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 12px; }
+  .scroll.centered { display: flex; align-items: center; justify-content: center; padding-bottom: 0; }
+  .mono { font-family: var(--vscode-editor-font-family); }
+  .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .header { padding: 14px 16px 0; }
   .title-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  h1 { flex: 1; margin: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .title-tools { visibility: hidden; margin: -4px 0; }
-  .header:hover .title-tools, .header:focus-within .title-tools { visibility: visible; }
+  .title-line > .codicon { flex-shrink: 0; font-size: 14px; }
+  h1 { flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 600; }
+  .status-text { flex-shrink: 0; font-size: 11px; }
+  .meta-line { margin: 4px 0 0 22px; font-size: 11px; color: var(--vscode-descriptionForeground); }
   .busy { color: var(--vscode-charts-blue); }
   .idle { color: var(--vscode-charts-green); }
-  .paused { color: var(--vscode-descriptionForeground); }
+  .paused { color: var(--vscode-icon-foreground); }
   .elsewhere { color: var(--vscode-charts-orange); }
-  .state-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 4px 0 0; font-size: 12px; color: var(--vscode-descriptionForeground); }
-  .state-line .elsewhere { color: var(--vscode-charts-orange); }
-  .place { display: flex; align-items: center; gap: 4px; margin: 4px 0 0; font-size: 12px; color: var(--vscode-descriptionForeground); min-width: 0; }
-  .places { margin-top: 8px; }
-  .places .place:first-child { margin-top: 0; }
-  .place .codicon { font-size: 12px; flex-shrink: 0; }
-  .place span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .mono { font-family: var(--vscode-editor-font-family); }
-  .status-tag { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; height: 16px; padding: 0 4px; border: 1px solid currentColor; border-radius: 2px; font-size: 11px; line-height: 1; }
-  .status-tag .codicon { font-size: 11px; }
-  .status-tag span:last-child { color: var(--vscode-foreground); }
-  .recap { padding: 0 12px 12px; }
-  .caption { margin: 0; font-size: 11px; font-style: italic; color: var(--vscode-descriptionForeground); }
-  .recap-text { display: block; width: 100%; margin-top: 4px; text-align: left; font-size: 13px; line-height: 20px; }
-  .recap-text.clamped { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .next { margin: 16px 16px 0; }
+  .state-sentence { margin: 0 0 6px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+  .state-sentence.elsewhere { color: var(--vscode-charts-orange); }
+  .recap-text { display: block; width: 100%; text-align: left; font-size: 14px; line-height: 22px; text-wrap: pretty; }
+  .recap-text.clamped { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .caption { margin: 6px 0 0; font-size: 11px; color: var(--vscode-disabledForeground); }
   .muted { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--vscode-descriptionForeground); }
-  .link-button { color: var(--vscode-textLink-foreground); }
-  .link-button:hover { text-decoration: underline; }
-  .main-actions { display: flex; gap: 8px; padding: 0 12px 12px; }
-  .button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 28px; padding: 0 12px; border-radius: 2px; font-size: 13px; transition: background-color 80ms linear; }
+  .main-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 2px; font-size: 13px; font-weight: 500; transition: background-color 80ms linear; }
+  .button .codicon { font-size: 14px; }
   .button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
   .button.primary:hover { background: var(--vscode-button-hoverBackground); }
-  .button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
-  .button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
-  .button.inline { flex: none; }
-  .button .codicon { font-size: 14px; }
-  .populate { margin: 0 12px 12px; padding: 8px; border: 1px solid var(--vscode-editorWidget-border, transparent); border-radius: 2px; background: var(--vscode-editorWidget-background); }
-  .populate p { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 12px; line-height: 16px; }
-  .populate p .codicon { font-size: 14px; color: var(--vscode-descriptionForeground); }
-  .populate .hint { margin-top: 4px; padding-left: 22px; color: var(--vscode-descriptionForeground); }
-  .populate .populate-tools { display: flex; margin-top: 8px; padding-left: 22px; }
-  .action-group { margin: 0; padding: 4px 8px; font-size: 11px; color: var(--vscode-descriptionForeground); }
-  .action-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 4px; padding: 0 4px; }
-  @media (min-width: 360px) { .action-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  .action-grid:last-child { padding-bottom: 8px; }
-  .action { display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 8px; border-radius: 2px; font-size: 13px; text-align: left; min-width: 0; transition: background-color 80ms linear; }
-  .action:hover { background: var(--vscode-list-hoverBackground); }
-  .action:disabled { opacity: 0.5; cursor: default; background: none; }
-  .action .codicon { font-size: 14px; flex-shrink: 0; }
-  .action span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .section-header {
-    display: flex;
-    align-items: center;
-    height: 24px;
-    padding: 0 8px 0 4px;
-    border-top: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
-  }
-  .section-toggle {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    height: 24px;
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    text-align: left;
-  }
-  .section-toggle .codicon { font-size: 14px; transition: transform 100ms linear; }
-  .section-toggle[aria-expanded="true"] .codicon { transform: rotate(90deg); }
-  .count {
-    margin-left: 4px;
-    padding: 0 6px;
-    border-radius: 8px;
-    font-size: 10px;
-    font-weight: 400;
-    background: var(--vscode-badge-background);
-    color: var(--vscode-badge-foreground);
-  }
-  .section-tools { display: flex; visibility: hidden; }
-  .section-header:hover .section-tools, .section-header:focus-within .section-tools { visibility: visible; }
-  .list { list-style: none; margin: 0; padding: 0; }
-  .ticket {
-    position: relative;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
-    transition: background-color 80ms linear;
-  }
-  .ticket:last-child { border-bottom: none; }
-  .ticket:hover, .seen:hover { background: var(--vscode-list-hoverBackground); }
-  .key-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .key {
-    font-family: var(--vscode-editor-font-family);
-    font-size: 12px;
-    color: var(--vscode-textLink-foreground);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .key.plain { color: var(--vscode-foreground); }
-  a.key { text-decoration: none; cursor: pointer; }
-  a.key:hover { text-decoration: underline; }
-  .pill {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    height: 16px;
-    padding: 0 4px;
-    border: 1px solid var(--vscode-descriptionForeground);
-    border-radius: 2px;
-    font-size: 11px;
-    line-height: 1;
-  }
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--vscode-descriptionForeground); }
-  .spacer { flex: 1; }
-  .glyph { flex-shrink: 0; width: 14px; height: 14px; }
-  .glyph:not([data-status]) { stroke: var(--vscode-descriptionForeground); }
-  .summary {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    margin: 4px 0 0;
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .summary.missing { color: var(--vscode-descriptionForeground); font-style: italic; }
-  .note { display: flex; align-items: flex-start; gap: 4px; margin: 4px 0 0; font-size: 12px; line-height: 16px; color: var(--vscode-descriptionForeground); }
-  .note span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .note .codicon { font-size: 12px; margin-top: 2px; }
-  .pin-mark { color: var(--vscode-descriptionForeground); }
-  .actions { display: none; margin: -4px 0; }
-  .ticket:hover .actions, .ticket:focus-within .actions, .seen:hover .actions, .seen:focus-within .actions, .actions:has(.menu) { display: flex; }
-  .ticket:hover .pin-mark, .ticket:focus-within .pin-mark { display: none; }
-  .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 4px; }
-  .icon-button:hover { background: var(--vscode-toolbar-hoverBackground); }
+  .button.outline { border: 1px solid var(--outline); color: var(--vscode-foreground); }
+  .button.outline:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
+  .button.square { flex: none; width: 32px; padding: 0; }
+  .button:disabled { opacity: 0.5; cursor: default; }
+  .work { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--hairline); }
+  .work-heading { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 16px; }
+  .work-heading h2 { flex: 1; margin: 0; font-size: 12px; font-weight: 600; }
+  .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 4px; color: var(--vscode-descriptionForeground); }
+  .icon-button:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); color: var(--vscode-foreground); }
   .icon-button:disabled { opacity: 0.4; cursor: default; }
   .icon-button .codicon { font-size: 14px; }
-  .seen { display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 8px 0 28px; transition: background-color 80ms linear; }
-  .seen .summary-inline { flex: 1; min-width: 0; font-size: 13px; color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .seen-list { padding-bottom: 8px; }
-  .ticket .card { min-width: 0; }
-  .ticket .card.nested { margin-left: 16px; padding-left: 8px; border-left: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-descriptionForeground)); }
-  .gripper { position: absolute; left: 0; visibility: hidden; cursor: grab; color: var(--vscode-descriptionForeground); }
-  .ticket .gripper { top: 10px; }
-  .seen .gripper { left: 8px; }
-  .ticket:hover .gripper, .seen:hover .gripper { visibility: visible; }
-  .ticket, .seen { position: relative; }
-  .dimmed { opacity: 0.5; }
-  .dimmed:hover, .dimmed:focus-within { opacity: 1; }
+  .list { list-style: none; margin: 0; padding: 0; }
+  .link-row { position: relative; display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 16px; transition: background-color 80ms linear; }
+  .link-row:hover { background: var(--vscode-list-hoverBackground); }
+  .glyph { flex-shrink: 0; width: 14px; height: 14px; }
+  .glyph:not([data-status]) { stroke: var(--vscode-descriptionForeground); }
+  .key { flex-shrink: 0; font-family: var(--vscode-editor-font-family); font-size: 12px; color: var(--vscode-foreground); white-space: nowrap; text-decoration: none; }
+  a.key { cursor: pointer; }
+  a.key:hover { text-decoration: underline; }
+  .label { flex: 1; min-width: 0; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .short-status { flex-shrink: 0; font-size: 11px; color: var(--vscode-descriptionForeground); }
+  .actions { display: none; flex-shrink: 0; margin: -4px -6px -4px 0; }
+  .link-row:hover .actions, .link-row:focus-within .actions, .actions:has(.menu) { display: flex; }
+  .link-row:hover .short-status, .link-row:focus-within .short-status, .link-row:has(.menu) .short-status { display: none; }
+  .gripper { position: absolute; left: 1px; visibility: hidden; cursor: grab; font-size: 14px; color: var(--vscode-descriptionForeground); }
+  .link-row:hover .gripper { visibility: visible; }
+  .seen { height: 26px; padding-left: 34px; opacity: 0.8; }
+  .seen .gripper { left: 16px; }
+  .seen:hover, .seen:focus-within { opacity: 1; }
+  .seen.dimmed { opacity: 0.5; }
+  .seen.dimmed:hover, .seen.dimmed:focus-within { opacity: 1; }
   .removed .key { text-decoration: line-through; }
   .tag { flex-shrink: 0; font-size: 11px; font-style: italic; color: var(--vscode-descriptionForeground); }
   .seen:hover .tag, .seen:focus-within .tag { display: none; }
+  .untracked { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 16px; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .untracked .codicon { flex-shrink: 0; font-size: 14px; }
+  .untracked .text { flex: 1; min-width: 0; }
+  .link-button { flex-shrink: 0; color: var(--vscode-textLink-foreground); }
+  .link-button:hover { text-decoration: underline; }
+  .empty-work { margin: 0 16px 4px; font-size: 12px; line-height: 18px; color: var(--vscode-descriptionForeground); }
+  .disclosure-row { display: flex; align-items: center; margin-top: 4px; padding-right: 10px; }
+  .disclosure { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 0 0 16px; font-size: 12px; text-align: left; color: var(--vscode-descriptionForeground); }
+  .disclosure:hover:not(:disabled) { color: var(--vscode-foreground); }
+  .disclosure:disabled { cursor: default; }
+  .disclosure .codicon { flex-shrink: 0; font-size: 12px; transition: transform 100ms linear; }
+  .disclosure[aria-expanded="true"] .codicon-chevron-right { transform: rotate(90deg); }
+  .disclosure-tools { display: flex; visibility: hidden; }
+  .disclosure-row:hover .disclosure-tools, .disclosure-row:focus-within .disclosure-tools, .disclosure-row.is-filtering .disclosure-tools { visibility: visible; }
+  .filter-note { margin: 0; padding: 0 16px 4px 34px; font-size: 11px; color: var(--vscode-descriptionForeground); }
   .dragging { opacity: 0.4; }
   .drop-before { box-shadow: inset 0 2px 0 var(--vscode-focusBorder); }
   .drop-after { box-shadow: inset 0 -2px 0 var(--vscode-focusBorder); }
@@ -534,14 +481,27 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .menu-item:hover, .menu-item:focus-visible { background: var(--vscode-menu-selectionBackground); color: var(--vscode-menu-selectionForeground); outline: none; }
   .menu-item .codicon { font-size: 14px; }
   .menu-separator { height: 1px; margin: 4px 0; background: var(--vscode-menu-separatorBackground, var(--vscode-menu-border)); }
-  .section-header.is-filtering .section-tools { visibility: visible; }
-  .filter-note { margin: 0; padding: 0 12px 4px; font-size: 11px; color: var(--vscode-descriptionForeground); }
-  .empty { padding: 24px 20px; font-size: 13px; line-height: 20px; color: var(--vscode-descriptionForeground); }
+  .toolbar {
+    flex-shrink: 0;
+    padding: 8px 8px 10px;
+    border-top: 1px solid var(--hairline);
+    background: var(--vscode-sideBarSectionHeader-background, var(--vscode-editorWidget-background));
+  }
+  .group-label { margin: 0; padding: 2px 8px 4px; font-family: var(--vscode-editor-font-family); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--vscode-descriptionForeground); }
+  .group-hint { margin-left: 6px; font-family: var(--vscode-font-family); font-size: 11px; letter-spacing: normal; text-transform: none; color: var(--vscode-disabledForeground); }
+  .tile-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; margin-bottom: 6px; }
+  .tile-grid:last-child { margin-bottom: 0; }
+  .tile { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; padding: 6px 0 5px; border-radius: 4px; color: var(--vscode-icon-foreground); transition: background-color 80ms linear, color 80ms linear; }
+  .tile:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); color: var(--vscode-textLink-activeForeground); }
+  .tile:disabled { opacity: 0.5; cursor: default; }
+  .tile .codicon { font-size: 16px; }
+  .tile span:last-child { max-width: 100%; padding: 0 2px; box-sizing: border-box; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .empty { padding: 24px 20px; font-size: 13px; line-height: 20px; text-align: center; color: var(--vscode-descriptionForeground); }
   .empty p { margin: 4px 0 0; }
   .empty .lead { margin-top: 8px; color: var(--vscode-foreground); }
   .empty .codicon { font-size: 16px; }
   @media (prefers-reduced-motion: reduce) {
-    .ticket, .seen, .action, .section-toggle .codicon { transition: none; }
+    .link-row, .button, .tile, .disclosure .codicon { transition: none; }
   }
 </style>
 </head>
@@ -549,23 +509,26 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
 <div id="root"></div>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
-  const savedViewState = { isWorkingOnExpanded: true, isAlsoSeenExpanded: false, isActionsExpanded: true, ...vscode.getState() };
+  const savedViewState = { isAlsoSeenExpanded: Boolean(vscode.getState()?.isAlsoSeenExpanded) };
   let isRecapExpanded = false;
+  let shownSessionId = undefined;
   const RUN_ICONS = { idle: "circle-filled", busy: "loading", paused: "debug-pause", elsewhere: "broadcast" };
+  const NESTED_ROW_INDENT_PX = 18;
+  const ROW_GUTTER_PX = 16;
   const CLAUDE_ACTIONS = [
-    ["compact", "fold", "Compact"],
-    ["clear", "clear-all", "Clear"],
-    ["model", "sparkle", "Model"],
-    ["cost", "graph", "Cost"],
-    ["command", "terminal", "Run command"],
+    ["compact", "fold", "Compact", "Compact"],
+    ["clear", "clear-all", "Clear", "Clear"],
+    ["model", "sparkle", "Model", "Model"],
+    ["cost", "graph", "Cost", "Cost"],
+    ["command", "terminal", "Run…", "Run command"],
   ];
   const SESSION_ACTIONS = [
-    ["summarize", "note", "Summarize"],
-    ["findLinks", "search", "Find links"],
-    ["openRepo", "source-control", "Open repo"],
-    ["status", "tag", "Set status"],
-    ["rename", "edit", "Rename"],
+    ["findLinks", "search", "Find links", "Find links"],
+    ["openRepo", "source-control", "Repo", "Open repo"],
+    ["status", "tag", "Status", "Set status"],
+    ["rename", "edit", "Rename", "Rename"],
   ];
+  const ACTIONS_WITHOUT_TRANSCRIPT = new Set(["rename", "status"]);
   let panelState = undefined;
   let openMenuId = undefined;
   let draggedRow = undefined;
@@ -586,6 +549,12 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     if (title) {
       icon.title = title;
     }
+    return icon;
+  }
+
+  function spinner() {
+    const icon = codicon("loading");
+    icon.classList.add("codicon-modifier-spin");
     return icon;
   }
 
@@ -619,32 +588,21 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     return svg;
   }
 
-  function statusPill(row) {
-    const pill = element("span", "pill");
-    const dot = element("span", "dot");
-    if (row.statusColor) {
-      pill.style.borderColor = row.statusColor;
-      dot.style.background = row.statusColor;
-    }
-    pill.append(dot, element("span", "", row.statusText));
-    return pill;
-  }
-
   function send(message) {
     vscode.postMessage(message);
   }
 
   const MISSING_LABELS = { ticket: "Summary loads from Jira", pr: "Title loads from GitHub", artifact: "" };
 
-  function keyElement(row, className) {
+  function keyElement(row) {
     if (row.url === undefined) {
-      const plainKey = element("span", className + " plain", row.displayId);
+      const plainKey = element("span", "key", row.displayId);
       if (row.kind === "ticket") {
         plainKey.title = "Set overseer.links.jira.baseUrl to open tickets";
       }
       return plainKey;
     }
-    const link = element("a", className, row.displayId);
+    const link = element("a", "key", row.displayId);
     link.href = "#";
     link.title = "Open " + row.displayId;
     link.addEventListener("click", (event) => {
@@ -768,42 +726,27 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   }
 
   function workingOnItem(row) {
-    const item = element("li", "ticket" + (row.mark === "removed" ? " removed" : ""));
-    const card = element("div", row.depth > 0 ? "card nested" : "card");
-    const keyLine = element("div", "key-line");
-    keyLine.append(glyphElement(row), keyElement(row, "key"));
-    if (row.statusText) {
-      keyLine.append(statusPill(row));
+    const item = element("li", "link-row" + (row.mark === "removed" ? " removed" : ""));
+    item.style.paddingLeft = ROW_GUTTER_PX + row.depth * NESTED_ROW_INDENT_PX + "px";
+    item.title = row.hoverTitle;
+    item.append(glyphElement(row), keyElement(row), element("span", "label ellipsis", row.label || MISSING_LABELS[row.kind]));
+    if (row.shortStatus) {
+      const shortStatus = element("span", "short-status", row.shortStatus);
+      if (row.statusColor) {
+        shortStatus.style.color = row.statusColor;
+      }
+      item.append(shortStatus);
     }
-    keyLine.append(element("span", "spacer"));
-    const isPinned = row.mark === "pinned";
-    if (isPinned) {
-      keyLine.append(codicon("pinned", "Pinned by you"));
-      keyLine.lastChild.classList.add("pin-mark");
-    }
-    keyLine.append(rowActions(row, "Pin"));
-    card.append(keyLine);
-
-    const missingLabel = MISSING_LABELS[row.kind];
-    if (row.label || missingLabel) {
-      card.append(element("p", row.label ? "summary" : "summary missing", row.label || missingLabel));
-    }
-    if (row.agentNote) {
-      const note = element("p", "note");
-      note.append(codicon("hubot", "Declared by the agent"), element("span", "", row.agentNote));
-      card.append(note);
-    } else if (isPinned) {
-      card.append(element("p", "note", "Pinned by you"));
-    }
-    item.append(card);
+    item.append(rowActions(row, "Pin"));
     makeDraggable(item, row, panelState.workingOn);
     return item;
   }
 
   function alsoSeenItem(row) {
-    const classNames = ["seen", row.isDimmed ? "dimmed" : "", row.mark === "removed" ? "removed" : ""].filter(Boolean).join(" ");
+    const classNames = ["link-row seen", row.isDimmed ? "dimmed" : "", row.mark === "removed" ? "removed" : ""].filter(Boolean).join(" ");
     const item = element("li", classNames);
-    item.append(glyphElement(row), keyElement(row, "key plain"), element("span", "summary-inline", row.label || ""));
+    item.title = row.hoverTitle;
+    item.append(glyphElement(row), keyElement(row), element("span", "label ellipsis", row.label || ""));
     if (row.mark === "removed" || row.role === "irrelevant") {
       item.append(element("span", "tag", row.mark === "removed" ? "removed" : "passing"));
     }
@@ -830,26 +773,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     return note;
   }
 
-  function sectionHeader(title, count, stateField, tools) {
-    const header = element("div", "section-header");
-    const toggle = element("button", "section-toggle");
-    toggle.type = "button";
-    toggle.setAttribute("aria-expanded", String(savedViewState[stateField]));
-    toggle.append(codicon("chevron-right"), document.createTextNode(title));
-    if (count !== undefined) {
-      toggle.append(element("span", "count", String(count)));
-    }
-    toggle.addEventListener("click", () => {
-      savedViewState[stateField] = !savedViewState[stateField];
-      vscode.setState(savedViewState);
-      render();
-    });
-    const toolbar = element("div", "section-tools");
-    toolbar.append(...tools);
-    header.append(toggle, toolbar);
-    return header;
-  }
-
   function textButton(className, iconName, label, onPress) {
     const button = element("button", className);
     button.type = "button";
@@ -865,13 +788,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     send({ type: "action", action });
   }
 
-  function placeLine(iconName, text, isMono, title) {
-    const line = element("p", "place");
-    line.title = title ?? text;
-    line.append(codicon(iconName), element("span", isMono ? "mono" : "", text));
-    return line;
-  }
-
   function sessionHeader(session) {
     const header = element("header", "header");
     const titleLine = element("div", "title-line");
@@ -880,72 +796,40 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     if (session.runKind === "busy") {
       runIcon.classList.add("codicon-modifier-spin");
     }
-    const title = element("h1", "", session.title);
+    const title = element("h1", "ellipsis", session.title);
     title.title = session.title;
-    const titleTools = element("div", "title-tools");
-    titleTools.append(iconButton("edit", "Rename", () => runAction("rename")));
-    titleLine.append(runIcon, title, titleTools);
-    header.append(titleLine);
-
-    const stateLine = element("p", "state-line");
-    const isLive = session.runKind === "idle" || session.runKind === "busy";
-    stateLine.append(element("span", session.runKind === "elsewhere" ? "elsewhere" : "", session.stateLabel));
-    if (isLive) {
-      stateLine.append(element("span", "", "·"), element("span", "", "active now"));
-    } else if (session.lastActive) {
-      stateLine.append(element("span", "", "·"), element("span", "", "last active " + session.lastActive));
-    }
-    header.append(stateLine);
-
-    const places = element("div", "places");
-    if (session.cwd) {
-      places.append(placeLine("folder", session.cwd, true));
-    }
-    if (session.branch) {
-      places.append(placeLine("git-branch", session.branch, true));
-    }
-    if (session.otherRepos.length > 0) {
-      places.append(placeLine("repo", "also " + session.otherRepos.join(", "), false));
-    }
-    if (places.childElementCount > 0) {
-      header.append(places);
-    }
+    titleLine.append(runIcon, title);
     if (session.status) {
-      const tag = element("span", "status-tag");
-      tag.style.color = "var(" + session.status.color + ")";
-      tag.title = session.status.reason ? "Why: " + session.status.reason : session.status.name;
-      tag.append(codicon(session.status.icon), element("span", "", session.status.name));
-      header.append(tag);
+      const statusText = element("span", "status-text mono", session.status.name);
+      statusText.style.color = "var(" + session.status.color + ")";
+      statusText.title = session.status.reason ? "Why: " + session.status.reason : session.status.name;
+      titleLine.append(statusText);
+    }
+    header.append(titleLine);
+    if (session.metaLine) {
+      const meta = element("p", "meta-line mono ellipsis", session.metaLine);
+      meta.title = session.metaTitle;
+      header.append(meta);
     }
     return header;
   }
 
-  function recapBlock(session) {
-    const block = element("div", "recap");
+  function recapNodes(session) {
     if (session.isSummarizing) {
       const line = element("p", "muted");
-      line.append(codicon("loading"), document.createTextNode("Summarizing with Haiku…"));
-      line.firstChild.classList.add("codicon-modifier-spin");
-      block.append(line);
-      return block;
+      line.append(spinner(), document.createTextNode("Summarizing with Haiku…"));
+      return [line];
     }
     if (session.summary === undefined) {
-      if (!session.hasTranscript) {
-        return undefined;
-      }
-      const line = element("p", "muted", "No summary yet.");
-      line.append(textButton("link-button", undefined, "Summarize with Haiku", () => runAction("summarize")));
-      block.append(line);
-      return block;
+      return [element("p", "muted", "No summary yet.")];
     }
-    const caption = session.summary.caption + (session.summary.isStale ? " · the session moved on" : "");
     const text = textButton(isRecapExpanded ? "recap-text" : "recap-text clamped", undefined, session.summary.text, () => {
       isRecapExpanded = !isRecapExpanded;
       render();
     });
     text.title = isRecapExpanded ? "Show less" : "Show all";
-    block.append(element("p", "caption", caption), text);
-    return block;
+    const caption = session.summary.caption + (session.summary.isStale ? " · the session moved on" : "");
+    return [text, element("p", "caption", caption)];
   }
 
   function mainActions(session) {
@@ -954,59 +838,139 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       const iconName = session.runKind === "elsewhere" ? "repo-forked" : "play";
       row.append(textButton("button primary", iconName, session.resumeLabel, () => runAction("resume")));
     } else {
-      row.append(textButton("button secondary", "debug-pause", "Suspend", () => runAction("suspend")));
+      row.append(textButton("button outline", "debug-pause", "Suspend", () => runAction("suspend")));
     }
+    const summarize = element("button", "button outline square");
+    summarize.type = "button";
+    summarize.title = session.hasTranscript ? "Summarize with Haiku" : "No transcript yet";
+    summarize.setAttribute("aria-label", "Summarize with Haiku");
+    summarize.disabled = session.isSummarizing || !session.hasTranscript;
+    summarize.append(codicon("sparkle"));
+    summarize.addEventListener("click", () => runAction("summarize"));
+    row.append(summarize);
     return row;
   }
 
-  function populateBanner(session) {
+  function nextStep(session) {
+    const block = element("section", "next");
+    const sentence = element("p", session.runKind === "elsewhere" ? "state-sentence elsewhere" : "state-sentence", session.stateSentence);
+    if (session.runKind === "elsewhere") {
+      sentence.title = session.stateLabel;
+    }
+    block.append(sentence, ...recapNodes(session), mainActions(session));
+    return block;
+  }
+
+  function untrackedLine(session) {
     if (session.untracked.length === 0 && !session.isPopulating) {
       return undefined;
     }
-    const banner = element("div", "populate");
-    const lead = element("p");
-    lead.append(codicon("hubot"), element("span", "", session.isPopulating ? "Haiku is reading this session…" : "Not tracked yet: " + session.untracked.join(", ") + "."));
-    banner.append(lead);
-    const tools = element("div", "populate-tools");
+    const line = element("div", "untracked");
     if (session.isPopulating) {
-      const running = element("p", "muted");
-      running.append(codicon("loading"), document.createTextNode("Populating"));
-      running.firstChild.classList.add("codicon-modifier-spin");
-      tools.append(running);
-    } else {
-      banner.append(element("p", "hint", "Haiku can read the session and fill them in. Costs cents."));
-      tools.append(textButton("button secondary inline", "sparkle", "Populate all", () => send({ type: "populate" })));
+      line.append(spinner(), element("span", "text ellipsis", "Haiku is reading this session…"));
+      return line;
     }
-    banner.append(tools);
-    return banner;
+    const text = session.untracked.join(", ") + " not tracked";
+    const label = element("span", "text ellipsis", text);
+    label.title = text;
+    line.append(codicon("hubot"), label, textButton("link-button", undefined, "Fill in", () => send({ type: "populate" })));
+    return line;
   }
 
-  function actionTile([action, iconName, label], disabledReason) {
-    const tile = textButton("action", iconName, label, () => runAction(action));
+  function alsoSeenDisclosure() {
+    const { showIrrelevant, showRemoved } = panelState.filters;
+    const count = panelState.alsoSeen.length;
+    if (count === 0 && !panelState.canFind && !panelState.isFinding) {
+      return [];
+    }
+    const row = element("div", "disclosure-row");
+    row.classList.toggle("is-filtering", showIrrelevant || showRemoved || openMenuId === "filter");
+    let toggle;
+    if (panelState.isFinding && count === 0) {
+      toggle = element("button", "disclosure");
+      toggle.disabled = true;
+      toggle.append(spinner(), element("span", "ellipsis", "Scanning the transcript…"));
+    } else if (count === 0) {
+      toggle = textButton("disclosure", "search", "Find links in the transcript", () => send({ type: "findAgain" }));
+    } else {
+      toggle = textButton("disclosure", "chevron-right", count + " more in the transcript", () => {
+        savedViewState.isAlsoSeenExpanded = !savedViewState.isAlsoSeenExpanded;
+        vscode.setState(savedViewState);
+        render();
+      });
+      toggle.setAttribute("aria-expanded", String(savedViewState.isAlsoSeenExpanded));
+    }
+    toggle.type = "button";
+    const findLabel = panelState.isFinding ? "Scanning the Transcript…" : "Scan the Transcript Again";
+    const tools = element("div", "disclosure-tools");
+    tools.append(filterButton(), iconButton("refresh", findLabel, () => send({ type: "findAgain" }), panelState.isFinding || !panelState.canFind));
+    row.append(toggle, tools);
+
+    const nodes = [row];
+    const isOpen = savedViewState.isAlsoSeenExpanded && count > 0;
+    if (isOpen && (showIrrelevant || showRemoved)) {
+      const shownExtras = [showIrrelevant && "passing mentions", showRemoved && "removed"].filter(Boolean).join(" and ");
+      nodes.push(element("p", "filter-note", "Showing " + shownExtras));
+    }
+    if (isOpen) {
+      const list = element("ul", "list");
+      list.append(...panelState.alsoSeen.map(alsoSeenItem));
+      nodes.push(list);
+    }
+    return nodes;
+  }
+
+  function workSection(session) {
+    const work = element("section", "work");
+    const heading = element("div", "work-heading");
+    heading.append(
+      element("h2", "", "Working on"),
+      iconButton("refresh", "Refresh Statuses and Declarations", () => send({ type: "refreshWorkingOn" })),
+      iconButton("add", "Pin a Ticket by Key", () => send({ type: "pinByKey" })),
+    );
+    work.append(heading);
+    if (panelState.workingOn.length > 0) {
+      const list = element("ul", "list");
+      list.append(...panelState.workingOn.map(workingOnItem));
+      work.append(list);
+    } else {
+      work.append(element("p", "empty-work", "Nothing yet. The agent adds tickets and PRs as it works."));
+    }
+    work.append(...[untrackedLine(session), ...alsoSeenDisclosure()].filter(Boolean));
+    return work;
+  }
+
+  function actionTile([action, iconName, shortLabel, fullLabel], disabledReason) {
+    const tile = textButton("tile", iconName, shortLabel, () => runAction(action));
     tile.disabled = disabledReason !== undefined;
-    tile.title = disabledReason ?? label;
+    tile.title = disabledReason ?? fullLabel;
+    tile.setAttribute("aria-label", fullLabel);
     return tile;
   }
 
-  function actionsSection(session) {
-    const nodes = [sectionHeader("Actions", undefined, "isActionsExpanded", [])];
-    if (!savedViewState.isActionsExpanded) {
-      return nodes;
-    }
+  function tileGrid(actions, disabledReasonFor) {
+    const grid = element("div", "tile-grid");
+    grid.append(...actions.map((action) => actionTile(action, disabledReasonFor(action[0]))));
+    return grid;
+  }
+
+  function toolbar(session) {
+    const footer = element("footer", "toolbar");
     const isLive = session.runKind === "idle" || session.runKind === "busy";
     if (isLive) {
       const isBusy = session.runKind === "busy";
       const busyReason = isBusy ? "Wait until Claude is idle. Typed input is lost while it works." : undefined;
-      const claudeGrid = element("div", "action-grid");
-      claudeGrid.append(...CLAUDE_ACTIONS.map((action) => actionTile(action, busyReason)));
-      nodes.push(element("p", "action-group", isBusy ? "Claude · wait until idle" : "Claude"), claudeGrid, element("p", "action-group", "Session"));
+      const claudeLabel = element("p", "group-label", "Claude");
+      if (isBusy) {
+        claudeLabel.append(element("span", "group-hint", "waits until idle"));
+      }
+      footer.append(claudeLabel, tileGrid(CLAUDE_ACTIONS, () => busyReason));
     }
-    const sessionGrid = element("div", "action-grid");
-    sessionGrid.append(
-      ...SESSION_ACTIONS.map((action) => actionTile(action, session.hasTranscript || action[0] === "rename" || action[0] === "status" ? undefined : "No transcript yet")),
+    footer.append(
+      element("p", "group-label", "Session"),
+      tileGrid(SESSION_ACTIONS, (action) => (session.hasTranscript || ACTIONS_WITHOUT_TRANSCRIPT.has(action) ? undefined : "No transcript yet")),
     );
-    nodes.push(sessionGrid);
-    return nodes;
+    return footer;
   }
 
   function render() {
@@ -1015,50 +979,20 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     if (panelState === undefined) {
       return;
     }
-    if (panelState.session === undefined) {
-      root.append(emptyNote("terminal", "No session in focus", "Click a Claude terminal tab, or a paused session in the tree."));
+    const scroll = element("div", "scroll");
+    root.append(scroll);
+    const session = panelState.session;
+    if (session === undefined) {
+      scroll.classList.add("centered");
+      scroll.append(emptyNote("terminal", "No session in focus", "Click a Claude terminal tab, or a paused session in the tree."));
       return;
     }
-    const session = panelState.session;
-    root.append(
-      ...[sessionHeader(session), recapBlock(session), mainActions(session), populateBanner(session), ...actionsSection(session)].filter(Boolean),
-    );
-
-    root.append(
-      sectionHeader("Working on", panelState.workingOn.length, "isWorkingOnExpanded", [
-        iconButton("refresh", "Refresh Statuses and Declarations", () => send({ type: "refreshWorkingOn" })),
-        iconButton("add", "Pin a Ticket by Key", () => send({ type: "pinByKey" })),
-      ]),
-    );
-    if (savedViewState.isWorkingOnExpanded) {
-      if (panelState.workingOn.length > 0) {
-        const list = element("ul", "list");
-        list.append(...panelState.workingOn.map(workingOnItem));
-        root.append(list);
-      } else {
-        root.append(
-          emptyNote("hubot", "Nothing tracked yet", "The agent declares tickets and PRs as it works. You can also pin one from Also seen."),
-        );
-      }
+    if (session.sessionId !== shownSessionId) {
+      shownSessionId = session.sessionId;
+      isRecapExpanded = false;
     }
-
-    const findLabel = panelState.isFinding ? "Scanning the Transcript…" : "Scan the Transcript Again";
-    const { showIrrelevant, showRemoved } = panelState.filters;
-    const alsoSeenHeader = sectionHeader("Also seen", panelState.alsoSeen.length, "isAlsoSeenExpanded", [
-      filterButton(),
-      iconButton("refresh", findLabel, () => send({ type: "findAgain" }), panelState.isFinding || !panelState.canFind),
-    ]);
-    alsoSeenHeader.classList.toggle("is-filtering", showIrrelevant || showRemoved || openMenuId === "filter");
-    root.append(alsoSeenHeader);
-    if (savedViewState.isAlsoSeenExpanded && (showIrrelevant || showRemoved)) {
-      const shownExtras = [showIrrelevant && "passing mentions", showRemoved && "removed"].filter(Boolean).join(" and ");
-      root.append(element("p", "filter-note", "Showing " + shownExtras));
-    }
-    if (savedViewState.isAlsoSeenExpanded && panelState.alsoSeen.length > 0) {
-      const list = element("ul", "list seen-list");
-      list.append(...panelState.alsoSeen.map(alsoSeenItem));
-      root.append(list);
-    }
+    scroll.append(sessionHeader(session), nextStep(session), workSection(session));
+    root.append(toolbar(session));
   }
 
   document.addEventListener("click", () => {
