@@ -107,7 +107,7 @@
         );
 
         const INITIAL_SESSIONS = [
-            { id: '5f1c9a2e', title: 'PROJ-2567 login timeout', group: 'PROJ-2567', repo: 'web-app', branch: 'fix/proj-2567-login-timeout', extraRepos: ['api'], state: 'running', linkCount: 3 },
+            { id: '5f1c9a2e', title: 'PROJ-2567 login timeout', group: 'PROJ-2567', repo: 'web-app', branch: 'fix/proj-2567-login-timeout', extraRepos: ['api'], state: 'running' },
             { id: 'a83d0b17', title: 'PROJ-2567 review notes', group: 'PROJ-2567', repo: 'web-app', branch: 'main', extraRepos: [], state: 'compacting' },
             { id: 'c27e4f90', title: 'OPS-4410 billing export', group: 'OPS-4410', repo: 'api', branch: 'ops-4410-export', extraRepos: ['infra', 'web-app'], state: 'working' },
             { id: '0d9b6c33', title: 'Rate limiter refactor', group: 'Waiting on review', repo: 'api', branch: 'feat/rate-limit', extraRepos: [], state: 'suspended' },
@@ -177,16 +177,6 @@
             if (extraCount === 0) return '';
             return extraCount === 1 ? ' · +1 repo' : ` · +${extraCount} repos`;
         };
-
-        const AssociatedLinksRow = ({ linkCount }) => (
-            <div className="flex items-center gap-2 h-6 pl-14 pr-2 hover:bg-surface cursor-default">
-                <Icon name="Link2" className="w-4 h-4 text-muted" />
-                <span className="flex-1 min-w-0 truncate text-xs">
-                    <span className="text-bone">Associated Links</span>
-                    <span className="text-muted ml-2">{linkCount === 1 ? '1 link' : `${linkCount} links`}</span>
-                </span>
-            </div>
-        );
 
         const resumeTranscript = (session) => [
             { kind: 'prompt', text: `~/src/${session.repo} $ claude --resume ${session.id}-…` },
@@ -339,16 +329,14 @@
                                                 </span>
                                             </div>
                                             {groupSessions.map((session) => (
-                                                <div key={session.id}>
-                                                    <SessionRow
-                                                        session={session}
-                                                        isSelected={session.id === selectedId}
-                                                        onSelect={setSelectedId}
-                                                        onToggle={toggleSession}
-                                                        onRename={renameSession}
-                                                    />
-                                                    {session.linkCount > 0 && <AssociatedLinksRow linkCount={session.linkCount} />}
-                                                </div>
+                                                <SessionRow
+                                                    key={session.id}
+                                                    session={session}
+                                                    isSelected={session.id === selectedId}
+                                                    onSelect={setSelectedId}
+                                                    onToggle={toggleSession}
+                                                    onRename={renameSession}
+                                                />
                                             ))}
                                         </div>
                                     );
@@ -554,7 +542,7 @@
 
         const OrganizeVisual = () => (
             <div className="font-mono text-xs border border-line bg-surface py-1">
-                <div className="flex items-center gap-2 h-6 pl-3 pr-2 bg-raised text-bone">
+                <div className="flex items-center gap-2 h-6 pl-3 pr-2 text-bone">
                     <Icon name="Folder" className="w-4 h-4 text-muted" />
                     <span className="truncate">Waiting on review</span>
                     <span className="ml-auto flex items-center gap-1 text-accent">
@@ -566,68 +554,132 @@
                     <Icon name="Pause" className="w-4 h-4 text-muted" />
                     <span className="truncate">Rate limiter refactor</span>
                 </div>
-                <div className="mx-3 my-1 border border-line bg-raised shadow-float">
-                    <div className="flex items-center gap-2 h-6 px-2 text-muted"><Icon name="Minimize2" className="w-4 h-4" />Compact</div>
-                    <div className="flex items-center gap-2 h-6 px-2 text-muted"><Icon name="Cpu" className="w-4 h-4" />Switch Model…</div>
-                    <div className="flex items-center gap-2 h-6 px-2 text-muted"><Icon name="Trash2" className="w-4 h-4" />Kill and Remove</div>
+                <div className="flex items-center gap-2 h-6 pl-8 pr-2 bg-raised border border-accent-deep text-bone">
+                    <Icon name="Pause" className="w-4 h-4 text-muted" />
+                    <span className="truncate">Billing webhook retries</span>
+                    <Icon name="GripVertical" className="ml-auto w-4 h-4 text-accent" />
                 </div>
+                <div className="mx-8 border-t border-accent" />
+                <div className="flex items-center gap-2 h-6 pl-8 text-bone">
+                    <Icon name="Pause" className="w-4 h-4 text-muted" />
+                    <span className="truncate">Cache key cleanup</span>
+                </div>
+            </div>
+        );
+
+        const SIDEBAR_ACTION_GROUPS = [
+            { label: 'Claude', actions: [['Minimize2', 'Compact'], ['Eraser', 'Clear'], ['Cpu', 'Model'], ['Coins', 'Cost'], ['SquareTerminal', 'Run command']] },
+            { label: 'Session', actions: [['Sparkles', 'Summarize'], ['Search', 'Find links'], ['FolderGit2', 'Open repo'], ['Tag', 'Set status'], ['Pencil', 'Rename']] },
+        ];
+
+        const SidebarActions = ({ highlighted }) => (
+            <div className="px-3 py-2 space-y-2">
+                {SIDEBAR_ACTION_GROUPS.map((group) => (
+                    <div key={group.label}>
+                        <div className="uppercase tracking-label text-muted mb-1">{group.label}</div>
+                        <div className="flex flex-wrap gap-1">
+                            {group.actions.map(([iconName, label]) => (
+                                <span key={label} className={`flex items-center gap-1 px-2 h-6 border ${label === highlighted ? 'border-accent text-accent' : 'border-line text-bone'}`}>
+                                    <Icon name={iconName} className="w-3 h-3" />{label}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        );
+
+        const SessionSidebarVisual = () => (
+            <div className="font-mono text-xs border border-line bg-surface">
+                <div className="flex items-center gap-2 h-8 px-3 border-b border-line">
+                    <Icon name="SquareTerminal" className="w-4 h-4 text-success" />
+                    <span className="text-bone truncate">PROJ-2567 login timeout</span>
+                    <span className="ml-auto text-muted">idle</span>
+                </div>
+                <div className="px-3 py-2 space-y-2 border-b border-line">
+                    <p className="text-muted truncate">~/src/web-app · fix/proj-2567-login-timeout</p>
+                    <p className="text-bone leading-relaxed">Extended the refresh window in src/auth/session.ts. Tests pass. Next: open the PR.</p>
+                    <div className="flex flex-wrap gap-2">
+                        <span className="flex items-center gap-1 px-2 h-6 border border-line text-bone"><Icon name="Pause" className="w-3 h-3" />Suspend</span>
+                        <span className="flex items-center gap-1 px-2 h-6 text-accent"><Icon name="Sparkles" className="w-3 h-3" />Summarize with Haiku</span>
+                    </div>
+                </div>
+                <SidebarActions />
             </div>
         );
 
         const LinksVisual = () => (
-            <div className="font-mono text-xs border border-line bg-surface py-1">
-                <div className="flex items-center gap-2 h-6 pl-3 pr-2 bg-raised text-bone">
-                    <Icon name="SquareTerminal" className="w-4 h-4 text-success" />
-                    <span className="truncate">PROJ-2567 login timeout</span>
-                    <span className="text-muted truncate">web-app · fix/proj-2567</span>
+            <div className="font-mono text-xs border border-line bg-surface">
+                <SidebarActions highlighted="Find links" />
+                <div className="flex items-center gap-1 h-8 px-3 border-t border-line text-muted">
+                    <Icon name="ChevronDown" className="w-4 h-4" />
+                    <span className="uppercase tracking-label">Also seen</span>
+                    <span className="ml-1">3</span>
                 </div>
-                <div className="mx-3 my-1 border border-line bg-raised shadow-float">
-                    <div className="flex items-center gap-2 h-6 px-2 text-accent"><Icon name="Search" className="w-4 h-4" />Find Resources</div>
-                    <div className="flex items-center gap-2 h-6 px-2 text-muted"><Icon name="Sparkles" className="w-4 h-4" />Summarize with Haiku</div>
-                </div>
-                <div className="flex items-center gap-2 h-6 pl-8 text-bone">
-                    <Icon name="Link2" className="w-4 h-4 text-muted" />
-                    <span className="truncate">Associated Links</span>
-                    <span className="text-muted">3 links</span>
-                </div>
+                {[
+                    { icon: 'GitPullRequest', color: 'green', label: 'web-app#418', detail: 'touched · open' },
+                    { icon: 'Ticket', color: 'gray', label: 'PROJ-2502', detail: 'touched · To Do' },
+                    { icon: 'Sparkles', color: 'cyan', label: 'Timeout repro notes', detail: 'artifact' },
+                ].map((row) => (
+                    <div key={row.label} className="flex items-center gap-2 h-6 pl-3 pr-2 text-bone">
+                        <LinkIcon name={row.icon} color={row.color} />
+                        <span className="shrink-0">{row.label}</span>
+                        <span className="text-muted truncate">{row.detail}</span>
+                    </div>
+                ))}
             </div>
         );
 
-        const PANEL_ROWS = [
+        const WORKING_ON_ROWS = [
             { depth: 0, icon: 'Ticket', color: 'gold', label: 'PROJ-2560', detail: 'Login epic · In Progress' },
-            { depth: 1, icon: 'Ticket', color: 'gold', label: 'PROJ-2567', detail: 'Session timeout · In Progress', isSelected: true },
+            { depth: 1, icon: 'Ticket', color: 'gold', label: 'PROJ-2567', detail: 'Session timeout · In Progress', note: 'fixing the refresh window', isSelected: true },
             { depth: 2, icon: 'GitPullRequest', color: 'green', label: 'web-app#412', detail: 'approved' },
-            { depth: 1, icon: 'TicketCheck', color: 'green', label: 'PROJ-2571', detail: 'Cookie flag · Done' },
-            { depth: 0, icon: 'Sparkles', color: 'cyan', label: 'Timeout repro notes', detail: 'artifact' },
+        ];
+        const ALSO_SEEN_ROWS = [
+            { depth: 0, icon: 'TicketCheck', color: 'green', label: 'PROJ-2571', detail: 'Cookie flag · Done' },
+            { depth: 0, icon: 'GitPullRequest', color: 'dim', label: 'web-app#397', detail: 'passing mention', isDimmed: true },
         ];
         const DEPTH_PADDING = ['pl-2', 'pl-6', 'pl-10'];
 
+        const PanelSectionHeader = ({ title, count, tools }) => (
+            <div className="group/header flex items-center gap-1 h-8 px-2 text-muted">
+                <Icon name="ChevronDown" className="w-4 h-4" />
+                <span className="uppercase tracking-label">{title}</span>
+                <span className="ml-1">{count}</span>
+                <span className="ml-auto flex items-center gap-2 opacity-0 group-hover/header:opacity-100 transition-opacity duration-200 ease-dj">{tools}</span>
+            </div>
+        );
+
+        const PanelLinkRow = ({ row }) => (
+            <div className={`group/link flex items-center gap-2 min-h-6 pr-2 ${DEPTH_PADDING[row.depth]} ${row.isSelected ? 'bg-raised' : ''} ${row.isDimmed ? 'opacity-60' : ''}`}>
+                <Icon name="GripVertical" className="w-3 h-3 text-muted" />
+                <LinkIcon name={row.icon} color={row.color} />
+                <span className="flex-1 min-w-0 flex flex-col py-1">
+                    <span className="flex gap-2 min-w-0">
+                        <span className="shrink-0 text-bone">{row.label}</span>
+                        <span className="text-muted truncate">{row.detail}</span>
+                    </span>
+                    {row.note !== undefined && <span className="text-muted truncate">{row.note}</span>}
+                </span>
+                <span className={`flex items-center gap-2 text-muted ${row.isSelected ? 'opacity-100' : 'opacity-0 group-hover/link:opacity-100'} transition-opacity duration-200 ease-dj`}>
+                    <Icon name="Globe" className="w-4 h-4" />
+                    <Icon name="Pin" className="w-4 h-4" />
+                    <Icon name="Ellipsis" className="w-4 h-4" />
+                </span>
+            </div>
+        );
+
         const LinksPanelVisual = () => (
             <div className="font-mono text-xs border border-line bg-surface">
-                <div className="flex items-center gap-3 h-8 px-3 border-b border-line">
-                    <span className="text-bone truncate">PROJ-2567 login timeout</span>
-                    <span className="ml-auto flex items-center gap-1 text-muted"><Icon name="Eye" className="w-4 h-4" />Passing</span>
-                    <span className="flex items-center gap-1 text-muted"><Icon name="EyeOff" className="w-4 h-4" />Removed</span>
-                    <span className="flex items-center gap-1 text-accent"><Icon name="RefreshCw" className="w-4 h-4" />Find again</span>
-                </div>
-                <div className="py-1">
-                    {PANEL_ROWS.map((row) => (
-                        <div key={row.label} className={`flex items-center gap-2 h-6 pr-2 ${DEPTH_PADDING[row.depth]} ${row.isSelected ? 'bg-raised text-bone' : 'text-bone'}`}>
-                            <Icon name="GripVertical" className="w-3 h-3 text-muted" />
-                            <LinkIcon name={row.icon} color={row.color} />
-                            <span className="shrink-0">{row.label}</span>
-                            <span className="text-muted truncate">{row.detail}</span>
-                            {row.isSelected && (
-                                <span className="ml-auto flex items-center gap-2 text-muted">
-                                    <Icon name="Code" className="w-4 h-4" />
-                                    <Icon name="Globe" className="w-4 h-4" />
-                                    <Icon name="Copy" className="w-4 h-4" />
-                                    <Icon name="ArrowRightLeft" className="w-4 h-4" />
-                                    <Icon name="Pin" className="w-4 h-4" />
-                                </span>
-                            )}
-                        </div>
-                    ))}
+                <PanelSectionHeader title="Working on" count={WORKING_ON_ROWS.length} tools={<Icon name="Plus" className="w-4 h-4" />} />
+                {WORKING_ON_ROWS.map((row) => <PanelLinkRow key={row.label} row={row} />)}
+                <div className="border-t border-line mt-1">
+                    <PanelSectionHeader
+                        title="Also seen"
+                        count={ALSO_SEEN_ROWS.length}
+                        tools={<><Icon name="ListFilter" className="w-4 h-4" /><Icon name="RefreshCw" className="w-4 h-4" /></>}
+                    />
+                    <div className="pb-1">{ALSO_SEEN_ROWS.map((row) => <PanelLinkRow key={row.label} row={row} />)}</div>
                 </div>
             </div>
         );
@@ -797,14 +849,45 @@
             </div>
         );
 
-        const HoverVisual = () => (
-            <div className="font-mono text-xs border border-line bg-raised p-3 space-y-2 shadow-float">
-                <p className="text-bone font-medium">Rate limiter refactor</p>
-                <p className="text-muted">Suspended · last active 2 days ago</p>
-                <p className="text-muted">~/src/api on feat/rate-limit</p>
-                <div className="border-t border-line" />
-                <p className="text-bone leading-relaxed">Moved the limiter to a token bucket in src/middleware/limit.ts. Tests pass. Waiting on review of api#391 before the config change.</p>
-                <p className="flex items-center gap-2 text-accent"><Icon name="Sparkles" className="w-4 h-4" />Summarize with Haiku</p>
+        const PreviewVisual = () => (
+            <div className="font-mono text-xs border border-line bg-surface">
+                <div className="flex h-8 border-b border-line">
+                    <span className="flex items-center gap-2 px-3 border-r border-line border-t border-t-accent bg-bg text-bone italic">
+                        <Icon name="Eye" className="w-4 h-4" />Rate limiter refactor
+                    </span>
+                </div>
+                <div className="p-3 space-y-3">
+                    <div className="flex items-center gap-2">
+                        <span className="text-muted truncate">Suspended · ~/src/api · feat/rate-limit</span>
+                        <span className="ml-auto flex items-center gap-1 px-2 h-6 bg-accent text-on-accent"><Icon name="Play" className="w-3 h-3" />Resume</span>
+                    </div>
+                    <p className="text-bone leading-relaxed">Moved the limiter to a token bucket in src/middleware/limit.ts. Waiting on review of api#391.</p>
+                    <div className="space-y-1">
+                        <div className="uppercase tracking-label text-muted">Last turns</div>
+                        <p className="text-accent truncate">&gt; bump the burst to 20 and rerun</p>
+                        <p className="text-muted truncate">Done. 48 tests pass.</p>
+                    </div>
+                    <div className="space-y-1">
+                        <div className="uppercase tracking-label text-muted">Commits</div>
+                        <p className="flex items-center gap-2 text-bone"><Icon name="GitCommitHorizontal" className="w-4 h-4 text-muted" />7c41e0a Use a token bucket</p>
+                        <p className="flex items-center gap-2 text-bone"><LinkIcon name="GitPullRequest" color="green" />api#391</p>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const TrackingVisual = () => (
+            <div className="font-mono text-xs space-y-3">
+                <div className="border border-line bg-bg p-3 space-y-1">
+                    <p className="text-accent truncate">$ overseer ticket add PROJ-2567 --note "fixing the refresh window"</p>
+                    <p className="text-muted">Declared PROJ-2567.</p>
+                    <p className="text-accent truncate">$ overseer pr add https://github.com/acme/web-app/pull/412</p>
+                    <p className="text-muted">Declared acme/web-app#412.</p>
+                </div>
+                <div className="border border-line bg-surface p-3 space-y-2">
+                    <p className="flex items-center gap-2 text-bone"><Icon name="Info" className="w-4 h-4 text-muted" />Not tracked yet: commits, pull requests.</p>
+                    <span className="inline-flex items-center gap-1 px-2 h-6 border border-line text-bone"><Icon name="Sparkles" className="w-3 h-3" />Populate all</span>
+                </div>
             </div>
         );
 
@@ -867,23 +950,25 @@
             { title: 'Search every past session', body: 'Session History opens in an editor tab, like Settings. Search every session by title, prompt, recap, branch, or PR, and filter by repo, age, pinned, or running. The detail pane shows more than All Sessions: recap, prompts, commits, and the PR. Open resumes the session. Delete removes one from your machine for good, and Purge removes every session the filters show. Both list what goes and ask first. Running sessions are never deleted, and Purge skips pinned ones.', Visual: HistoryVisual },
             { title: 'Switch between workspaces', isExperimental: true, body: 'Keep work, side projects, and after-hours sessions apart. Each workspace has its own sessions, terminals, and groups. A switch suspends the running sessions, closes the terminals and file tabs, then brings back what was open in the other workspace. It asks first when Claude is mid-task or a file has unsaved changes. This one is experimental. It works, but it needs more testing.', Visual: WorkspaceVisual },
             { title: 'Suspend a session and resume it later', body: 'When a session waits on a review for days, Suspend sends /exit so the process and its memory are freed. Resume starts the same session again with its full history.', Visual: SuspendVisual },
+            { title: 'Follow the focused session in the Session sidebar', body: 'The Session sidebar sits to the right of the editor and follows the session you focus, terminal or preview. It shows the folder, branch, and summary, with Suspend, Resume, or Fork when the session runs elsewhere. The Claude actions (Compact, Clear, Model, Cost, Run command) appear when the session runs here and is idle. The Session actions (Summarize, Find links, Open repo, Set status, Rename) always show.', Visual: SessionSidebarVisual },
+            { title: 'Peek at a paused session without starting it', body: 'Click a session with no terminal here and it opens in one reused Session Preview tab. The preview shows where the session left off, its last turns, its prompts, and the commits and PRs it made. It reads the transcript and git, so it never starts Claude. Resume replaces the preview with the terminal.', Visual: PreviewVisual },
+            { title: 'Let the agent say what it works on', body: 'Sessions that Overseer starts get an overseer CLI on PATH and a track skill. The agent declares the tickets it works on, the commits it makes, and the PRs it opens. It skips what it only read. For an older session, Populate all asks Haiku to read a digest of the transcript and declare the same things.', Visual: TrackingVisual },
             { title: 'Find the PRs, tickets, and artifacts a session worked on', body: 'Click Find links in the Session sidebar. Overseer scans the transcript, and a short Haiku run sorts what it found into owned, touched, and seen in passing. Nothing scans until you ask.', Visual: LinksVisual },
-            { title: 'See a session\'s links in the sidebar', body: 'The Session sidebar follows the focused session. Working on holds what the agent declared and what you pinned. Also seen holds the rest. Links nest as parent ticket, sub-tickets, then the PRs for each ticket. Each row can open in VS Code or your browser, copy, move a ticket to another status, pin, or remove. Drag rows to reorder them.', Visual: LinksPanelVisual },
+            { title: 'See a session\'s links in the sidebar', body: 'The Session sidebar follows the focused session. Working on holds what the agent declared and what you pinned, with the agent\'s note. Also seen holds the rest. Links nest as parent ticket, sub-tickets, then the PRs for each ticket. Each row opens in your browser, pins, or opens a menu to open in VS Code, copy, move a ticket to another status, or remove. Drag rows to reorder them.', Visual: LinksPanelVisual },
             { title: 'Check PR and ticket status at a glance', body: 'Each PR and ticket shows its live status, and its icon takes the color you pick for that status. PR status comes from gh. Ticket status comes from the Jira MCP server Claude Code already uses.', Visual: LinkStatusVisual },
-            { title: 'Pin or remove a link', body: 'A pinned link stays at the top, even when the judge thinks it does not matter. A removed link is hidden. Both survive a rescan. Removed in the panel header shows the hidden ones again so you can restore them.', Visual: PinVisual },
+            { title: 'Pin or remove a link', body: 'A pinned link moves to Working on, even when the judge thinks it does not matter. A removed link stays out, even if the agent declares it again. Both survive a rescan. Hover the Also seen header and use Filter to show removed links again, so you can restore them.', Visual: PinVisual },
             { title: 'Pick your own icons and colors', body: 'The Settings panel sets the icon and color for each session state, a color for every status in each Jira project, a color for each PR state, and which views show. Type Overseer in the Command Palette to reach every setting.', Visual: SettingsVisual },
             { title: 'Keep plain terminals in their own view', body: 'New Terminal opens a shell in a folder you pick. Terminals get their own Terminals view, apart from your Claude sessions, with the same ticket and custom groups. Click one to bring it forward, and reopen it in the same folder after you close it. Settings can hide the Sessions, Terminals, and Repos views.', Visual: TerminalVisual },
             { title: 'Mark where each session stands', body: 'Set Status puts a session or terminal in Todo, Triage, In Progress, Blocked, AI Review, Human Review, or Ready to Ship. The status tints the row and adds a short badge. Blocked asks why, and the reason shows in the row\'s tooltip. Statuses do not follow Jira, so a status like Triage works. The Settings panel adds, renames, reorders, and recolors them.', Visual: StatusMarkVisual },
-            { title: 'Send your usual prompts in two clicks', body: 'Right-click an idle session and choose Commands. Pick a saved prompt, like Check PR Reviews, and Overseer types it into the session. Write {ticket link} in a prompt and Overseer asks for that value first. The list is the overseer.sessionCommands setting.', Visual: CommandsVisual },
+            { title: 'Send your usual prompts in two clicks', body: 'Click Run command in the Session sidebar while the session is idle. Pick a saved prompt, like Check PR Reviews, and Overseer types it into the session. Write {ticket link} in a prompt and Overseer asks for that value first. The list is the overseer.sessionCommands setting.', Visual: CommandsVisual },
             { title: 'Watch every repo from a window with no folder open', body: 'The Repos view lists the repos your pinned sessions and terminals work in. Each row shows the branch, ahead and behind counts, and uncommitted changes, and updates when the repo changes. Expand a repo for its last 20 commits. A commit a session made shows that session. Click a commit to read its diff, or open the repo in Source Control.', Visual: RepoHistoryVisual },
             { title: 'See when a session is compacting', body: 'A compacting session shows a spinning icon until it finishes. Claude Code does not report compaction, so Overseer offers to install a PreCompact and a PostCompact hook. Skip the prompt and install them later from the Command Palette.', Visual: CompactVisual },
-            { title: 'Read a summary when you hover over a session', body: 'The hover shows the folder, branch, first and last prompt, and a short summary. The summary is the recap Claude Code wrote when it has one. Summarize with Haiku writes a new one from the end of the transcript, and it runs only when you click it.', Visual: HoverVisual },
             { title: 'Group sessions by ticket', body: 'Overseer reads the ticket key from the title, branch, or first prompt and puts the session in that ticket\'s group. Drag a session to put it somewhere else.', Visual: GroupVisual },
             { title: 'Rename a session in one step', body: 'Double-click or F2 renames the row and the tab, even while Claude is busy. When the session is idle, Overseer also sends /rename, so the tree, the tab, and Claude all use the same name.', Visual: RenameVisual },
             { title: 'See which sessions are running', body: 'Status comes from claude agents --json and updates each time a session goes busy or idle. Click a terminal tab and its row in the sidebar is selected, so you can see where you are.', Visual: StatusVisual },
             { title: 'Stop a session from running twice', body: 'Two processes writing to one transcript corrupt it. Overseer marks duplicates and offers to fork a copy instead of resuming a second time.', Visual: DuplicateVisual },
             { title: 'Find a session from any repo it edited', body: 'A session that starts in one repo and edits another shows +N repos. Type repo:<name> in All Sessions to find it from the repo it edited.', Visual: ReposVisual },
-            { title: 'Arrange groups and send slash commands', body: 'Each group has a + button for a new session and a search button to add an existing one. Drag groups and sessions to reorder them. Right-click a session to compact it, switch its model, or kill it.', Visual: OrganizeVisual },
+            { title: 'Arrange groups and sessions', body: 'Each group has a + button for a new session and a search button to add an existing one. Drag groups and sessions to reorder them. The Claude actions, like Compact and Model, live in the Session sidebar.', Visual: OrganizeVisual },
         ];
 
         const HOW_IT_WORKS = [
@@ -893,7 +978,8 @@
             { step: '04', title: 'Links', body: 'Find links scans one transcript for links. A headless claude -p run with Haiku reads an 8 KB digest of them and sorts them. At most two runs at once, and each result is cached. Status checks run every five minutes while the sidebar shows them.' },
             { step: '05', title: 'Hooks', body: 'Optional PreCompact and PostCompact hooks in ~/.claude/settings.json write and delete a marker per session in ~/.claude/overseer/compacting. Install backs up the file first and leaves your own hooks alone.' },
             { step: '06', title: 'Repos', body: 'git status and git log run per repo, at most four at once, only while the Repos view shows. A watch on each .git folder refreshes a repo a second after it changes. The indexer reads commit hashes from transcripts to match commits to sessions.' },
-            { step: '07', title: 'Statuses', body: 'The list lives in the overseer.sessionStatuses setting. Each session\'s status and reason are saved in the extension\'s state, and a file decoration tints the row. None of it calls a model.' },
+            { step: '07', title: 'Track', body: 'The overseer CLI writes small JSON files under ~/.claude/overseer, and every window watches that folder. No server, no port, no login. On /clear the declarations move to the new session ID.' },
+            { step: '08', title: 'Statuses', body: 'The list lives in the overseer.sessionStatuses setting. Each session\'s status and reason are saved in the extension\'s state, and a file decoration tints the row. None of it calls a model.' },
         ];
 
         const INSTALL_COMMANDS = `curl -LO ${VSIX_URL}\ncode --install-extension ${VSIX_NAME}`;
