@@ -32,7 +32,7 @@ export function registerStatusCommands(dependencies: StatusCommandDependencies):
         refreshProjects,
       );
     }),
-    // The resources panel passes the ticket key.
+    // The Session sidebar passes the ticket key.
     vscode.commands.registerCommand("overseer.moveTicketStatus", async (ticketKey?: string) => {
       if (typeof ticketKey === "string") {
         await moveTicket(ticketKey, jiraService, linkStatusService);

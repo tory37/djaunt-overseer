@@ -9,7 +9,7 @@ export interface JudgeVerdict {
   role: JudgedRole;
   stillRelevant: boolean;
   label: string | undefined;
-  // The link key this link sits under in the resources panel.
+  // The link key this link sits under in the Session sidebar.
   parentKey?: string;
 }
 

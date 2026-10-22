@@ -41,7 +41,6 @@ const GROUP_ORDER_KEY = "overseer.groupOrder";
 const SESSION_ORDER_KEY = "overseer.sessionOrder";
 const LINK_MARKS_KEY = "overseer.linkMarks";
 const LINK_ORDER_KEY = "overseer.linkOrder";
-const EXPANDED_SESSIONS_KEY = "overseer.expandedSessionIds";
 const COLLAPSED_GROUPS_KEY = "overseer.collapsedGroupRefs";
 const RESOURCE_SESSIONS_KEY = "overseer.resourceSessionIds";
 const TERMINAL_SESSIONS_KEY = "overseer.terminalSessions";
@@ -114,7 +113,6 @@ export class Registry {
   async unpin(sessionId: string): Promise<void> {
     await this.write(PINNED_KEY, this.pinnedSessionIds().filter((pinnedId) => pinnedId !== sessionId));
     await this.write(SESSION_ORDER_KEY, this.sessionOrder().filter((orderedId) => orderedId !== sessionId));
-    await this.setSessionExpanded(sessionId, false);
     await this.write(RESOURCE_SESSIONS_KEY, this.resourceSessionIds().filter((foundId) => foundId !== sessionId));
     const { [sessionId]: _removedPending, ...remainingPending } = this.pendingSessions();
     await this.write(PENDING_KEY, remainingPending);
@@ -383,20 +381,11 @@ export class Registry {
     await this.store.update(WORKSPACE_SNAPSHOTS_KEY, { ...this.workspaceSnapshots(), [workspaceId]: snapshot });
   }
 
-  isSessionExpanded(sessionId: string): boolean {
-    return (this.store.get<string[]>(EXPANDED_SESSIONS_KEY) ?? []).includes(sessionId);
-  }
-
-  // The tree already shows the new state, so these writes skip the change listeners and the refresh they cause.
-  async setSessionExpanded(sessionId: string, isExpanded: boolean): Promise<void> {
-    const otherSessionIds = (this.store.get<string[]>(EXPANDED_SESSIONS_KEY) ?? []).filter((id) => id !== sessionId);
-    await this.store.update(EXPANDED_SESSIONS_KEY, isExpanded ? [...otherSessionIds, sessionId] : otherSessionIds);
-  }
-
   isGroupCollapsed(groupRef: GroupRef): boolean {
     return (this.store.get<GroupRef[]>(COLLAPSED_GROUPS_KEY) ?? []).includes(groupRef);
   }
 
+  // The tree already shows the new state, so this write skips the change listeners and the refresh it causes.
   async setGroupCollapsed(groupRef: GroupRef, isCollapsed: boolean): Promise<void> {
     const otherGroupRefs = (this.store.get<GroupRef[]>(COLLAPSED_GROUPS_KEY) ?? []).filter((ref) => ref !== groupRef);
     await this.store.update(COLLAPSED_GROUPS_KEY, isCollapsed ? [...otherGroupRefs, groupRef] : otherGroupRefs);
@@ -441,7 +430,6 @@ export class Registry {
       await this.write(SESSION_STATUS_KEY, moveEntry(this.sessionStatusIds(), fromSessionId, toSessionId));
       await this.write(SESSION_STATUS_REASON_KEY, moveEntry(this.sessionStatusReasons(), fromSessionId, toSessionId));
       await this.write(SESSION_WORKSPACE_KEY, moveEntry(this.sessionWorkspaces(), fromSessionId, toSessionId));
-      await this.setSessionExpanded(toSessionId, this.isSessionExpanded(fromSessionId));
       const movedSnapshots = Object.fromEntries(
         Object.entries(this.workspaceSnapshots()).map(([workspaceId, snapshot]) => [
           workspaceId,

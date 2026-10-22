@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   ConcurrencyLimiter,
-  linkCountBadge,
   linkDisplayId,
   isDimmedLink,
   LinkViewSettings,
@@ -102,13 +101,6 @@ describe("link labels", () => {
   it("shortens PR ids to repo and number", () => {
     expect(linkDisplayId(OWNED_PR)).toBe("web-app#2384");
     expect(linkDisplayId(TOUCHED_TICKET)).toBe("PROJ-5");
-  });
-
-  it("counts only relevant links in the badge", () => {
-    expect(linkCountBadge([NOISE_ARTIFACT])).toBe("");
-    expect(linkCountBadge([OWNED_PR, NOISE_ARTIFACT])).toBe("1 link");
-    expect(linkCountBadge([OWNED_PR, TOUCHED_TICKET])).toBe("2 links");
-    expect(linkCountBadge([{ ...OWNED_PR, mark: "removed" }, { ...NOISE_ARTIFACT, mark: "pinned" }])).toBe("1 link");
   });
 
   it("picks the owned ticket, not a touched one", () => {

@@ -12,7 +12,6 @@ import { tildePath } from "./paths";
 import { Registry } from "./registry";
 import { RepoService } from "./repoService";
 import { commitDocumentUri } from "./repoTree";
-import { sessionSubtitle } from "./resourcesPanel";
 import { SessionPopulator } from "./sessionPopulator";
 import { SessionSummaryService } from "./sessionSummaries";
 import { pickHoverSummary, readTranscriptTail, SUMMARY_SOURCE_LABELS, transcriptTurns } from "./sessionSummary";
@@ -759,4 +758,9 @@ function previewHtml(nonce: string, cspSource: string, codiconStylesheet: string
 </script>
 </body>
 </html>`;
+}
+
+function sessionSubtitle(meta: SessionMeta): string {
+  const repoName = path.basename(meta.resumeCwd ?? meta.startCwd);
+  return [repoName, meta.gitBranch].filter((part) => part !== undefined && part !== "").join(" · ");
 }

@@ -38,7 +38,6 @@ export interface CommandDependencies {
   linkStatusService: LinkStatusService;
   summaryService: SessionSummaryService;
   sessionViews: vscode.TreeView<TreeNode>[];
-  showResources: (sessionId: string) => void;
   sessionPreview: SessionPreview;
   pinnedSessions: () => PinnedSession[];
   log: vscode.OutputChannel;
@@ -74,7 +73,6 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     linkStatusService,
     summaryService,
     sessionViews,
-    showResources,
     sessionPreview,
     pinnedSessions,
     log,
@@ -557,7 +555,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         sendToIdleSessions(sessions, prompt);
       }
     }),
-    // The resources panel passes a session ID; the context menu passes the clicked node.
+    // The sidebar passes a session ID; the context menu passes the clicked node.
     vscode.commands.registerCommand("overseer.findResources", async (clicked?: TreeNode | string) => {
       const sessionMetas =
         typeof clicked === "string"
@@ -567,7 +565,6 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
               .filter(isDefined);
       linkStatusService.clear();
       for (const meta of sessionMetas) {
-        await registry.setSessionExpanded(meta.sessionId, true);
         await registry.markResourcesFound(meta.sessionId);
       }
       await vscode.window.withProgress(
@@ -580,11 +577,6 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       const isShown = !linksConfig.get<boolean>("showRemoved", false);
       await linksConfig.update("showRemoved", isShown, vscode.ConfigurationTarget.Global);
       void vscode.window.showInformationMessage(`Removed links ${isShown ? "shown" : "hidden"}.`);
-    }),
-    vscode.commands.registerCommand("overseer.openResources", (sessionId?: string) => {
-      if (typeof sessionId === "string") {
-        showResources(sessionId);
-      }
     }),
     // The hover link passes a session ID; the context menu passes the clicked node.
     vscode.commands.registerCommand("overseer.summarizeSession", async (clicked?: TreeNode | string) => {

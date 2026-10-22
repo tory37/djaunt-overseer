@@ -1,7 +1,9 @@
+import { projectKeyOf } from "./jira";
 import { JudgedRole, linkKey } from "./linkJudge";
 import { LinkStatus, statusGlyph } from "./linkStatus";
 import { isDimmedLink, linkDisplayId, linkUrl, MarkedLink } from "./linkView";
 import { LinkMark } from "./registry";
+import { StatusConfig } from "./statusConfig";
 import { statusGlyphMarkup } from "./statusIcons";
 
 export interface ResourceRow {
@@ -65,4 +67,13 @@ export function acceptedOrder(shownKeys: string[], requestedKeys: string[]): str
     requestedKeySet.size === shownKeySet.size &&
     requestedKeys.every((key) => shownKeySet.has(key));
   return isSameSet ? requestedKeys : undefined;
+}
+
+export function linkStatusColor(statusConfig: StatusConfig, link: MarkedLink, status: LinkStatus | undefined): string | undefined {
+  if (status === undefined) {
+    return undefined;
+  }
+  return link.kind === "pr"
+    ? statusConfig.prColor(status.colorKey)
+    : statusConfig.jiraColor(projectKeyOf(link.id) ?? "", status.colorKey);
 }

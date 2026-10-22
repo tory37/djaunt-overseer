@@ -65,21 +65,6 @@ export function isDimmedLink(link: MarkedLink): boolean {
   return link.mark === "removed" || (link.mark !== "pinned" && (link.role === "irrelevant" || !link.stillRelevant));
 }
 
-export function linkCountBadge(links: MarkedLink[]): string {
-  const relevantCount = links.filter(isCountedLink).length;
-  if (relevantCount === 0) {
-    return "";
-  }
-  return relevantCount === 1 ? "1 link" : `${relevantCount} links`;
-}
-
-function isCountedLink(link: MarkedLink): boolean {
-  if (link.mark !== undefined) {
-    return link.mark === "pinned";
-  }
-  return link.role !== "irrelevant";
-}
-
 // A pinned ticket beats the agent's declaration, which beats the judge's pick; a removed one never names the group.
 export function ownedTicketKey(links: MarkedLink[]): string | undefined {
   const tickets = links.filter((link) => link.kind === "ticket" && link.mark !== "removed");

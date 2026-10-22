@@ -28,7 +28,6 @@ import { resolveRepos } from "./repoSet";
 import { COMMIT_DOCUMENT_SCHEME, CommitDocumentProvider, RepoTreeProvider } from "./repoTree";
 import { CommitAuthorship, indexCommitAuthorship } from "./gitStatus";
 import { HistoryPanel } from "./historyPanel";
-import { ResourcesPanel } from "./resourcesPanel";
 import { SessionFocusTracker } from "./sessionFocus";
 import { SessionPopulator } from "./sessionPopulator";
 import { SessionPreview } from "./sessionPreview";
@@ -64,7 +63,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const compactMonitor = new CompactMonitor(claudeHome, log);
   enableAgentIntegration(context.extensionPath, claudeHome, log);
   const createSectionTree = (section: SessionSection, viewId: string) => {
-    const provider = new SessionTreeProvider(section, sessionIndex, liveMonitor, registry, linkService, summaryService, compactMonitor);
+    const provider = new SessionTreeProvider(section, sessionIndex, liveMonitor, registry, linkService, compactMonitor);
     const view = vscode.window.createTreeView(viewId, {
       treeDataProvider: provider,
       dragAndDropController: provider,
@@ -218,7 +217,6 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     sessionIndex.onDidChange(refreshTree),
     linkService.onDidChange(refreshTree),
-    summaryService.onDidChange(refreshTree),
     compactMonitor,
     declarationMonitor,
     sessionPopulator,
@@ -273,19 +271,6 @@ export function activate(context: vscode.ExtensionContext): void {
       summaryService,
       sessionViews: [treeView, terminalTreeView],
       sessionPreview,
-      showResources: (sessionId) =>
-        ResourcesPanel.show(
-          {
-            extensionUri: context.extensionUri,
-            registry,
-            linkService,
-            linkStatusService,
-            statusConfig,
-            findSessionMeta: findIndexedSession,
-            sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
-          },
-          sessionId,
-        ),
       pinnedSessions,
       log,
     }),

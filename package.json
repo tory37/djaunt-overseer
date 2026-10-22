@@ -364,11 +364,6 @@
         "category": "Overseer"
       },
       {
-        "command": "overseer.openResources",
-        "title": "Open Links",
-        "category": "Overseer"
-      },
-      {
         "command": "overseer.installCompactHooks",
         "title": "Install Compact Hooks",
         "category": "Overseer"
@@ -460,11 +455,6 @@
       ],
       "view/item/context": [
         {
-          "command": "overseer.setSessionStatus",
-          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^(session|terminal)\\./",
-          "group": "1_session@4"
-        },
-        {
           "command": "overseer.resumeSession",
           "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\.(suspended|elsewhere)$/",
           "group": "inline@1"
@@ -538,41 +528,6 @@
           "command": "overseer.suspendGroup",
           "when": "view == overseer.sessions && viewItem =~ /^group\\./",
           "group": "1_group@2"
-        },
-        {
-          "command": "overseer.compactSession",
-          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == session.running",
-          "group": "2_claude@1"
-        },
-        {
-          "command": "overseer.switchModel",
-          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == session.running",
-          "group": "2_claude@2"
-        },
-        {
-          "command": "overseer.clearSession",
-          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == session.running",
-          "group": "2_claude@3"
-        },
-        {
-          "command": "overseer.costSession",
-          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == session.running",
-          "group": "2_claude@4"
-        },
-        {
-          "command": "overseer.findResources",
-          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./",
-          "group": "3_links@1"
-        },
-        {
-          "command": "overseer.summarizeSession",
-          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./",
-          "group": "3_links@2"
-        },
-        {
-          "command": "overseer.openRepoInScm",
-          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^(session|terminal)\\./",
-          "group": "4_repo@1"
         },
         {
           "command": "overseer.openTerminal",
@@ -653,11 +608,6 @@
           "command": "overseer.copyCommitHash",
           "when": "view == overseer.repos && viewItem =~ /^commit/",
           "group": "2_copy@1"
-        },
-        {
-          "command": "overseer.runSessionCommand",
-          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == session.running",
-          "group": "2_claude@5"
         }
       ],
       "commandPalette": [
@@ -764,10 +714,6 @@
         {
           "command": "overseer.disableArtifacts",
           "when": "config.overseer.links.artifacts.enabled"
-        },
-        {
-          "command": "overseer.openResources",
-          "when": "false"
         },
         {
           "command": "overseer.openTerminal",

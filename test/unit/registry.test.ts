@@ -73,23 +73,15 @@ describe("Registry", () => {
     expect(registry.linkOrder("c")).toEqual([]);
   });
 
-  it("remembers expanded sessions and collapsed groups, and forgets an unpinned session", async () => {
+  it("remembers collapsed groups without a change event", async () => {
     const registry = new Registry(memoryStore());
     let changeCount = 0;
     registry.onDidChange(() => changeCount++);
 
-    await registry.setSessionExpanded("a", true);
-    await registry.setSessionExpanded("b", true);
-    await registry.setSessionExpanded("b", false);
     await registry.setGroupCollapsed("user:g1", true);
 
-    expect(registry.isSessionExpanded("a")).toBe(true);
-    expect(registry.isSessionExpanded("b")).toBe(false);
     expect(registry.isGroupCollapsed("user:g1")).toBe(true);
     expect(changeCount).toBe(0);
-    await registry.pin("a");
-    await registry.unpin("a");
-    expect(registry.isSessionExpanded("a")).toBe(false);
   });
 
   it("stores a terminal session with its shell pid and forgets it on unpin", async () => {
@@ -326,7 +318,6 @@ describe("Registry", () => {
     await registry.setLabel("old", "My task");
     await registry.assign(["old"], userGroupRef("g1"));
     await registry.setSessionStatus(["old"], "blocked", "waiting on review");
-    await registry.setSessionExpanded("old", true);
     await registry.setLinkMark("old", ["pr:1"], "pinned");
     await registry.setWorkspaceSnapshot("default", { ...EMPTY_WORKSPACE_SNAPSHOT, liveSessionIds: ["old"] });
 
@@ -339,8 +330,6 @@ describe("Registry", () => {
     expect(registry.sessionStatusIds()).toEqual({ new: "blocked" });
     expect(registry.sessionStatusReasons()).toEqual({ new: "waiting on review" });
     expect(registry.pinnedSessionIdsInWorkspace("work")).toEqual(["before", "new", "after"]);
-    expect(registry.isSessionExpanded("new")).toBe(true);
-    expect(registry.isSessionExpanded("old")).toBe(false);
     expect(registry.linkMarks("old")).toEqual({ "pr:1": "pinned" });
     expect(registry.workspaceSnapshot("default").liveSessionIds).toEqual(["new"]);
   });
