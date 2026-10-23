@@ -77,3 +77,20 @@ function countOf(count: number, noun: string): string {
   }
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
+
+export interface SummaryPrompt {
+  kind: "stale" | "empty";
+  text: string;
+  canRunHaiku: boolean;
+}
+
+// Haiku costs tokens, so a stale or missing summary only offers a run.
+export function summaryPrompt(summary: { isStale: boolean } | undefined, hasTranscript: boolean): SummaryPrompt | undefined {
+  if (summary === undefined) {
+    return { kind: "empty", text: "No summary yet.", canRunHaiku: hasTranscript };
+  }
+  if (summary.isStale) {
+    return { kind: "stale", text: "Potentially out of date.", canRunHaiku: hasTranscript };
+  }
+  return undefined;
+}

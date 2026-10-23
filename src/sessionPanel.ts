@@ -20,7 +20,7 @@ import { readLinkSettings, SessionLinkService } from "./sessionLinks";
 import { SessionFocusTracker } from "./sessionFocus";
 import { PopulateSummary } from "./populateMerge";
 import { SessionPopulator } from "./sessionPopulator";
-import { linkRowTitle, metaLine, metaTitle, recheckSummaryText, shortLinkStatus, stateSentence } from "./sessionSidebarText";
+import { linkRowTitle, metaLine, metaTitle, recheckSummaryText, shortLinkStatus, stateSentence, SummaryPrompt, summaryPrompt } from "./sessionSidebarText";
 import { SessionPreview } from "./sessionPreview";
 import { previewRunState, SidebarRunKind, sidebarRunKind } from "./sessionPreviewModel";
 import { statusColorId } from "./sessionStatuses";
@@ -68,7 +68,8 @@ interface SessionDetails {
   metaTitle: string;
   stateSentence: string;
   status: { name: string; icon: string; color: string; reason: string | undefined } | undefined;
-  summary: { text: string; caption: string; isStale: boolean } | undefined;
+  summary: { text: string; caption: string } | undefined;
+  summaryPrompt: SummaryPrompt | undefined;
   isSummarizing: boolean;
   hasTranscript: boolean;
   untracked: string[];
@@ -241,7 +242,8 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
       summary:
         summary === undefined
           ? undefined
-          : { text: summary.text, caption: `${SUMMARY_SOURCE_LABELS[summary.source]} · ${formatAge(summary.writtenAtMs)}`, isStale: summary.isStale },
+          : { text: summary.text, caption: `${SUMMARY_SOURCE_LABELS[summary.source]} · ${formatAge(summary.writtenAtMs)}` },
+      summaryPrompt: summaryPrompt(summary, meta !== undefined),
       isSummarizing: summaryService.isSummarizing(sessionId),
       hasTranscript: meta !== undefined,
       untracked: untracked.map((kind) => TRACKED_KIND_LABELS[kind]),
@@ -447,6 +449,8 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .recap-text { display: block; width: 100%; text-align: left; font-size: 14px; line-height: 22px; text-wrap: pretty; }
   .recap-text.clamped { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
   .caption { margin: 6px 0 0; font-size: 11px; color: var(--vscode-disabledForeground); }
+  .summary-prompt.stale { margin-top: 4px; }
+  .summary-prompt .codicon { font-size: 14px; color: var(--vscode-editorWarning-foreground); }
   .muted { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--vscode-descriptionForeground); }
   .main-actions { display: flex; gap: 8px; margin-top: 12px; }
   .button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 2px; font-size: 13px; font-weight: 500; transition: background-color 80ms linear; }
@@ -866,16 +870,32 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       line.append(spinner(), document.createTextNode("Summarizing with Haiku…"));
       return [line];
     }
+    const prompt = summaryPromptLine(session.summaryPrompt);
     if (session.summary === undefined) {
-      return [element("p", "muted", "No summary yet.")];
+      return [prompt];
     }
     const text = textButton(isRecapExpanded ? "recap-text" : "recap-text clamped", undefined, session.summary.text, () => {
       isRecapExpanded = !isRecapExpanded;
       render();
     });
     text.title = isRecapExpanded ? "Show less" : "Show all";
-    const caption = session.summary.caption + (session.summary.isStale ? " · the session moved on" : "");
-    return [text, element("p", "caption", caption)];
+    const nodes = [text, element("p", "caption", session.summary.caption)];
+    return prompt === undefined ? nodes : [...nodes, prompt];
+  }
+
+  function summaryPromptLine(prompt) {
+    if (prompt === undefined) {
+      return undefined;
+    }
+    const line = element("p", prompt.kind === "stale" ? "muted summary-prompt stale" : "muted summary-prompt");
+    if (prompt.kind === "stale") {
+      line.append(codicon("warning"));
+    }
+    line.append(element("span", "", prompt.text));
+    if (prompt.canRunHaiku) {
+      line.append(textButton("link-button", undefined, "Run Haiku", () => runAction("summarize")));
+    }
+    return line;
   }
 
   function mainActions(session) {

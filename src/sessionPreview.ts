@@ -13,6 +13,7 @@ import { Registry } from "./registry";
 import { RepoService } from "./repoService";
 import { commitDocumentUri } from "./repoTree";
 import { SessionPopulator } from "./sessionPopulator";
+import { SummaryPrompt, summaryPrompt } from "./sessionSidebarText";
 import { SessionSummaryService } from "./sessionSummaries";
 import { pickHoverSummary, readTranscriptTail, SUMMARY_SOURCE_LABELS, transcriptTurns } from "./sessionSummary";
 import {
@@ -56,7 +57,6 @@ interface SessionDetails {
 interface PreviewSummary {
   text: string;
   caption: string;
-  isStale: boolean;
 }
 
 // A declared hash git can't find in the session's repos still shows, without a subject.
@@ -79,6 +79,7 @@ interface PreviewState extends PreviewRunState {
   lastActive: string | undefined;
   place: string;
   summary: PreviewSummary | undefined;
+  summaryPrompt: SummaryPrompt | undefined;
   isSummarizing: boolean;
   canSummarize: boolean;
   firstPrompt: string | undefined;
@@ -251,7 +252,8 @@ export class SessionPreview implements vscode.Disposable {
       summary:
         summary === undefined
           ? undefined
-          : { text: summary.text, caption: `${SUMMARY_SOURCE_LABELS[summary.source]} · ${formatAge(summary.writtenAtMs)}`, isStale: summary.isStale },
+          : { text: summary.text, caption: `${SUMMARY_SOURCE_LABELS[summary.source]} · ${formatAge(summary.writtenAtMs)}` },
+      summaryPrompt: summaryPrompt(summary, meta !== undefined),
       isSummarizing: summaryService.isSummarizing(sessionId),
       canSummarize: meta !== undefined,
       firstPrompt: meta?.firstPrompt,
@@ -382,8 +384,6 @@ function previewHtml(nonce: string, cspSource: string, codiconStylesheet: string
   .button .codicon { font-size: 14px; }
   .primary { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
   .primary:hover { background: var(--vscode-button-hoverBackground); }
-  .secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
-  .secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
   .icon-button {
     width: 24px;
     height: 24px;
@@ -422,7 +422,11 @@ function previewHtml(nonce: string, cspSource: string, codiconStylesheet: string
     line-height: 20px;
   }
   .summary.empty { border-style: dashed; background: none; color: var(--vscode-descriptionForeground); }
-  .summary.empty .button { margin-top: 12px; }
+  .summary-prompt { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .summary-prompt.stale { margin-top: 4px; }
+  .summary-prompt .codicon { font-size: 14px; color: var(--vscode-editorWarning-foreground); }
+  .link-button { color: var(--vscode-textLink-foreground); }
+  .link-button:hover { text-decoration: underline; }
   .caption { margin-top: 12px; font-size: 12px; color: var(--vscode-descriptionForeground); }
   .muted { color: var(--vscode-descriptionForeground); font-size: 13px; line-height: 20px; }
   .turns { list-style: none; margin: 0; padding: 0; }
@@ -556,12 +560,19 @@ function previewHtml(nonce: string, cspSource: string, codiconStylesheet: string
     return element("span", "codicon codicon-" + name);
   }
 
-  function summarizeButton() {
-    const button = element("button", "button secondary");
-    button.type = "button";
-    button.append(codicon("sparkle"), element("span", "", "Summarize with Haiku"));
-    button.addEventListener("click", () => vscode.postMessage({ type: "summarize" }));
-    return button;
+  function summaryPromptLine(prompt) {
+    const line = element("p", prompt.kind === "stale" ? "summary-prompt stale" : "summary-prompt");
+    if (prompt.kind === "stale") {
+      line.append(codicon("warning"));
+    }
+    line.append(element("span", "", prompt.text));
+    if (prompt.canRunHaiku) {
+      const button = element("button", "link-button", "Run Haiku");
+      button.type = "button";
+      button.addEventListener("click", () => vscode.postMessage({ type: "summarize" }));
+      line.append(button);
+    }
+    return line;
   }
 
   function renderHeader(state) {
@@ -589,16 +600,15 @@ function previewHtml(nonce: string, cspSource: string, codiconStylesheet: string
     }
     if (state.summary === undefined) {
       const box = element("div", "summary empty");
-      box.append(element("p", "", "No recap yet. Claude writes one when you step away, or Haiku can summarize the transcript now."));
-      if (state.canSummarize) {
-        box.append(summarizeButton());
-      }
+      box.append(summaryPromptLine(state.summaryPrompt));
       container.replaceChildren(box);
       return;
     }
     const box = element("div", "summary");
-    const caption = state.summary.caption + (state.summary.isStale ? " · the session moved on since" : "");
-    box.append(element("p", "", state.summary.text), element("p", "caption", caption));
+    box.append(element("p", "", state.summary.text), element("p", "caption", state.summary.caption));
+    if (state.summaryPrompt !== undefined) {
+      box.append(summaryPromptLine(state.summaryPrompt));
+    }
     container.replaceChildren(box);
   }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EMPTY_POPULATE_SUMMARY, PopulateSummary } from "../../src/populateMerge";
-import { linkRowTitle, metaLine, metaTitle, recheckSummaryText, shortLinkStatus, stateSentence } from "../../src/sessionSidebarText";
+import { linkRowTitle, metaLine, metaTitle, recheckSummaryText, shortLinkStatus, stateSentence, summaryPrompt } from "../../src/sessionSidebarText";
 
 describe("metaLine", () => {
   it("joins the repo, branch, and other repos", () => {
@@ -120,5 +120,23 @@ describe("recheckSummaryText", () => {
 
   it("says nothing is new when nothing changed", () => {
     expect(recheckSummaryText(EMPTY_POPULATE_SUMMARY)).toBe("Nothing new. Working on is up to date.");
+  });
+});
+
+describe("summaryPrompt", () => {
+  it("offers a Haiku run when there is no summary yet", () => {
+    expect(summaryPrompt(undefined, true)).toEqual({ kind: "empty", text: "No summary yet.", canRunHaiku: true });
+  });
+
+  it("offers no run without a transcript", () => {
+    expect(summaryPrompt(undefined, false)).toEqual({ kind: "empty", text: "No summary yet.", canRunHaiku: false });
+  });
+
+  it("flags a stale summary", () => {
+    expect(summaryPrompt({ isStale: true }, true)).toEqual({ kind: "stale", text: "Potentially out of date.", canRunHaiku: true });
+  });
+
+  it("shows nothing for a fresh summary", () => {
+    expect(summaryPrompt({ isStale: false }, true)).toBeUndefined();
   });
 });
