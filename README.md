@@ -119,7 +119,7 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 
 ### Agent tracking
 - The agent declares its own work. Sessions that Overseer starts, resumes, or forks get an `overseer` CLI on PATH and a `track` skill.
-- The agent runs `overseer ticket add PROJ-123 --note "..."` when it starts real work on a ticket. It runs `overseer commit add <hash>` after each commit, and `overseer pr add <url>` after it opens or pushes to a PR. It skips anything it only read.
+- The agent runs `overseer ticket add PROJ-123 --note "..."` when it starts real work on a ticket. It runs `overseer commit add <hash>` after each commit, `overseer pr add <url>` after it opens or pushes to a PR, and `overseer artifact add <url>` after it publishes a claude.ai artifact. It skips anything it only read.
 - For an older session, the sidebar says what isn't tracked yet. **Populate all** asks Haiku to read a digest of the transcript and declare the same things. It costs cents, not a full resume. In a live session, run `/overseer:track` instead.
 - `overseer ticket list` shows the agent your pins and removals. The CLI only writes files under `~/.claude/overseer/`. It needs no server and no login.
 - `claude attach` sessions can't take launch flags, so they get no CLI.

@@ -162,6 +162,10 @@ export function withDeclaredArtifact(
   return { ...work, artifacts };
 }
 
+export function withoutDeclaredArtifact(work: SessionWork, url: string): SessionWork {
+  return { ...work, artifacts: work.artifacts.filter((artifact) => artifact.url !== url) };
+}
+
 // Keeps every target entry and adds the incoming ones it doesn't have yet.
 export function mergeSessionWork(targetWork: SessionWork, incomingWork: SessionWork): SessionWork {
   const targetUrls = new Set(targetWork.pullRequests.map((pullRequest) => pullRequest.url));

@@ -15,12 +15,16 @@ import {
   AGENT_WORK_SCHEMA_VERSION,
   declaredWorkFile,
   formatWorkList,
+  normalizeArtifactParentKey,
+  normalizeArtifactUrl,
   normalizeCommitHash,
   normalizePullRequestUrl,
   readSessionWork,
   SessionWork,
+  withDeclaredArtifact,
   withDeclaredCommit,
   withDeclaredPullRequest,
+  withoutDeclaredArtifact,
   withoutDeclaredCommit,
   withoutDeclaredPullRequest,
 } from "./agentWork";
@@ -51,10 +55,12 @@ Usage:
       Declare a commit this session made. Run it right after the commit.
   overseer pr add <URL> [--note "<what it does>"]
       Declare a GitHub pull request this session opened or pushed to.
-  overseer commit remove <HASH> / overseer pr remove <URL>
+  overseer artifact add <URL> [--note "<what it is>"] [--parent <TICKET KEY | PR URL>]
+      Declare a claude.ai artifact this session published or updated.
+  overseer commit remove <HASH> / overseer pr remove <URL> / overseer artifact remove <URL>
       Undeclare one you declared by mistake.
-  overseer commit list / overseer pr list
-      Show this session's declared commits and pull requests.
+  overseer commit list / overseer pr list / overseer artifact list
+      Show this session's declared commits, pull requests, and artifacts.
   overseer status list
       Show the status options, the session's current status, and its tickets' Jira statuses.
   overseer status set <ID> [--reason "<why>"]
@@ -82,7 +88,7 @@ export async function runOverseerCli(
   if (area === undefined || area === "--help" || area === "-h" || area === "help") {
     return { exitCode: EXIT_OK, output: OVERSEER_USAGE };
   }
-  const isKnownArea = area === "ticket" || area === "commit" || area === "pr" || area === "status";
+  const isKnownArea = area === "ticket" || area === "status" || isWorkArea(area);
   if (!isKnownArea || action === undefined) {
     return usageFailure(`Unknown command: ${args.join(" ")}`);
   }
@@ -95,7 +101,7 @@ export async function runOverseerCli(
   if (area === "status") {
     return runStatusCommand(action, rest, claudeHome, sessionId);
   }
-  if (area !== "ticket") {
+  if (isWorkArea(area)) {
     return runWorkCommand(area, action, rest, declaredWorkFile(claudeHome, sessionId), now);
   }
 
@@ -149,11 +155,18 @@ async function runStatusCommand(action: string, rest: string[], claudeHome: stri
 }
 
 const WORK_ITEMS = {
-  commit: { normalize: normalizeCommitHash, invalid: "Not a commit hash" },
-  pr: { normalize: normalizePullRequestUrl, invalid: "Not a GitHub pull request URL" },
+  commit: { normalize: normalizeCommitHash, invalid: "Not a commit hash", addFlags: ["--note"] },
+  pr: { normalize: normalizePullRequestUrl, invalid: "Not a GitHub pull request URL", addFlags: ["--note"] },
+  artifact: { normalize: normalizeArtifactUrl, invalid: "Not a claude.ai artifact URL", addFlags: ["--note", "--parent"] },
 };
 
-async function runWorkCommand(area: "commit" | "pr", action: string, rest: string[], workFile: string, now: number): Promise<CliResult> {
+type WorkArea = keyof typeof WORK_ITEMS;
+
+function isWorkArea(area: string): area is WorkArea {
+  return Object.hasOwn(WORK_ITEMS, area);
+}
+
+async function runWorkCommand(area: WorkArea, action: string, rest: string[], workFile: string, now: number): Promise<CliResult> {
   const work = readSessionWork(await loadVersionedCache<unknown>(workFile, AGENT_WORK_SCHEMA_VERSION));
   if (action === "list") {
     return { exitCode: EXIT_OK, output: formatWorkList(work) };
@@ -161,17 +174,22 @@ async function runWorkCommand(area: "commit" | "pr", action: string, rest: strin
   if (action !== "add" && action !== "remove") {
     return usageFailure(`Unknown ${area} action: ${action}`);
   }
-  const { normalize, invalid } = WORK_ITEMS[area];
+  const { normalize, invalid, addFlags } = WORK_ITEMS[area];
   const [rawId, ...options] = rest;
   const id = rawId === undefined ? undefined : normalize(rawId);
   if (id === undefined) {
     return usageFailure(`${invalid}: ${rawId ?? "(missing)"}`);
   }
-  const { note, error } = parseNoteOption(options, action === "add");
+  const { values, error } = parseFlagOptions(options, action === "add" ? addFlags : []);
   if (error !== undefined) {
     return usageFailure(error);
   }
-  const updatedWork = updatedSessionWork(work, area, action, id, note, now);
+  const rawParentKey = values["--parent"];
+  const parentKey = rawParentKey === undefined ? undefined : normalizeArtifactParentKey(rawParentKey);
+  if (rawParentKey !== undefined && parentKey === undefined) {
+    return usageFailure(`Not a Jira ticket key or GitHub pull request URL: ${rawParentKey}`);
+  }
+  const updatedWork = updatedSessionWork(work, area, action, id, values["--note"], parentKey, now);
   await saveVersionedCache(workFile, updatedWork, AGENT_WORK_SCHEMA_VERSION);
   const verb = action === "add" ? "Declared" : "Removed";
   return { exitCode: EXIT_OK, output: `${verb} ${id}.\n${formatWorkList(updatedWork)}` };
@@ -179,14 +197,18 @@ async function runWorkCommand(area: "commit" | "pr", action: string, rest: strin
 
 function updatedSessionWork(
   work: SessionWork,
-  area: "commit" | "pr",
+  area: WorkArea,
   action: "add" | "remove",
   id: string,
   note: string | undefined,
+  parentKey: string | undefined,
   now: number,
 ): SessionWork {
   if (area === "commit") {
     return action === "add" ? withDeclaredCommit(work, id, note, now) : withoutDeclaredCommit(work, id);
+  }
+  if (area === "artifact") {
+    return action === "add" ? withDeclaredArtifact(work, id, note, now, parentKey) : withoutDeclaredArtifact(work, id);
   }
   return action === "add" ? withDeclaredPullRequest(work, id, note, now) : withoutDeclaredPullRequest(work, id);
 }
@@ -219,6 +241,27 @@ function parseOption(options: string[], flag: string | undefined): { note?: stri
     return { error: `Unexpected arguments: ${options.join(" ")}` };
   }
   return { note: noteWords.join(" ").replace(/\s+/g, " ").trim() };
+}
+
+// Each flag's value runs until the next allowed flag, so notes need no quoting.
+function parseFlagOptions(options: string[], allowedFlags: string[]): { values: Record<string, string>; error?: string } {
+  const values: Record<string, string> = {};
+  let index = 0;
+  while (index < options.length) {
+    const flag = options[index];
+    const valueWords: string[] = [];
+    index += 1;
+    while (index < options.length && !allowedFlags.includes(options[index])) {
+      valueWords.push(options[index]);
+      index += 1;
+    }
+    const isRepeatedFlag = values[flag] !== undefined;
+    if (!allowedFlags.includes(flag) || isRepeatedFlag || valueWords.length === 0) {
+      return { values: {}, error: `Unexpected arguments: ${options.join(" ")}` };
+    }
+    values[flag] = valueWords.join(" ").replace(/\s+/g, " ").trim();
+  }
+  return { values };
 }
 
 async function ticketListText(claudeHome: string, sessionId: string, declaredTickets: DeclaredTicket[]): Promise<string> {

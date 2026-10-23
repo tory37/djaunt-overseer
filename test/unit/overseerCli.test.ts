@@ -91,6 +91,43 @@ describe("runOverseerCli", () => {
     expect(removed.output).toBe("Removed abc1234.\nPull requests:\n  https://github.com/o/r/pull/12");
   });
 
+  it("declares artifacts with a note and a parent", async () => {
+    const artifactUrl = "https://claude.ai/code/artifact/abc-123";
+    const added = await runOverseerCli(
+      ["artifact", "add", `${artifactUrl}?tab=1`, "--parent", "proj-7", "--note", "release", "plan"],
+      SESSION_ENV,
+      claudeHome,
+      300,
+    );
+    expect(added).toEqual({ exitCode: 0, output: `Declared ${artifactUrl}.\nArtifacts:\n  ${artifactUrl}  (release plan)` });
+    await runOverseerCli(["artifact", "add", artifactUrl, "--parent", "https://github.com/o/r/pull/12/files"], SESSION_ENV, claudeHome, 400);
+    expect(JSON.parse(fs.readFileSync(declaredWorkFile(claudeHome, SESSION_ID), "utf8")).entries.artifacts).toEqual([
+      { url: artifactUrl, note: "release plan", parentKey: "https://github.com/o/r/pull/12", addedAt: 300 },
+    ]);
+
+    expect((await runOverseerCli(["artifact", "list"], SESSION_ENV, claudeHome)).output).toBe(
+      `Artifacts:\n  ${artifactUrl}  (release plan)`,
+    );
+    const removed = await runOverseerCli(["artifact", "remove", artifactUrl], SESSION_ENV, claudeHome);
+    expect(removed.exitCode).toBe(0);
+    expect(JSON.parse(fs.readFileSync(declaredWorkFile(claudeHome, SESSION_ID), "utf8")).entries.artifacts).toEqual([]);
+  });
+
+  it.each([
+    [["artifact", "add", "https://example.com/artifact/abc"], "Not a claude.ai artifact URL: https://example.com/artifact/abc"],
+    [["artifact", "add"], "Not a claude.ai artifact URL: (missing)"],
+    [["artifact", "add", "https://claude.ai/artifact/abc", "--parent", "not a key"], "Not a Jira ticket key or GitHub pull request URL: not a key"],
+    [["artifact", "add", "https://claude.ai/artifact/abc", "--note"], "Unexpected arguments: --note"],
+    [["artifact", "add", "https://claude.ai/artifact/abc", "--note", "a", "--note", "b"], "Unexpected arguments: --note a --note b"],
+    [["artifact", "remove", "https://claude.ai/artifact/abc", "--parent", "PROJ-1"], "Unexpected arguments: --parent PROJ-1"],
+    [["pr", "add", "https://github.com/o/r/pull/12", "--parent", "PROJ-1"], "Unexpected arguments: --parent PROJ-1"],
+    [["artifact", "rename", "https://claude.ai/artifact/abc"], "Unknown artifact action: rename"],
+  ])("rejects bad artifact arguments: %o", async (args, message) => {
+    const result = await runOverseerCli(args, SESSION_ENV, claudeHome);
+    expect(result).toEqual({ exitCode: 2, output: `${message}\n\n${OVERSEER_USAGE}` });
+    expect(fs.existsSync(declaredWorkFile(claudeHome, SESSION_ID))).toBe(false);
+  });
+
   it.each([[{}], [{ CLAUDE_CODE_SESSION_ID: "../escape" }]])("refuses to run without a safe session id: %o", async (env) => {
     const result = await runOverseerCli(["ticket", "list"], env, claudeHome);
     expect(result.exitCode).toBe(1);
