@@ -79,7 +79,9 @@ export function pullRequestLabel(url: string): string {
 export function readSessionWork(entries: unknown): SessionWork {
   const fields = typeof entries === "object" && entries !== null ? (entries as Record<string, unknown>) : {};
   return {
-    commits: readEntries(fields.commits, "hash", normalizeCommitHash).map(({ id, note, addedAt }) => ({ hash: id, ...note, addedAt })),
+    commits: withoutDuplicateCommits(
+      readEntries(fields.commits, "hash", normalizeCommitHash).map(({ id, note, addedAt }) => ({ hash: id, ...note, addedAt })),
+    ),
     pullRequests: readEntries(fields.pullRequests, "url", normalizePullRequestUrl, normalizeTicketKey).map(
       ({ id, note, parent, addedAt }) => ({ url: id, ...note, ...parent, addedAt }),
     ),
@@ -90,14 +92,23 @@ export function readSessionWork(entries: unknown): SessionWork {
   };
 }
 
-// Declaring again updates the note but keeps when it was first declared.
+// One hash abbreviates the other, as with "09fd90e" and "09fd90e1".
+export function isSameCommit(leftHash: string, rightHash: string): boolean {
+  const left = leftHash.toLowerCase();
+  const right = rightHash.toLowerCase();
+  const [shorter, longer] = left.length <= right.length ? [left, right] : [right, left];
+  return COMMIT_HASH_PATTERN.test(shorter) && COMMIT_HASH_PATTERN.test(longer) && longer.startsWith(shorter);
+}
+
+// Declaring again updates the note but keeps when it was first declared and the longer hash.
 export function withDeclaredCommit(work: SessionWork, hash: string, note: string | undefined, now: number): SessionWork {
-  const existingCommit = work.commits.find((commit) => commit.hash === hash);
-  const updatedCommit: DeclaredCommit = { hash, ...noteField(note ?? existingCommit?.note), addedAt: existingCommit?.addedAt ?? now };
+  const existingCommit = work.commits.find((commit) => isSameCommit(commit.hash, hash));
+  const keptHash = existingCommit !== undefined && existingCommit.hash.length > hash.length ? existingCommit.hash : hash;
+  const updatedCommit: DeclaredCommit = { hash: keptHash, ...noteField(note ?? existingCommit?.note), addedAt: existingCommit?.addedAt ?? now };
   const commits =
     existingCommit === undefined
       ? [...work.commits, updatedCommit]
-      : work.commits.map((commit) => (commit.hash === hash ? updatedCommit : commit));
+      : work.commits.map((commit) => (commit === existingCommit ? updatedCommit : commit));
   return { ...work, commits };
 }
 
@@ -153,12 +164,13 @@ export function withDeclaredArtifact(
 
 // Keeps every target entry and adds the incoming ones it doesn't have yet.
 export function mergeSessionWork(targetWork: SessionWork, incomingWork: SessionWork): SessionWork {
-  const targetHashes = new Set(targetWork.commits.map((commit) => commit.hash));
   const targetUrls = new Set(targetWork.pullRequests.map((pullRequest) => pullRequest.url));
   const targetArtifactUrls = new Set(targetWork.artifacts.map((artifact) => artifact.url));
   const populatedAt = targetWork.populatedAt ?? incomingWork.populatedAt;
   return {
-    commits: [...targetWork.commits, ...incomingWork.commits.filter((commit) => !targetHashes.has(commit.hash))],
+    commits: [...targetWork.commits, ...incomingWork.commits.filter(
+      (incomingCommit) => !targetWork.commits.some((targetCommit) => isSameCommit(targetCommit.hash, incomingCommit.hash)),
+    )],
     pullRequests: [...targetWork.pullRequests, ...incomingWork.pullRequests.filter((pullRequest) => !targetUrls.has(pullRequest.url))],
     artifacts: [...targetWork.artifacts, ...incomingWork.artifacts.filter((artifact) => !targetArtifactUrls.has(artifact.url))],
     ...(populatedAt !== undefined ? { populatedAt } : {}),
@@ -233,6 +245,25 @@ function readEntries(value: unknown, idField: string, normalizeId: Normalizer, n
     });
   }
   return parsedEntries;
+}
+
+function withoutDuplicateCommits(commits: DeclaredCommit[]): DeclaredCommit[] {
+  const uniqueCommits: DeclaredCommit[] = [];
+  for (const commit of commits) {
+    const duplicateIndex = uniqueCommits.findIndex((uniqueCommit) => isSameCommit(uniqueCommit.hash, commit.hash));
+    if (duplicateIndex === -1) {
+      uniqueCommits.push(commit);
+      continue;
+    }
+    uniqueCommits[duplicateIndex] = mergedDuplicateCommit(uniqueCommits[duplicateIndex], commit);
+  }
+  return uniqueCommits;
+}
+
+function mergedDuplicateCommit(firstCommit: DeclaredCommit, secondCommit: DeclaredCommit): DeclaredCommit {
+  const [olderCommit, newerCommit] = firstCommit.addedAt <= secondCommit.addedAt ? [firstCommit, secondCommit] : [secondCommit, firstCommit];
+  const longerHash = firstCommit.hash.length >= secondCommit.hash.length ? firstCommit.hash : secondCommit.hash;
+  return { hash: longerHash, ...noteField(newerCommit.note ?? olderCommit.note), addedAt: olderCommit.addedAt };
 }
 
 function noteField(note: string | undefined): { note?: string } {

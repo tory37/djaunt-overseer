@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { linkRowTitle, metaLine, metaTitle, shortLinkStatus, stateSentence } from "../../src/sessionSidebarText";
+import { EMPTY_POPULATE_SUMMARY, PopulateSummary } from "../../src/populateMerge";
+import { linkRowTitle, metaLine, metaTitle, recheckSummaryText, shortLinkStatus, stateSentence } from "../../src/sessionSidebarText";
 
 describe("metaLine", () => {
   it("joins the repo, branch, and other repos", () => {
@@ -91,5 +92,33 @@ describe("linkRowTitle", () => {
 
   it("drops the parts that are missing", () => {
     expect(linkRowTitle({ ...row, label: undefined, statusText: undefined, mark: "removed" })).toBe("PROJ-2567");
+  });
+});
+
+describe("recheckSummaryText", () => {
+  function summary(added: Partial<PopulateSummary["added"]>, notesUpdated = 0): PopulateSummary {
+    return { added: { ...EMPTY_POPULATE_SUMMARY.added, ...added }, notesUpdated };
+  }
+
+  it("names up to two tickets and counts the other kinds", () => {
+    const rechecked = summary({ tickets: ["ASSMNT-2892"], pullRequests: ["pr"], commits: ["a", "b", "c", "d", "e"] }, 3);
+    expect(recheckSummaryText(rechecked)).toBe("Added ASSMNT-2892, 1 PR, 5 commits. Updated 3 notes.");
+    expect(recheckSummaryText(summary({ tickets: ["PROJ-1", "PROJ-2"] }))).toBe("Added PROJ-1, PROJ-2.");
+  });
+
+  it("counts tickets past two", () => {
+    expect(recheckSummaryText(summary({ tickets: ["PROJ-1", "PROJ-2", "PROJ-3"], artifacts: ["a", "b"] }))).toBe("Added 3 tickets, 2 artifacts.");
+  });
+
+  it("uses the singular for one of a kind", () => {
+    expect(recheckSummaryText(summary({ commits: ["a"], artifacts: ["b"] }, 1))).toBe("Added 1 commit, 1 artifact. Updated 1 note.");
+  });
+
+  it("reports only updated notes when nothing was added", () => {
+    expect(recheckSummaryText(summary({}, 2))).toBe("Updated 2 notes.");
+  });
+
+  it("says nothing is new when nothing changed", () => {
+    expect(recheckSummaryText(EMPTY_POPULATE_SUMMARY)).toBe("Nothing new. Working on is up to date.");
   });
 });

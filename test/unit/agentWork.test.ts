@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_SESSION_WORK,
+  isSameCommit,
   mergeSessionWork,
   normalizeCommitHash,
   normalizePullRequestUrl,
@@ -12,6 +13,20 @@ import {
 } from "../../src/agentWork";
 
 describe("readSessionWork", () => {
+  it("collapses one commit saved at two lengths into the longer hash, earliest time, and newer note", () => {
+    const work = readSessionWork({
+      commits: [
+        { hash: "09fd90e", note: "old", addedAt: 5 },
+        { hash: "abc1234", addedAt: 6 },
+        { hash: "09fd90e1", note: "new", addedAt: 9 },
+      ],
+    });
+    expect(work.commits).toEqual([
+      { hash: "09fd90e1", note: "new", addedAt: 5 },
+      { hash: "abc1234", addedAt: 6 },
+    ]);
+  });
+
   it("reads a file written before parents and artifacts existed", () => {
     const work = readSessionWork({ commits: [], pullRequests: [{ url: "https://github.com/o/r/pull/3", note: "fix", addedAt: 1 }] });
     expect(work).toEqual({ commits: [], pullRequests: [{ url: "https://github.com/o/r/pull/3", note: "fix", addedAt: 1 }], artifacts: [] });
@@ -65,6 +80,19 @@ describe("readSessionWork", () => {
   });
 });
 
+describe("isSameCommit", () => {
+  it("matches a hash and its longer abbreviation in any case", () => {
+    expect(isSameCommit("09fd90e", "09FD90E1")).toBe(true);
+    expect(isSameCommit("09fd90e1", "09fd90e")).toBe(true);
+  });
+
+  it("rejects different commits, prefixes under 7 chars, and non-hex ids", () => {
+    expect(isSameCommit("09fd90e", "09fd91e1")).toBe(false);
+    expect(isSameCommit("09fd90", "09fd90e1")).toBe(false);
+    expect(isSameCommit("main-br", "main-branch")).toBe(false);
+  });
+});
+
 describe("normalizing ids", () => {
   it.each([
     ["ABC1234", "abc1234"],
@@ -85,6 +113,19 @@ describe("declaring work", () => {
   it("keeps the first time and updates the note", () => {
     const once = withDeclaredCommit(EMPTY_SESSION_WORK, "abc1234", "old", 10);
     expect(withDeclaredCommit(once, "abc1234", "new", 20).commits).toEqual([{ hash: "abc1234", note: "new", addedAt: 10 }]);
+  });
+
+  it("updates an abbreviated commit in place and keeps the longer hash", () => {
+    const once = withDeclaredCommit(EMPTY_SESSION_WORK, "09fd90e", "old", 10);
+    const longer = withDeclaredCommit(once, "09fd90e1", "new", 20);
+    expect(longer.commits).toEqual([{ hash: "09fd90e1", note: "new", addedAt: 10 }]);
+    expect(withDeclaredCommit(longer, "09fd90e", undefined, 30).commits).toEqual([{ hash: "09fd90e1", note: "new", addedAt: 10 }]);
+  });
+
+  it("skips an incoming commit the target has at another length", () => {
+    const target = { commits: [{ hash: "09fd90e", addedAt: 1 }], pullRequests: [], artifacts: [] };
+    const incoming = { commits: [{ hash: "09fd90e1", addedAt: 2 }], pullRequests: [], artifacts: [] };
+    expect(mergeSessionWork(target, incoming).commits).toEqual([{ hash: "09fd90e", addedAt: 1 }]);
   });
 
   it("merges a copied session without losing the target's entries", () => {

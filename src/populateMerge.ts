@@ -1,5 +1,5 @@
 import { DeclaredTicket, withDeclaredTicket } from "./agentTickets";
-import { SessionWork, withDeclaredArtifact, withDeclaredCommit, withDeclaredPullRequest } from "./agentWork";
+import { isSameCommit, SessionWork, withDeclaredArtifact, withDeclaredCommit, withDeclaredPullRequest } from "./agentWork";
 import { PopulatedItem, PopulateResult } from "./populateDigest";
 
 export interface PopulateSummary {
@@ -57,6 +57,7 @@ export function mergePopulateResult(input: PopulateMergeInput): PopulateMerge {
     populateResult.commits,
     isRecheck,
     (work, item) => withDeclaredCommit(work, item.id, item.note, now),
+    isSameCommit,
   );
   const pullRequestMerge = mergeKind(
     commitMerge.container,
@@ -96,12 +97,13 @@ function mergeKind<Container, Entry extends DeclaredEntry>(
   items: PopulatedItem[],
   isRecheck: boolean,
   withItem: (container: Container, item: PopulatedItem) => Container,
+  isSameId: (entryId: string, itemId: string) => boolean = (entryId, itemId) => entryId === itemId,
 ): KindMerge<Container> {
   let container = savedContainer;
   const addedIds: string[] = [];
   let updatedCount = 0;
   for (const item of items) {
-    const existingEntry = entriesOf(container).find((entry) => idOf(entry) === item.id);
+    const existingEntry = entriesOf(container).find((entry) => isSameId(idOf(entry), item.id));
     if (existingEntry === undefined) {
       container = withItem(container, item);
       addedIds.push(item.id);
@@ -111,7 +113,7 @@ function mergeKind<Container, Entry extends DeclaredEntry>(
       continue;
     }
     container = withItem(container, item);
-    const refreshedEntry = entriesOf(container).find((entry) => idOf(entry) === item.id);
+    const refreshedEntry = entriesOf(container).find((entry) => isSameId(idOf(entry), item.id));
     const isChanged = refreshedEntry?.note !== existingEntry.note || refreshedEntry?.parentKey !== existingEntry.parentKey;
     if (isChanged) {
       updatedCount++;

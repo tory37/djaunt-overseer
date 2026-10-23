@@ -72,6 +72,14 @@ describe("mergePopulateResult", () => {
     expect(summary).toEqual({ added: { tickets: [], pullRequests: [], commits: [], artifacts: [] }, notesUpdated: 0 });
   });
 
+  it("treats a commit at another abbreviation length as existing and keeps the longer hash", () => {
+    const longerResult: PopulateResult = { tickets: [], commits: [{ id: "abc12345", note: "fix v2" }], pullRequests: [], artifacts: [] };
+    const { work, summary } = merge({ populateResult: longerResult });
+    expect(work.commits).toEqual([{ hash: "abc12345", note: "fix v2", addedAt: 1 }]);
+    expect(summary.added.commits).toEqual([]);
+    expect(summary.notesUpdated).toBe(1);
+  });
+
   it("counts nothing when a recheck returns the same notes", () => {
     const sameResult: PopulateResult = { tickets: [{ id: "PROJ-1", note: "no PR yet" }], commits: [], pullRequests: [], artifacts: [] };
     expect(merge({ populateResult: sameResult, savedWork: EMPTY_SESSION_WORK }).summary.notesUpdated).toBe(0);

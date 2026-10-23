@@ -1,8 +1,11 @@
 import * as path from "path";
+import type { PopulateSummary } from "./populateMerge";
 import type { ResourceRow } from "./resourceRows";
 import type { SidebarRunKind } from "./sessionPreviewModel";
 
 const OPEN_STATE_PREFIX = "open · ";
+const MAX_NAMED_TICKETS = 2;
+const NOTHING_NEW_TEXT = "Nothing new. Working on is up to date.";
 
 export function metaLine(cwd: string | undefined, branch: string | undefined, otherRepos: string[]): string {
   const repoName = cwd === undefined ? undefined : path.basename(cwd);
@@ -50,4 +53,27 @@ export function linkRowTitle(row: Pick<ResourceRow, "displayId" | "label" | "sta
   ]
     .filter((part) => part !== undefined && part !== "")
     .join(" — ");
+}
+
+// Up to two added tickets show by key; more show as a count, like the other kinds.
+export function recheckSummaryText({ added, notesUpdated }: PopulateSummary): string {
+  const ticketPart = added.tickets.length <= MAX_NAMED_TICKETS ? added.tickets : [countOf(added.tickets.length, "ticket")];
+  const addedParts = [
+    ...ticketPart,
+    countOf(added.pullRequests.length, "PR"),
+    countOf(added.commits.length, "commit"),
+    countOf(added.artifacts.length, "artifact"),
+  ].filter((part) => part !== "");
+  const sentences = [
+    addedParts.length > 0 ? `Added ${addedParts.join(", ")}.` : "",
+    notesUpdated > 0 ? `Updated ${countOf(notesUpdated, "note")}.` : "",
+  ].filter((sentence) => sentence !== "");
+  return sentences.length > 0 ? sentences.join(" ") : NOTHING_NEW_TEXT;
+}
+
+function countOf(count: number, noun: string): string {
+  if (count === 0) {
+    return "";
+  }
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }

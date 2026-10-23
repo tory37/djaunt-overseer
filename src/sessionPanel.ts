@@ -9,7 +9,7 @@ import { SessionMeta } from "./indexer";
 import { linkKey } from "./linkJudge";
 import { LinkStatus } from "./linkStatus";
 import { LinkStatusService } from "./linkStatusService";
-import { MarkedLink, sessionPanelLinks } from "./linkView";
+import { MarkedLink, sessionPanelLinks, withParentGroups } from "./linkView";
 import { LiveSessionMonitor } from "./liveSessions";
 import { openInBrowser, openInVscode } from "./openUrl";
 import { tildePath } from "./paths";
@@ -18,8 +18,9 @@ import { OrderedResource, orderResources } from "./resourceOrder";
 import { acceptedOrder, linkStatusColor, ResourceRow, resourceRow } from "./resourceRows";
 import { readLinkSettings, SessionLinkService } from "./sessionLinks";
 import { SessionFocusTracker } from "./sessionFocus";
+import { PopulateSummary } from "./populateMerge";
 import { SessionPopulator } from "./sessionPopulator";
-import { linkRowTitle, metaLine, metaTitle, shortLinkStatus, stateSentence } from "./sessionSidebarText";
+import { linkRowTitle, metaLine, metaTitle, recheckSummaryText, shortLinkStatus, stateSentence } from "./sessionSidebarText";
 import { SessionPreview } from "./sessionPreview";
 import { previewRunState, SidebarRunKind, sidebarRunKind } from "./sessionPreviewModel";
 import { statusColorId } from "./sessionStatuses";
@@ -49,6 +50,10 @@ export interface SessionPanelDependencies {
   globalState: vscode.Memento;
 }
 
+type RecheckState = { status: "running" } | { status: "done"; summary: PopulateSummary } | { status: "failed"; reason: string };
+
+type RecheckLine = { status: "running" } | { status: "done"; text: string } | { status: "failed"; reason: string };
+
 interface SessionDetails {
   sessionId: string;
   title: string;
@@ -67,7 +72,7 @@ interface SessionDetails {
   isSummarizing: boolean;
   hasTranscript: boolean;
   untracked: string[];
-  isPopulating: boolean;
+  recheck: RecheckLine | undefined;
 }
 
 interface PanelRow extends ResourceRow {
@@ -99,7 +104,8 @@ type PanelMessage =
   | { type: "findAgain" }
   | { type: "refreshWorkingOn" }
   | { type: "action"; action: string }
-  | { type: "populate" };
+  | { type: "recheck" }
+  | { type: "dismissRecheck" };
 
 const LINK_MARKS = new Set<string>(["pinned", "removed"]);
 const LINK_FILTERS: LinkFilter[] = ["showIrrelevant", "showRemoved"];
@@ -124,6 +130,7 @@ const ACTION_COMMANDS: Record<string, string> = {
 export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private view: vscode.WebviewView | undefined;
   private shownLinks: MarkedLink[] = [];
+  private readonly recheckStates = new Map<string, RecheckState>();
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(private readonly dependencies: SessionPanelDependencies) {
@@ -181,9 +188,10 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
     const { registry, linkService, linkStatusService, findSessionMeta } = this.dependencies;
     const meta = findSessionMeta(sessionId);
     const visibleLinks = linkService.visibleLinksFor(sessionId, meta) ?? [];
-    const { workingOn, alsoSeen } = sessionPanelLinks(visibleLinks, registry.linkMarks(sessionId));
-    const hasSavedOrder = registry.linkOrder(sessionId).length > 0;
+    const linkMarks = registry.linkMarks(sessionId);
     const statusFor = (link: MarkedLink): LinkStatus | undefined => linkStatusService.statusFor(link);
+    const { workingOn, alsoSeen } = withParentGroups(sessionPanelLinks(visibleLinks, linkMarks), statusFor, linkMarks);
+    const hasSavedOrder = registry.linkOrder(sessionId).length > 0;
     const orderedWorkingOn = orderResources(workingOn, statusFor, hasSavedOrder);
     const orderedAlsoSeen = orderResources(alsoSeen, statusFor, hasSavedOrder);
     this.shownLinks = [...orderedWorkingOn, ...orderedAlsoSeen].map((resource) => resource.link);
@@ -237,8 +245,16 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
       isSummarizing: summaryService.isSummarizing(sessionId),
       hasTranscript: meta !== undefined,
       untracked: untracked.map((kind) => TRACKED_KIND_LABELS[kind]),
-      isPopulating: populator.isPopulating(sessionId),
+      recheck: populator.isPopulating(sessionId) ? { status: "running" } : this.recheckLine(sessionId),
     };
+  }
+
+  private recheckLine(sessionId: string): RecheckLine | undefined {
+    const recheckState = this.recheckStates.get(sessionId);
+    if (recheckState?.status === "done") {
+      return { status: "done", text: recheckSummaryText(recheckState.summary) };
+    }
+    return recheckState;
   }
 
   private rowFor({ link, depth }: OrderedResource): PanelRow {
@@ -321,8 +337,7 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
         return;
       }
       case "refreshWorkingOn":
-        this.dependencies.declarationMonitor.rescan();
-        this.dependencies.linkStatusService.refresh(this.shownLinks);
+        this.refreshWorkingOn();
         return;
       case "findAgain":
         await vscode.commands.executeCommand("overseer.findResources", sessionId);
@@ -334,14 +349,40 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
           await vscode.commands.executeCommand(ACTION_COMMANDS[message.action], sessionId);
         }
         return;
-      case "populate": {
-        const meta = this.dependencies.findSessionMeta(sessionId);
-        if (meta !== undefined) {
-          await this.dependencies.populator.populate(meta);
-        }
+      case "recheck":
+        await this.recheck(sessionId);
         return;
-      }
+      case "dismissRecheck":
+        this.recheckStates.delete(sessionId);
+        this.postState();
+        return;
     }
+  }
+
+  private refreshWorkingOn(): void {
+    this.dependencies.declarationMonitor.rescan();
+    this.dependencies.linkStatusService.refresh(this.shownLinks);
+  }
+
+  // Find links runs after the Haiku pass so new artifacts and the judge's parents show too.
+  private async recheck(sessionId: string): Promise<void> {
+    const { findSessionMeta, populator } = this.dependencies;
+    const meta = findSessionMeta(sessionId);
+    if (meta === undefined || this.recheckStates.get(sessionId)?.status === "running") {
+      return;
+    }
+    this.recheckStates.set(sessionId, { status: "running" });
+    this.postState();
+    try {
+      const summary = await populator.populate(meta, { isRecheck: true });
+      // The declarations are already saved, so a failed scan must not hide them.
+      await Promise.resolve(vscode.commands.executeCommand("overseer.findResources", sessionId)).catch(() => undefined);
+      this.recheckStates.set(sessionId, { status: "done", summary });
+    } catch (error) {
+      this.recheckStates.set(sessionId, { status: "failed", reason: error instanceof Error ? error.message : String(error) });
+    }
+    this.refreshWorkingOn();
+    this.postState();
   }
 
   // Resuming the previewed session opens its terminal in the preview's place.
@@ -443,6 +484,8 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .seen:hover, .seen:focus-within { opacity: 1; }
   .seen.dimmed { opacity: 0.5; }
   .seen.dimmed:hover, .seen.dimmed:focus-within { opacity: 1; }
+  .parent-group { opacity: 0.5; }
+  .parent-group:hover, .parent-group:focus-within { opacity: 1; }
   .removed .key { text-decoration: line-through; }
   .tag { flex-shrink: 0; font-size: 11px; font-style: italic; color: var(--vscode-descriptionForeground); }
   .seen:hover .tag, .seen:focus-within .tag { display: none; }
@@ -666,8 +709,10 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
         if (row.kind === "ticket" && panelState.isJiraEnabled) {
           items.push(menuItem("arrow-swap", "Move to Status…", () => send({ type: "moveStatus", key: row.key })));
         }
-        items.push(element("div", "menu-separator"));
-        items.push(menuItem("close", "Remove from This Session", () => send({ type: "setMark", key: row.key, mark: "removed" })));
+        if (!row.isParentGroup) {
+          items.push(element("div", "menu-separator"));
+          items.push(menuItem("close", "Remove from This Session", () => send({ type: "setMark", key: row.key, mark: "removed" })));
+        }
         return items;
       }),
     );
@@ -726,7 +771,8 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   }
 
   function workingOnItem(row) {
-    const item = element("li", "link-row" + (row.mark === "removed" ? " removed" : ""));
+    const classNames = ["link-row", row.mark === "removed" ? "removed" : "", row.isParentGroup ? "parent-group" : ""].filter(Boolean).join(" ");
+    const item = element("li", classNames);
     item.style.paddingLeft = ROW_GUTTER_PX + row.depth * NESTED_ROW_INDENT_PX + "px";
     item.title = row.hoverTitle;
     item.append(glyphElement(row), keyElement(row), element("span", "label ellipsis", row.label || MISSING_LABELS[row.kind]));
@@ -737,7 +783,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       }
       item.append(shortStatus);
     }
-    item.append(rowActions(row, "Pin"));
+    item.append(rowActions(row, row.isParentGroup ? "Pin as Working On" : "Pin"));
     makeDraggable(item, row, panelState.workingOn);
     return item;
   }
@@ -862,19 +908,48 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   }
 
   function untrackedLine(session) {
-    if (session.untracked.length === 0 && !session.isPopulating) {
+    if (session.untracked.length === 0 || session.recheck?.status === "running") {
+      return undefined;
+    }
+    const text = session.untracked.join(", ") + " not tracked";
+    const line = element("div", "untracked");
+    const label = element("span", "text ellipsis", text);
+    label.title = text;
+    line.append(codicon("hubot"), label, textButton("link-button", undefined, "Fill in", () => send({ type: "recheck" })));
+    return line;
+  }
+
+  function recheckLine(recheck) {
+    if (recheck === undefined) {
       return undefined;
     }
     const line = element("div", "untracked");
-    if (session.isPopulating) {
-      line.append(spinner(), element("span", "text ellipsis", "Haiku is reading this session…"));
+    if (recheck.status === "running") {
+      line.append(spinner(), element("span", "text ellipsis", "Haiku is reading the whole transcript…"));
       return line;
     }
-    const text = session.untracked.join(", ") + " not tracked";
-    const label = element("span", "text ellipsis", text);
-    label.title = text;
-    line.append(codicon("hubot"), label, textButton("link-button", undefined, "Fill in", () => send({ type: "populate" })));
+    if (recheck.status === "failed") {
+      const errorIcon = codicon("error");
+      errorIcon.style.color = "var(--vscode-errorForeground)";
+      const reason = element("span", "text ellipsis", recheck.reason);
+      reason.title = recheck.reason;
+      line.append(errorIcon, reason, textButton("link-button", undefined, "Retry", () => send({ type: "recheck" })));
+      return line;
+    }
+    const summary = element("span", "text ellipsis", recheck.text);
+    summary.title = recheck.text;
+    line.append(codicon("check"), summary, iconButton("close", "Dismiss", () => send({ type: "dismissRecheck" })));
     return line;
+  }
+
+  function recheckButton(session) {
+    const isRechecking = session.recheck?.status === "running";
+    const label = session.hasTranscript ? "Recheck with Haiku" : "No transcript yet";
+    const button = iconButton(isRechecking ? "loading" : "sparkle", label, () => send({ type: "recheck" }), isRechecking || !session.hasTranscript);
+    if (isRechecking) {
+      button.firstChild.classList.add("codicon-modifier-spin");
+    }
+    return button;
   }
 
   function alsoSeenDisclosure() {
@@ -925,10 +1000,11 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     const heading = element("div", "work-heading");
     heading.append(
       element("h2", "", "Working on"),
+      recheckButton(session),
       iconButton("refresh", "Refresh Statuses and Declarations", () => send({ type: "refreshWorkingOn" })),
       iconButton("add", "Pin a Ticket by Key", () => send({ type: "pinByKey" })),
     );
-    work.append(heading);
+    work.append(...[heading, recheckLine(session.recheck)].filter(Boolean));
     if (panelState.workingOn.length > 0) {
       const list = element("ul", "list");
       list.append(...panelState.workingOn.map(workingOnItem));

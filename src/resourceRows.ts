@@ -19,6 +19,7 @@ export interface ResourceRow {
   mark: LinkMark | undefined;
   isDimmed: boolean;
   isAgentDeclared: boolean;
+  isParentGroup: boolean;
   agentNote: string | undefined;
   depth: number;
 }
@@ -53,6 +54,7 @@ export function resourceRow(
     mark: link.mark,
     isDimmed: isDimmedLink(link),
     isAgentDeclared: link.isAgentDeclared === true,
+    isParentGroup: link.isParentGroup === true,
     agentNote: link.agentNote,
     depth,
   };

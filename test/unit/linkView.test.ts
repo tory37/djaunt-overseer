@@ -11,7 +11,10 @@ import {
   sessionPanelLinks,
   withDeclarations,
   visibleLinks,
+  withParentGroups,
 } from "../../src/linkView";
+import { LinkStatus } from "../../src/linkStatus";
+import { orderResources } from "../../src/resourceOrder";
 import { acceptedOrder, resourceRow } from "../../src/resourceRows";
 import { statusGlyphMarkup } from "../../src/statusIcons";
 
@@ -265,5 +268,48 @@ describe("sessionPanelLinks", () => {
     const { workingOn } = sessionPanelLinks([TOUCHED_TICKET], { "ticket:PROJ-88": "pinned", "ticket:PROJ-5": "removed", "pr:x": "pinned" });
     expect(workingOn).toHaveLength(1);
     expect(workingOn[0]).toMatchObject({ kind: "ticket", id: "PROJ-88", mark: "pinned" });
+  });
+});
+
+describe("withParentGroups", () => {
+  const firstChild = resolvedLink({ kind: "ticket", id: "PROJ-2", role: "owned", isAgentDeclared: true, declaredParentKey: "ticket:EPIC-1" });
+  const secondChild = resolvedLink({ kind: "ticket", id: "PROJ-3", role: "owned", isAgentDeclared: true });
+  const jiraStatuses: Record<string, LinkStatus> = { "PROJ-3": { text: "To Do", colorKey: "To Do", parentKey: "EPIC-1" } };
+  const statusFor = (link: MarkedLink): LinkStatus | undefined => jiraStatuses[link.id];
+
+  it("adds a shared parent that is not shown as a group row, and the tickets nest under it", () => {
+    const { workingOn, alsoSeen } = withParentGroups({ workingOn: [firstChild, secondChild], alsoSeen: [] }, statusFor, {});
+    expect(workingOn[0]).toMatchObject({ kind: "ticket", id: "EPIC-1", role: "touched", isParentGroup: true });
+    expect(workingOn[0].isAgentDeclared).toBeUndefined();
+    expect(alsoSeen).toEqual([]);
+    const ordered = orderResources(workingOn, statusFor, false).map(({ link, depth }) => [link.id, depth]);
+    expect(ordered).toEqual([
+      ["EPIC-1", 0],
+      ["PROJ-2", 1],
+      ["PROJ-3", 1],
+    ]);
+  });
+
+  it("moves a parent seen in the transcript up from Also seen", () => {
+    const seenEpic = resolvedLink({ kind: "ticket", id: "EPIC-1", role: "touched", label: "Epic" });
+    const { workingOn, alsoSeen } = withParentGroups({ workingOn: [firstChild, secondChild], alsoSeen: [seenEpic, OWNED_PR] }, statusFor, {});
+    expect(workingOn[0]).toMatchObject({ id: "EPIC-1", label: "Epic", isParentGroup: true });
+    expect(alsoSeen).toEqual([OWNED_PR]);
+  });
+
+  it("needs two tickets, an unshown parent, and a parent the user kept", () => {
+    const sections = { workingOn: [firstChild, secondChild], alsoSeen: [] };
+    expect(withParentGroups({ workingOn: [firstChild], alsoSeen: [] }, statusFor, {}).workingOn).toEqual([firstChild]);
+    expect(withParentGroups(sections, statusFor, { "ticket:EPIC-1": "removed" })).toBe(sections);
+    const shownEpic = resolvedLink({ kind: "ticket", id: "EPIC-1", role: "owned", isAgentDeclared: true });
+    const withShownEpic = { workingOn: [shownEpic, firstChild, secondChild], alsoSeen: [] };
+    expect(withParentGroups(withShownEpic, statusFor, {})).toBe(withShownEpic);
+  });
+
+  it("ignores the parents of PRs and artifacts", () => {
+    const prs = [1, 2].map((number) =>
+      resolvedLink({ kind: "pr", id: `acme/web/pull/${number}`, role: "owned", isAgentDeclared: true, declaredParentKey: "ticket:EPIC-1" }),
+    );
+    expect(withParentGroups({ workingOn: prs, alsoSeen: [] }, statusFor, {}).workingOn).toEqual(prs);
   });
 });

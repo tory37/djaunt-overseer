@@ -2,6 +2,7 @@ import { DeclaredTicket } from "./agentTickets";
 import { DeclaredArtifact, DeclaredPullRequest, normalizePullRequestUrl } from "./agentWork";
 import { artifactUrlParts, LinkKind } from "./linkCandidates";
 import { linkKey, ResolvedLink } from "./linkJudge";
+import type { LinkStatus } from "./linkStatus";
 import { LinkMark, LinkMarks } from "./registry";
 import { sortBySavedOrder } from "./reorder";
 
@@ -14,8 +15,10 @@ export interface LinkViewSettings {
 
 export interface MarkedLink extends ResolvedLink {
   mark: LinkMark | undefined;
+  isParentGroup?: boolean;
 }
 
+const MIN_GROUPED_TICKETS = 2;
 const MARK_SORT_RANK: Record<LinkMark | "none", number> = { pinned: 0, none: 1, removed: 2 };
 
 export function markLinks(resolvedLinks: ResolvedLink[], linkMarks: LinkMarks): MarkedLink[] {
@@ -159,6 +162,47 @@ export function sessionPanelLinks(links: MarkedLink[], linkMarks: LinkMarks): Se
     workingOn: [...pinnedByKeyOnly, ...links.filter(isWorkingOn)],
     alsoSeen: links.filter((link) => !isWorkingOn(link)),
   };
+}
+
+// Two or more Working on tickets with the same unshown parent nest under that parent as a group row, which is not owned.
+// A parent seen only in the transcript moves up from Also seen; a parent the user removed never groups.
+export function withParentGroups(
+  sections: SessionPanelLinks,
+  statusFor: (link: MarkedLink) => LinkStatus | undefined,
+  linkMarks: LinkMarks,
+): SessionPanelLinks {
+  const workingOnKeys = new Set(sections.workingOn.map((link) => linkKey(link)));
+  const childCounts = new Map<string, number>();
+  for (const link of sections.workingOn) {
+    const parentKey = ticketParentKey(link, statusFor(link));
+    if (parentKey !== undefined && !workingOnKeys.has(parentKey) && linkMarks[parentKey] !== "removed") {
+      childCounts.set(parentKey, (childCounts.get(parentKey) ?? 0) + 1);
+    }
+  }
+  const groupKeys = [...childCounts].filter(([, count]) => count >= MIN_GROUPED_TICKETS).map(([parentKey]) => parentKey);
+  if (groupKeys.length === 0) {
+    return sections;
+  }
+  const groupLinks = groupKeys.map((groupKey): MarkedLink => {
+    const seenLink = sections.alsoSeen.find((link) => linkKey(link) === groupKey);
+    const groupLink = seenLink ?? { ...unscannedLink("ticket", groupKey.slice("ticket:".length), undefined), role: "touched", mark: undefined };
+    return { ...groupLink, isParentGroup: true };
+  });
+  return {
+    workingOn: [...groupLinks, ...sections.workingOn],
+    alsoSeen: sections.alsoSeen.filter((link) => !groupKeys.includes(linkKey(link))),
+  };
+}
+
+// Jira's parent wins over the declared one, as in the resource tree.
+function ticketParentKey(link: MarkedLink, status: LinkStatus | undefined): string | undefined {
+  if (link.kind !== "ticket") {
+    return undefined;
+  }
+  if (status?.parentKey !== undefined) {
+    return `ticket:${status.parentKey}`;
+  }
+  return link.declaredParentKey?.startsWith("ticket:") ? link.declaredParentKey : undefined;
 }
 
 function unscannedLink(kind: LinkKind, id: string, url: string | undefined): ResolvedLink {
