@@ -797,7 +797,8 @@
               "color": "gray",
               "icon": "circle-large-outline",
               "badge": "TD",
-              "asksReason": false
+              "asksReason": false,
+              "done": false
             },
             {
               "id": "triage",
@@ -805,7 +806,8 @@
               "color": "orange",
               "icon": "search",
               "badge": "TR",
-              "asksReason": false
+              "asksReason": false,
+              "done": false
             },
             {
               "id": "in-progress",
@@ -813,7 +815,8 @@
               "color": "blue",
               "icon": "play-circle",
               "badge": "IP",
-              "asksReason": false
+              "asksReason": false,
+              "done": false
             },
             {
               "id": "blocked",
@@ -821,7 +824,8 @@
               "color": "red",
               "icon": "circle-slash",
               "badge": "BL",
-              "asksReason": true
+              "asksReason": true,
+              "done": false
             },
             {
               "id": "ai-review",
@@ -829,7 +833,8 @@
               "color": "purple",
               "icon": "sparkle",
               "badge": "AI",
-              "asksReason": false
+              "asksReason": false,
+              "done": false
             },
             {
               "id": "human-review",
@@ -837,7 +842,8 @@
               "color": "yellow",
               "icon": "eye",
               "badge": "HR",
-              "asksReason": false
+              "asksReason": false,
+              "done": false
             },
             {
               "id": "ready-to-ship",
@@ -845,7 +851,17 @@
               "color": "green",
               "icon": "rocket",
               "badge": "RS",
-              "asksReason": false
+              "asksReason": false,
+              "done": false
+            },
+            {
+              "id": "done",
+              "name": "Done",
+              "color": "gray",
+              "icon": "pass",
+              "badge": "DN",
+              "asksReason": false,
+              "done": true
             }
           ],
           "markdownDescription": "Statuses you can set on a session or terminal with **Set Status…**. A status tints the row's label and adds its badge. Edit them in **Overseer: Session Status Settings…**.",
@@ -891,6 +907,11 @@
                 "type": "boolean",
                 "default": false,
                 "description": "Ask for a reason when this status is set. The reason shows in the row's tooltip."
+              },
+              "done": {
+                "type": "boolean",
+                "default": false,
+                "description": "Marks the work finished. A session in this status is safe to kill and remove."
               }
             }
           }

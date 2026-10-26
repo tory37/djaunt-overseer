@@ -3,6 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { AGENT_TICKETS_SCHEMA_VERSION, declaredTicketsFile, userTicketMarksFile } from "../../src/agentTickets";
+import { AGENT_TRACKER_SCHEMA_VERSION, whereFile } from "../../src/agentTracker";
 import { AGENT_WORK_SCHEMA_VERSION, declaredWorkFile } from "../../src/agentWork";
 import { OVERSEER_USAGE, runOverseerCli } from "../../src/overseerCli";
 import { saveVersionedCache } from "../../src/linkCache";
@@ -147,8 +148,8 @@ describe("runOverseerCli", () => {
 
 describe("overseer status", () => {
   const options = [
-    { id: "in-progress", name: "In Progress", asksReason: false },
-    { id: "blocked", name: "Blocked", asksReason: true },
+    { id: "in-progress", name: "In Progress", asksReason: false, done: false },
+    { id: "blocked", name: "Blocked", asksReason: true, done: false },
   ];
 
   it("lists options, current status, and ticket statuses", async () => {
@@ -184,5 +185,83 @@ describe("overseer status", () => {
   it("rejects an unknown action and a bad option", async () => {
     expect((await runOverseerCli(["status", "nope"], SESSION_ENV, claudeHome)).exitCode).toBe(2);
     expect((await runOverseerCli(["status", "set", "blocked", "--why", "x"], SESSION_ENV, claudeHome)).exitCode).toBe(2);
+  });
+});
+
+describe("overseer where", () => {
+  function readWhereFile(): unknown {
+    return JSON.parse(fs.readFileSync(whereFile(claudeHome, SESSION_ID), "utf8"));
+  }
+
+  it("sets, replaces, and shows the tracker lines", async () => {
+    await runOverseerCli(["where", "set", "old line"], SESSION_ENV, claudeHome, 100);
+    const replaced = await runOverseerCli(["where", "set", "writing tests", "then\nPR", "a", "b"], SESSION_ENV, claudeHome, 200);
+    expect(replaced).toEqual({ exitCode: 0, output: "Where this session is:\n  writing tests\n  then PR\n  a" });
+    expect(readWhereFile()).toEqual({
+      version: AGENT_TRACKER_SCHEMA_VERSION,
+      entries: { lines: ["writing tests", "then PR", "a"], updatedAt: 200 },
+    });
+    expect((await runOverseerCli(["where", "show"], SESSION_ENV, claudeHome)).output).toBe(replaced.output);
+  });
+
+  it("shows when nothing is set", async () => {
+    expect(await runOverseerCli(["where", "show"], SESSION_ENV, claudeHome)).toEqual({
+      exitCode: 0,
+      output: "No tracker lines set for this session.",
+    });
+  });
+
+  it.each([
+    [["where", "set"], "Missing tracker line."],
+    [["where", "set", "  "], "Missing tracker line."],
+    [["where", "clear"], "Unknown where action: clear"],
+    [["where", "show", "x"], "Unknown where action: show x"],
+    [["where"], "Unknown command: where"],
+  ])("rejects %o with usage", async (args, message) => {
+    expect(await runOverseerCli(args, SESSION_ENV, claudeHome)).toEqual({ exitCode: 2, output: `${message}\n\n${OVERSEER_USAGE}` });
+    expect(fs.existsSync(whereFile(claudeHome, SESSION_ID))).toBe(false);
+  });
+});
+
+describe("overseer done", () => {
+  const options = [
+    { id: "in-progress", name: "In Progress", asksReason: false, done: false },
+    { id: "finished", name: "Finished", asksReason: false, done: true },
+  ];
+
+  it("marks the tracker done and requests the done status", async () => {
+    await saveVersionedCache(statusOptionsFile(claudeHome), options, STATUS_SYNC_SCHEMA_VERSION);
+    await runOverseerCli(["where", "set", "shipping"], SESSION_ENV, claudeHome, 100);
+    const result = await runOverseerCli(["done", "--reason", "merged", "and", "deployed"], SESSION_ENV, claudeHome, 300);
+    expect(result).toEqual({ exitCode: 0, output: "Marked the work done and set the session status to Finished." });
+    expect(JSON.parse(fs.readFileSync(whereFile(claudeHome, SESSION_ID), "utf8")).entries).toEqual({
+      lines: ["shipping"],
+      updatedAt: 300,
+      doneAt: 300,
+    });
+    expect(JSON.parse(fs.readFileSync(statusRequestFile(claudeHome, SESSION_ID), "utf8"))).toEqual({
+      version: STATUS_SYNC_SCHEMA_VERSION,
+      entries: { statusId: "finished", reason: "merged and deployed" },
+    });
+  });
+
+  it("creates the tracker file when it is missing", async () => {
+    await saveVersionedCache(statusOptionsFile(claudeHome), options, STATUS_SYNC_SCHEMA_VERSION);
+    expect((await runOverseerCli(["done"], SESSION_ENV, claudeHome, 50)).exitCode).toBe(0);
+    expect(JSON.parse(fs.readFileSync(whereFile(claudeHome, SESSION_ID), "utf8")).entries).toEqual({ lines: [], updatedAt: 50, doneAt: 50 });
+    expect(JSON.parse(fs.readFileSync(statusRequestFile(claudeHome, SESSION_ID), "utf8")).entries).toEqual({ statusId: "finished" });
+  });
+
+  it("fails without writing when no status is marked done, including older option files", async () => {
+    await saveVersionedCache(statusOptionsFile(claudeHome), [{ id: "in-progress", name: "In Progress" }], STATUS_SYNC_SCHEMA_VERSION);
+    const result = await runOverseerCli(["done"], SESSION_ENV, claudeHome);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain("No status is marked done");
+    expect(fs.existsSync(whereFile(claudeHome, SESSION_ID))).toBe(false);
+    expect(fs.existsSync(statusRequestFile(claudeHome, SESSION_ID))).toBe(false);
+  });
+
+  it("rejects a bad option", async () => {
+    expect((await runOverseerCli(["done", "--why", "x"], SESSION_ENV, claudeHome)).exitCode).toBe(2);
   });
 });

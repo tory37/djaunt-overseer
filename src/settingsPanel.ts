@@ -888,7 +888,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   }
 
   document.getElementById("add-status").addEventListener("click", () =>
-    saveStatuses([...shownStatuses, { name: "New status", color: "gray", icon: "circle-filled", badge: "", asksReason: false }]),
+    saveStatuses([...shownStatuses, { name: "New status", color: "gray", icon: "circle-filled", badge: "", asksReason: false, done: false }]),
   );
   document.getElementById("reset-statuses").addEventListener("click", () =>
     vscodeApi.postMessage({ type: "resetSessionStatuses" }),

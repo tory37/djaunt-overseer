@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   defaultBadge,
   DEFAULT_SESSION_STATUSES,
+  doneStatusOf,
   parseSessionStatuses,
   statusColorId,
   statusIdFor,
@@ -24,8 +25,8 @@ describe("parseSessionStatuses", () => {
         { id: "x", name: "Ship", color: "green", icon: "rocket", badge: "SHIP" },
       ]),
     ).toEqual([
-      { id: "blocked-on-qa", name: "Blocked on QA", color: "gray", icon: "circle-filled", badge: "BO", asksReason: false },
-      { id: "x", name: "Ship", color: "green", icon: "rocket", badge: "SH", asksReason: false },
+      { id: "blocked-on-qa", name: "Blocked on QA", color: "gray", icon: "circle-filled", badge: "BO", asksReason: false, done: false },
+      { id: "x", name: "Ship", color: "green", icon: "rocket", badge: "SH", asksReason: false, done: false },
     ]);
   });
 
@@ -55,6 +56,20 @@ describe("asking for a reason", () => {
       { name: "C" },
     ]);
     expect(parsed.map((status) => status.asksReason)).toEqual([true, false, false]);
+  });
+});
+
+describe("the done status", () => {
+  it("ships Done as the one default marked done", () => {
+    expect(DEFAULT_SESSION_STATUSES.filter((status) => status.done).map((status) => status.id)).toEqual(["done"]);
+    expect(doneStatusOf(DEFAULT_SESSION_STATUSES)?.id).toBe("done");
+  });
+
+  it("keeps done only when it is exactly true, and finds the first one", () => {
+    const parsed = parseSessionStatuses([{ name: "A", done: "yes" }, { name: "B", done: true }, { name: "C", done: true }]);
+    expect(parsed.map((status) => status.done)).toEqual([false, true, true]);
+    expect(doneStatusOf(parsed)?.id).toBe("b");
+    expect(doneStatusOf(parseSessionStatuses([{ name: "A" }]))).toBeUndefined();
   });
 });
 

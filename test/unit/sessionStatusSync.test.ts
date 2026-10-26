@@ -1,18 +1,40 @@
 import { describe, expect, it } from "vitest";
 import { parseAutoStatusOutput, buildAutoStatusDigest } from "../../src/sessionStatusAuto";
-import { formatStatusList, readStatusContext, readStatusOptions, readStatusRequest, resolveStatusOption } from "../../src/sessionStatusSync";
+import {
+  doneStatusOption,
+  formatStatusList,
+  readStatusContext,
+  readStatusOptions,
+  readStatusRequest,
+  resolveStatusOption,
+} from "../../src/sessionStatusSync";
 
 const OPTIONS = [
-  { id: "in-progress", name: "In Progress", asksReason: false },
-  { id: "blocked", name: "Blocked", asksReason: true },
+  { id: "in-progress", name: "In Progress", asksReason: false, done: false },
+  { id: "blocked", name: "Blocked", asksReason: true, done: false },
 ];
 
 describe("readStatusOptions", () => {
   it("keeps valid entries and drops the rest", () => {
     expect(readStatusOptions([{ id: "a", name: "A", asksReason: true }, { id: "", name: "x" }, null, "z"])).toEqual([
-      { id: "a", name: "A", asksReason: true },
+      { id: "a", name: "A", asksReason: true, done: false },
     ]);
     expect(readStatusOptions({})).toEqual([]);
+  });
+
+  it("keeps done only when it is exactly true", () => {
+    expect(readStatusOptions([{ id: "a", name: "A", done: true }, { id: "b", name: "B", done: "yes" }]).map((option) => option.done)).toEqual([
+      true,
+      false,
+    ]);
+  });
+});
+
+describe("doneStatusOption", () => {
+  it("finds the first done option, or none", () => {
+    const options = [...OPTIONS, { id: "x", name: "X", asksReason: false, done: true }, { id: "y", name: "Y", asksReason: false, done: true }];
+    expect(doneStatusOption(options)?.id).toBe("x");
+    expect(doneStatusOption(OPTIONS)).toBeUndefined();
   });
 });
 

@@ -10,6 +10,7 @@ export interface SessionStatus {
   icon: string;
   badge: string;
   asksReason: boolean;
+  done: boolean;
 }
 
 // A status as one session carries it: the reason is the note the user gave when setting it.
@@ -18,13 +19,14 @@ export interface MarkedStatus extends SessionStatus {
 }
 
 export const DEFAULT_SESSION_STATUSES: SessionStatus[] = [
-  { id: "todo", name: "Todo", color: "gray", icon: "circle-large-outline", badge: "TD", asksReason: false },
-  { id: "triage", name: "Triage", color: "orange", icon: "search", badge: "TR", asksReason: false },
-  { id: "in-progress", name: "In Progress", color: "blue", icon: "play-circle", badge: "IP", asksReason: false },
-  { id: "blocked", name: "Blocked", color: "red", icon: "circle-slash", badge: "BL", asksReason: true },
-  { id: "ai-review", name: "AI Review", color: "purple", icon: "sparkle", badge: "AI", asksReason: false },
-  { id: "human-review", name: "Human Review", color: "yellow", icon: "eye", badge: "HR", asksReason: false },
-  { id: "ready-to-ship", name: "Ready to Ship", color: "green", icon: "rocket", badge: "RS", asksReason: false },
+  { id: "todo", name: "Todo", color: "gray", icon: "circle-large-outline", badge: "TD", asksReason: false, done: false },
+  { id: "triage", name: "Triage", color: "orange", icon: "search", badge: "TR", asksReason: false, done: false },
+  { id: "in-progress", name: "In Progress", color: "blue", icon: "play-circle", badge: "IP", asksReason: false, done: false },
+  { id: "blocked", name: "Blocked", color: "red", icon: "circle-slash", badge: "BL", asksReason: true, done: false },
+  { id: "ai-review", name: "AI Review", color: "purple", icon: "sparkle", badge: "AI", asksReason: false, done: false },
+  { id: "human-review", name: "Human Review", color: "yellow", icon: "eye", badge: "HR", asksReason: false, done: false },
+  { id: "ready-to-ship", name: "Ready to Ship", color: "green", icon: "rocket", badge: "RS", asksReason: false, done: false },
+  { id: "done", name: "Done", color: "gray", icon: "pass", badge: "DN", asksReason: false, done: true },
 ];
 
 export const MAX_BADGE_LENGTH = 2;
@@ -64,7 +66,9 @@ function parseSessionStatus(entry: unknown, takenIds: string[]): SessionStatus |
   const icon = typeof fields.icon === "string" && CODICON_NAME_PATTERN.test(fields.icon.trim()) ? fields.icon.trim() : DEFAULT_ICON;
   const badge = typeof fields.badge === "string" ? fields.badge.trim().slice(0, MAX_BADGE_LENGTH) : defaultBadge(name);
   const asksReason = fields.asksReason === true;
-  return { id: takenIds.includes(requestedId) ? statusIdFor(requestedId, takenIds) : requestedId, name, color, icon, badge, asksReason };
+  const done = fields.done === true;
+  const id = takenIds.includes(requestedId) ? statusIdFor(requestedId, takenIds) : requestedId;
+  return { id, name, color, icon, badge, asksReason, done };
 }
 
 // Assignments store the id, so a status keeps its sessions when it is renamed.
@@ -91,4 +95,9 @@ export function statusOfSession(
 ): SessionStatus | undefined {
   const statusId = statusIdBySession[sessionId];
   return statusId === undefined ? undefined : statuses.find((status) => status.id === statusId);
+}
+
+// The status that marks a session's work finished, so it is safe to kill and remove.
+export function doneStatusOf(statuses: SessionStatus[]): SessionStatus | undefined {
+  return statuses.find((status) => status.done);
 }

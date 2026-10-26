@@ -105,7 +105,7 @@ export class SessionStatusRelay implements vscode.Disposable {
   }
 
   private statusOptions(): StatusOption[] {
-    return configuredStatuses().map(({ id, name, asksReason }) => ({ id, name, asksReason }));
+    return configuredStatuses().map(({ id, name, asksReason, done }) => ({ id, name, asksReason, done }));
   }
 
   private workingOnTickets(sessionId: string): MarkedLink[] {

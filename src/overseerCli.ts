@@ -28,13 +28,23 @@ import {
   withoutDeclaredCommit,
   withoutDeclaredPullRequest,
 } from "./agentWork";
+import {
+  AGENT_TRACKER_SCHEMA_VERSION,
+  formatWhereShow,
+  readSessionWhere,
+  whereFile,
+  withWhereDone,
+  withWhereLines,
+} from "./agentTracker";
 import { loadVersionedCache, saveVersionedCache } from "./linkCache";
 import {
   clipReason,
+  doneStatusOption,
   formatStatusList,
   readStatusContext,
   readStatusOptions,
   resolveStatusOption,
+  StatusOption,
   STATUS_SYNC_SCHEMA_VERSION,
   statusContextFile,
   statusOptionsFile,
@@ -66,6 +76,12 @@ Usage:
   overseer status set <ID> [--reason "<why>"]
       Set the session's overall status. It is an overall watcher: with one ticket, mirror it;
       with several, condense them into where the whole session stands.
+  overseer where set "<line>" ["<line>" ...]
+      Replace this session's tracker lines: up to 3, 100 characters each, present state only.
+  overseer where show
+      Show this session's tracker lines.
+  overseer done [--reason "<why>"]
+      Mark the work completely done: strikes the tracker entry and sets the done status.
 
 The session comes from CLAUDE_CODE_SESSION_ID, or OVERSEER_SESSION_ID when that is unset.`;
 
@@ -88,8 +104,9 @@ export async function runOverseerCli(
   if (area === undefined || area === "--help" || area === "-h" || area === "help") {
     return { exitCode: EXIT_OK, output: OVERSEER_USAGE };
   }
-  const isKnownArea = area === "ticket" || area === "status" || isWorkArea(area);
-  if (!isKnownArea || action === undefined) {
+  const isDoneCommand = area === "done";
+  const isKnownArea = area === "ticket" || area === "status" || area === "where" || isWorkArea(area);
+  if (!isDoneCommand && (!isKnownArea || action === undefined)) {
     return usageFailure(`Unknown command: ${args.join(" ")}`);
   }
 
@@ -98,8 +115,14 @@ export async function runOverseerCli(
     return { exitCode: EXIT_FAILURE, output: "No Claude session found: CLAUDE_CODE_SESSION_ID is not set." };
   }
 
+  if (isDoneCommand) {
+    return runDoneCommand(args.slice(1), claudeHome, sessionId, now);
+  }
   if (area === "status") {
     return runStatusCommand(action, rest, claudeHome, sessionId);
+  }
+  if (area === "where") {
+    return runWhereCommand(action, rest, whereFile(claudeHome, sessionId), now);
   }
   if (isWorkArea(area)) {
     return runWorkCommand(area, action, rest, declaredWorkFile(claudeHome, sessionId), now);
@@ -149,9 +172,46 @@ async function runStatusCommand(action: string, rest: string[], claudeHome: stri
   if (option === undefined) {
     return { exitCode: EXIT_FAILURE, output: `Not a status: ${requested}\n${formatStatusList(options, { tickets: [] })}` };
   }
+  await saveStatusRequest(claudeHome, sessionId, option, reason);
+  return { exitCode: EXIT_OK, output: `Set the session status to ${option.name}.` };
+}
+
+async function saveStatusRequest(claudeHome: string, sessionId: string, option: StatusOption, reason: string | undefined): Promise<void> {
   const request = { statusId: option.id, ...(reason === undefined ? {} : { reason: clipReason(reason) }) };
   await saveVersionedCache(statusRequestFile(claudeHome, sessionId), request, STATUS_SYNC_SCHEMA_VERSION);
-  return { exitCode: EXIT_OK, output: `Set the session status to ${option.name}.` };
+}
+
+async function runWhereCommand(action: string, rest: string[], trackerFile: string, now: number): Promise<CliResult> {
+  const where = readSessionWhere(await loadVersionedCache<unknown>(trackerFile, AGENT_TRACKER_SCHEMA_VERSION));
+  if (action === "show" && rest.length === 0) {
+    return { exitCode: EXIT_OK, output: formatWhereShow(where) };
+  }
+  if (action !== "set") {
+    return usageFailure(`Unknown where action: ${[action, ...rest].join(" ")}`);
+  }
+  const updatedWhere = withWhereLines(rest, now);
+  if (updatedWhere.lines.length === 0) {
+    return usageFailure("Missing tracker line.");
+  }
+  await saveVersionedCache(trackerFile, updatedWhere, AGENT_TRACKER_SCHEMA_VERSION);
+  return { exitCode: EXIT_OK, output: formatWhereShow(updatedWhere) };
+}
+
+async function runDoneCommand(optionWords: string[], claudeHome: string, sessionId: string, now: number): Promise<CliResult> {
+  const { note: reason, error } = parseOption(optionWords, "--reason");
+  if (error !== undefined) {
+    return usageFailure(error);
+  }
+  const options = readStatusOptions(await loadVersionedCache<unknown>(statusOptionsFile(claudeHome), STATUS_SYNC_SCHEMA_VERSION));
+  const doneOption = doneStatusOption(options);
+  if (doneOption === undefined) {
+    return { exitCode: EXIT_FAILURE, output: "No status is marked done. The user can mark one in Overseer's status settings." };
+  }
+  const trackerFile = whereFile(claudeHome, sessionId);
+  const where = readSessionWhere(await loadVersionedCache<unknown>(trackerFile, AGENT_TRACKER_SCHEMA_VERSION));
+  await saveVersionedCache(trackerFile, withWhereDone(where, now), AGENT_TRACKER_SCHEMA_VERSION);
+  await saveStatusRequest(claudeHome, sessionId, doneOption, reason);
+  return { exitCode: EXIT_OK, output: `Marked the work done and set the session status to ${doneOption.name}.` };
 }
 
 const WORK_ITEMS = {

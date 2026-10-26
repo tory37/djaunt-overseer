@@ -10,6 +10,7 @@ export interface StatusOption {
   id: string;
   name: string;
   asksReason: boolean;
+  done: boolean;
 }
 
 export interface TicketStatusFact {
@@ -56,9 +57,9 @@ export function readStatusOptions(entries: unknown): StatusOption[] {
   }
   const options: StatusOption[] = [];
   for (const entry of entries) {
-    const { id, name, asksReason } = (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>;
+    const { id, name, asksReason, done } = (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>;
     if (typeof id === "string" && id !== "" && typeof name === "string" && name !== "") {
-      options.push({ id, name, asksReason: asksReason === true });
+      options.push({ id, name, asksReason: asksReason === true, done: done === true });
     }
   }
   return options;
@@ -92,6 +93,10 @@ export function clipReason(reason: string): string {
 export function resolveStatusOption(options: StatusOption[], requested: string): StatusOption | undefined {
   const wanted = requested.trim().toLowerCase();
   return options.find((option) => option.id === wanted) ?? options.find((option) => option.name.toLowerCase() === wanted);
+}
+
+export function doneStatusOption(options: StatusOption[]): StatusOption | undefined {
+  return options.find((option) => option.done);
 }
 
 export function formatStatusList(options: StatusOption[], context: StatusContext): string {
