@@ -1,7 +1,4 @@
-import * as fs from "fs";
-import * as path from "path";
 import * as vscode from "vscode";
-import { overseerBinDir, shouldRepointStableLink, StableLinkTarget, stableExtensionLink } from "./claudeLaunch";
 import { registerCommands } from "./commands";
 import { CompactMonitor, registerCompactHookCommands } from "./compactMonitor";
 import { DeclarationMonitor } from "./declarationMonitor";
@@ -20,7 +17,7 @@ import { registerSettingsCommands } from "./settingsCommands";
 import { SettingsPanel } from "./settingsPanel";
 import { jiraProjectRefresher, registerStatusCommands } from "./statusCommands";
 import { StatusConfig } from "./statusConfig";
-import { adoptTerminalsByPid, followSwitchedSessions, sessionIdOfTerminal, setAgentIntegration } from "./terminals";
+import { adoptTerminalsByPid, followSwitchedSessions, sessionIdOfTerminal } from "./terminals";
 import { createGitRootResolver } from "./gitRoots";
 import { registerRepoCommands } from "./repoCommands";
 import { RepoService } from "./repoService";
@@ -62,7 +59,6 @@ export function activate(context: vscode.ExtensionContext): void {
   const linkStatusService = new LinkStatusService(log, jiraService, statusConfig, new StoredStatusCache(context.globalState));
   const summaryService = new SessionSummaryService(context.globalStorageUri.fsPath, log);
   const compactMonitor = new CompactMonitor(claudeHome, log);
-  enableAgentIntegration(context.extensionPath, context.extension.packageJSON.version, claudeHome, log);
   const createSectionTree = (section: SessionSection, viewId: string) => {
     const provider = new SessionTreeProvider(section, sessionIndex, liveMonitor, registry, linkService, compactMonitor);
     const view = vscode.window.createTreeView(viewId, {
@@ -327,55 +323,4 @@ function shellPidsBySessionId(registry: Registry): Record<string, number | undef
   return Object.fromEntries(
     Object.entries(registry.terminalSessions()).map(([sessionId, terminalSession]) => [sessionId, terminalSession.shellPid]),
   );
-}
-
-// A .vsix may not keep the exec bit, and Claude's Bash tool runs `overseer` straight from PATH.
-function enableAgentIntegration(extensionDir: string, extensionVersion: string, claudeHome: string, log: vscode.OutputChannel): void {
-  const cliWrapper = path.join(overseerBinDir(extensionDir), "overseer");
-  try {
-    fs.chmodSync(cliWrapper, 0o755);
-  } catch (error) {
-    log.appendLine(`Can't make ${cliWrapper} executable: ${String(error)}`);
-  }
-  const integrationDir = pointStableLink(extensionDir, extensionVersion, claudeHome, log);
-  setAgentIntegration({ extensionDir: integrationDir, nodePath: process.execPath, claudeHome });
-}
-
-// Returns the stable link when it resolves to a working extension, else the versioned folder.
-function pointStableLink(extensionDir: string, extensionVersion: string, claudeHome: string, log: vscode.OutputChannel): string {
-  const linkPath = stableExtensionLink(claudeHome);
-  const temporaryLinkPath = `${linkPath}.${process.pid}.tmp`;
-  try {
-    if (!shouldRepointStableLink(readStableLinkTarget(linkPath), extensionDir, extensionVersion)) {
-      return linkPath;
-    }
-    fs.mkdirSync(path.dirname(linkPath), { recursive: true });
-    fs.rmSync(temporaryLinkPath, { force: true });
-    fs.symlinkSync(extensionDir, temporaryLinkPath, "dir");
-    fs.renameSync(temporaryLinkPath, linkPath);
-    return linkPath;
-  } catch (error) {
-    log.appendLine(`Can't point ${linkPath} at ${extensionDir}, using the versioned folder: ${String(error)}`);
-    try {
-      fs.rmSync(temporaryLinkPath, { force: true });
-    } catch {
-      // A leftover temporary link is harmless; the next activation removes it.
-    }
-    return extensionDir;
-  }
-}
-
-function readStableLinkTarget(linkPath: string): StableLinkTarget | undefined {
-  let targetDir: string;
-  try {
-    targetDir = path.resolve(path.dirname(linkPath), fs.readlinkSync(linkPath));
-  } catch {
-    return undefined;
-  }
-  try {
-    const packageJson = JSON.parse(fs.readFileSync(path.join(targetDir, "package.json"), "utf8")) as { version?: unknown };
-    return { targetDir, version: typeof packageJson.version === "string" ? packageJson.version : undefined };
-  } catch {
-    return { targetDir, version: undefined };
-  }
 }

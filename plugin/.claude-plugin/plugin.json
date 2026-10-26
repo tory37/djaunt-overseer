@@ -1,5 +1,0 @@
-{
-  "name": "overseer",
-  "version": "1.0.0",
-  "description": "Lets Claude tell the Overseer VS Code extension which Jira tickets a session is working on."
-}

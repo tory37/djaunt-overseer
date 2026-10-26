@@ -118,11 +118,8 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - **GitHub Settings…** sets one color per PR state: draft, open, review required, approved, changes requested, merged, and closed.
 
 ### Agent tracking
-- The agent declares its own work. Sessions that Overseer starts, resumes, or forks get an `overseer` CLI on PATH and a `track` skill.
-- The agent runs `overseer ticket add PROJ-123 --note "..."` when it starts real work on a ticket. It runs `overseer commit add <hash>` after each commit, `overseer pr add <url>` after it opens or pushes to a PR, and `overseer artifact add <url>` after it publishes a claude.ai artifact. It skips anything it only read.
-- For an older session, the sidebar says what isn't tracked yet. **Populate all** asks Haiku to read a digest of the transcript and declare the same things. It costs cents, not a full resume. In a live session, run `/overseer:track` instead.
-- `overseer ticket list` shows the agent your pins and removals. The CLI only writes files under `~/.claude/overseer/`. It needs no server and no login.
-- `claude attach` sessions can't take launch flags, so they get no CLI.
+- Overseer tells the agent nothing. Sessions launch as plain `claude`, with no plugin, skill, or CLI.
+- The sidebar says what isn't tracked yet. **Populate all** asks Haiku to read a digest of the transcript and declare its tickets, commits, PRs, and artifacts. It costs cents, not a full resume.
 
 ### Settings
 Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:

@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import * as vscode from "vscode";
-import { AgentIntegration, agentIntegrationEnv, quoteForShell, shellCommandWithAgentIntegration } from "./claudeLaunch";
+import { launchShellCommand, quoteForShell } from "./claudeLaunch";
 import { displayTitle, SessionMeta } from "./indexer";
 import { LiveSession } from "./liveParse";
 
@@ -13,11 +13,6 @@ export const SESSION_ID_ENV_VAR = "OVERSEER_SESSION_ID";
 // Terminals revived after a window reload can lose their env, so they are matched to sessions by pid instead.
 // A terminal whose session changed under it is also here, and this entry wins over its stale env.
 const adoptedTerminalSessionIds = new WeakMap<vscode.Terminal, string>();
-let agentIntegration: AgentIntegration | undefined;
-
-export function setAgentIntegration(integration: AgentIntegration): void {
-  agentIntegration = integration;
-}
 
 export function sessionIdOfTerminal(terminal: vscode.Terminal): string | undefined {
   const creationOptions = terminal.creationOptions as vscode.TerminalOptions;
@@ -173,7 +168,7 @@ export function attachBackgroundSession(
   }
   log.appendLine(`Attaching background agent ${agentId} (${meta.sessionId})`);
   const attachCwd = meta.resumeCwd !== undefined && fs.existsSync(meta.resumeCwd) ? meta.resumeCwd : meta.startCwd;
-  return launchClaudeTerminal(displayTitle(meta), attachCwd, meta.sessionId, `claude attach ${agentId}`, false);
+  return launchClaudeTerminal(displayTitle(meta), attachCwd, meta.sessionId, `claude attach ${agentId}`);
 }
 
 // Clears any half-typed draft first so the slash command isn't appended to it and sent as a prompt.
@@ -208,21 +203,18 @@ export async function suspendTerminal(terminal: vscode.Terminal): Promise<void> 
 }
 
 // Claude runs as the shell's own command, so /exit ends the process and VS Code closes the tab.
-// `claude attach` takes no launch flags, so attached agents run without the overseer CLI.
 function launchClaudeTerminal(
   title: string,
   cwd: string,
   sessionId: string,
   claudeCommand: string,
-  acceptsLaunchFlags = true,
 ): vscode.Terminal {
-  const integration = acceptsLaunchFlags ? agentIntegration : undefined;
   const terminal = vscode.window.createTerminal({
     name: title,
     cwd,
     shellPath: process.env.SHELL ?? FALLBACK_SHELL,
-    shellArgs: ["-l", "-i", "-c", shellCommandWithAgentIntegration(claudeCommand, integration)],
-    env: { [SESSION_ID_ENV_VAR]: sessionId, ...agentIntegrationEnv(integration) },
+    shellArgs: ["-l", "-i", "-c", launchShellCommand(claudeCommand)],
+    env: { [SESSION_ID_ENV_VAR]: sessionId },
     location: vscode.TerminalLocation.Editor,
     iconPath: new vscode.ThemeIcon("terminal"),
   });
