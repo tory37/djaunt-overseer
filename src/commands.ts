@@ -1,13 +1,13 @@
 import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as vscode from "vscode";
-import { autoGroupRefFor, PinnedSession, pinnedSessionTitle } from "./grouping";
+import { PinnedSession, pinnedSessionTitle } from "./grouping";
 import * as path from "path";
 import { displayTitle, SessionMeta } from "./indexer";
 import { tildePath } from "./paths";
 import { LiveSessionMonitor } from "./liveSessions";
 import { pickSession } from "./quickPick";
-import { Registry, userGroupRef } from "./registry";
+import { Registry } from "./registry";
 import { resolveRepos, sessionDirectory } from "./repoSet";
 import { createGitRootResolver } from "./gitRoots";
 import { SessionIndex } from "./sessionIndex";
@@ -164,10 +164,11 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       attachBackgroundSession(meta, liveSession.agentId, log);
     } else if (choice === FORK_CHOICE) {
       const forkSessionId = randomUUID();
-      const originalGroupRef =
-        registry.assignments()[meta.sessionId] ?? autoGroupRefFor(meta, registry.labels()[meta.sessionId]);
+      const originalGroupRef = registry.assignments()[meta.sessionId];
       await registry.pin(forkSessionId);
-      await registry.assign([forkSessionId], originalGroupRef);
+      if (originalGroupRef !== undefined) {
+        await registry.assign([forkSessionId], originalGroupRef);
+      }
       resumeSession(meta, log, forkSessionId);
     }
   };
@@ -308,17 +309,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     if (!newName || newName === group.label) {
       return;
     }
-    if (group.kind === "user") {
-      await registry.renameGroup(group.ref.slice("user:".length), newName);
-      return;
-    }
-    // Renaming an auto group turns it into a user group that keeps its current sessions.
-    const createdGroup = await registry.createGroup(newName, randomUUID());
-    await registry.assign(
-      group.sessions.map((pinned) => pinned.sessionId),
-      userGroupRef(createdGroup.id),
-    );
-    await registry.replaceGroupRef(group.ref, userGroupRef(createdGroup.id));
+    await registry.renameGroup(group.ref.slice("user:".length), newName);
   };
 
   return [
@@ -398,7 +389,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         findSessionTerminal(sessionNode.pinned.sessionId)?.dispose();
       }
     }),
-    // A user group moves as a whole. Auto and Ungrouped groups only move their sessions.
+    // A user group moves as a whole. Ungrouped only moves its sessions.
     vscode.commands.registerCommand("overseer.moveToWorkspace", async (clickedNode?: TreeNode) => {
       const groupNode = clickedNode?.kind === "group" ? clickedNode : undefined;
       const sessionIds =
@@ -425,7 +416,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     }),
     vscode.commands.registerCommand("overseer.renameGroup", async (clickedNode?: TreeNode) => {
       const groupNode = clickedNode ?? activeSessionView.selection[0];
-      if (groupNode?.kind === "group" && groupNode.group.kind !== "ungrouped") {
+      if (groupNode?.kind === "group" && groupNode.group.kind === "user") {
         await renameGroup(groupNode);
       }
     }),
@@ -439,7 +430,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       const selectedNode = activeSessionView.selection[0];
       if (selectedNode?.kind === "session") {
         await renameSession(selectedNode.pinned);
-      } else if (selectedNode?.kind === "group" && selectedNode.group.kind !== "ungrouped") {
+      } else if (selectedNode?.kind === "group" && selectedNode.group.kind === "user") {
         await renameGroup(selectedNode);
       }
     }),

@@ -10,7 +10,6 @@ import { otherReposLabel } from "./repoFilter";
 import { SessionIconState, sessionIconName, sessionIconSpec } from "./sessionIcons";
 import { CompactMonitor } from "./compactMonitor";
 import { SessionIndex } from "./sessionIndex";
-import { SessionLinkService } from "./sessionLinks";
 import { sessionStatusFor, sessionStatusUri } from "./sessionStatusView";
 import { MarkedStatus } from "./sessionStatuses";
 import { findSessionTerminal } from "./terminals";
@@ -47,7 +46,6 @@ export class SessionTreeProvider
     private readonly sessionIndex: SessionIndex,
     private readonly liveMonitor: LiveSessionMonitor,
     private readonly registry: Registry,
-    private readonly linkService: SessionLinkService,
     private readonly compactMonitor: CompactMonitor,
   ) {}
 
@@ -191,9 +189,6 @@ export class SessionTreeProvider
         terminalSessions: this.registry.terminalSessions(),
         groupOrder: this.registry.groupOrder(),
         sessionOrder: this.registry.sessionOrder(),
-        linkedTicketKeys: this.linkService.ownedTicketKeys(
-          pinnedSessionIds.filter((sessionId) => this.registry.hasFoundResources(sessionId)),
-        ),
       },
       this.section,
     );
@@ -219,7 +214,7 @@ function groupTreeItem(group: SessionGroup, isCollapsed: boolean): vscode.TreeIt
   const treeItem = new vscode.TreeItem(group.label, collapsibleState);
   treeItem.id = `group:${group.ref}`;
   treeItem.description = String(group.sessions.length);
-  treeItem.iconPath = new vscode.ThemeIcon(group.kind === "auto" ? "tag" : "folder");
+  treeItem.iconPath = new vscode.ThemeIcon("folder");
   treeItem.contextValue = `group.${group.kind}`;
   return treeItem;
 }

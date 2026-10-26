@@ -68,14 +68,6 @@ export function isDimmedLink(link: MarkedLink): boolean {
   return link.mark === "removed" || (link.mark !== "pinned" && (link.role === "irrelevant" || !link.stillRelevant));
 }
 
-// A pinned ticket beats the agent's declaration, which beats the judge's pick; a removed one never names the group.
-export function ownedTicketKey(links: MarkedLink[]): string | undefined {
-  const tickets = links.filter((link) => link.kind === "ticket" && link.mark !== "removed");
-  const pinnedTicket = tickets.find((link) => link.mark === "pinned");
-  const declaredTicket = tickets.find((link) => link.isAgentDeclared === true);
-  return (pinnedTicket ?? declaredTicket ?? tickets.find((link) => link.role === "owned"))?.id;
-}
-
 interface Declaration {
   kind: LinkKind;
   id: string;

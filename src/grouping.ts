@@ -1,6 +1,5 @@
 import { displayTitle, SessionMeta } from "./indexer";
 import {
-  autoGroupRef,
   GroupRef,
   PendingSession,
   TerminalSession,
@@ -9,9 +8,8 @@ import {
   userGroupRef,
 } from "./registry";
 import { sortBySavedOrder } from "./reorder";
-import { extractTicketKey } from "./ticket";
 
-export type GroupKind = "user" | "auto" | "ungrouped";
+export type GroupKind = "user" | "ungrouped";
 
 export type SessionSection = "claude" | "terminal";
 
@@ -55,17 +53,6 @@ export interface GroupingInput {
   terminalSessions?: Record<string, TerminalSession>;
   groupOrder: GroupRef[];
   sessionOrder: string[];
-  linkedTicketKeys?: Record<string, string>;
-}
-
-export function autoGroupRefFor(meta: SessionMeta | undefined, label?: string, linkedTicketKey?: string): GroupRef {
-  const ticketKey =
-    extractTicketKey({ title: label }) ??
-    (meta === undefined
-      ? undefined
-      : extractTicketKey({ title: displayTitle(meta), gitBranch: meta.gitBranch, firstPrompt: meta.firstPrompt })) ??
-    linkedTicketKey;
-  return ticketKey === undefined ? UNGROUPED_REF : autoGroupRef(ticketKey);
 }
 
 export function buildGroups(input: GroupingInput): SessionGroup[] {
@@ -82,8 +69,7 @@ export function buildGroups(input: GroupingInput): SessionGroup[] {
       pending: meta === undefined ? input.pendingSessions[sessionId] : undefined,
       terminal: input.terminalSessions?.[sessionId],
     };
-    const linkedTicketKey = input.linkedTicketKeys?.[sessionId];
-    const groupRef = resolveGroupRef(input.assignments[sessionId], pinnedSession, userGroupRefs, linkedTicketKey);
+    const groupRef = resolveGroupRef(input.assignments[sessionId], userGroupRefs);
     const groupSessions = sessionsByRef.get(groupRef) ?? [];
     groupSessions.push(pinnedSession);
     sessionsByRef.set(groupRef, groupSessions);
@@ -99,22 +85,13 @@ export function buildGroups(input: GroupingInput): SessionGroup[] {
     label: group.name,
     sessions: sessionsByRef.get(userGroupRef(group.id)) ?? [],
   }));
-  const autoGroups: SessionGroup[] = [...sessionsByRef.entries()]
-    .filter(([groupRef]) => groupRef.startsWith("auto:"))
-    .map(([groupRef, groupSessions]) => ({
-      ref: groupRef,
-      kind: "auto" as const,
-      label: groupRef.slice("auto:".length),
-      sessions: groupSessions,
-    }))
-    .sort((left, right) => byMostRecentActivity(left.sessions[0], right.sessions[0]));
   const ungroupedSessions = sessionsByRef.get(UNGROUPED_REF) ?? [];
   const ungroupedGroups: SessionGroup[] =
     ungroupedSessions.length > 0
       ? [{ ref: UNGROUPED_REF, kind: "ungrouped", label: "Ungrouped", sessions: ungroupedSessions }]
       : [];
 
-  return sortBySavedOrder([...userGroups, ...autoGroups, ...ungroupedGroups], input.groupOrder, (group) => group.ref);
+  return sortBySavedOrder([...userGroups, ...ungroupedGroups], input.groupOrder, (group) => group.ref);
 }
 
 // Only the Sessions view keeps empty user groups; the Terminals view lists the groups that hold a terminal.
@@ -128,18 +105,9 @@ export function buildSectionGroups(input: GroupingInput, section: SessionSection
   return wantsTerminals ? sectionGroups.filter((group) => group.sessions.length > 0) : sectionGroups;
 }
 
-// An explicit drag wins, unless it points at a user group that was since deleted.
-function resolveGroupRef(
-  assignedRef: GroupRef | undefined,
-  pinnedSession: PinnedSession,
-  userGroupRefs: Set<GroupRef>,
-  linkedTicketKey: string | undefined,
-): GroupRef {
-  const isStaleUserGroup = assignedRef?.startsWith("user:") && !userGroupRefs.has(assignedRef);
-  if (assignedRef !== undefined && !isStaleUserGroup) {
-    return assignedRef;
-  }
-  return autoGroupRefFor(pinnedSession.meta, pinnedSession.label, linkedTicketKey);
+// A deleted user group or an old ticket group ref from an earlier version falls back to Ungrouped.
+function resolveGroupRef(assignedRef: GroupRef | undefined, userGroupRefs: Set<GroupRef>): GroupRef {
+  return assignedRef !== undefined && userGroupRefs.has(assignedRef) ? assignedRef : UNGROUPED_REF;
 }
 
 function byMostRecentActivity(left: PinnedSession, right: PinnedSession): number {

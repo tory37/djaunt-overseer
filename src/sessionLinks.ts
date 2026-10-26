@@ -27,7 +27,6 @@ import {
   LinkViewSettings,
   MarkedLink,
   markLinks,
-  ownedTicketKey,
   visibleLinks,
   withDeclarations,
 } from "./linkView";
@@ -121,21 +120,6 @@ export class SessionLinkService implements vscode.Disposable {
     }
     const markedLinks = markLinks(resolvedLinks, this.readLinkMarks(sessionId));
     return visibleLinks(markedLinks, readLinkSettings(), this.readLinkOrder(sessionId));
-  }
-
-  ownedTicketKeys(sessionIds: string[]): Record<string, string> {
-    const ticketKeys: Record<string, string> = {};
-    for (const sessionId of sessionIds) {
-      const resolvedLinks = this.resolvedLinksFor(sessionId, this.findSessionMeta(sessionId));
-      if (resolvedLinks === undefined) {
-        continue;
-      }
-      const ticketKey = ownedTicketKey(markLinks(resolvedLinks, this.readLinkMarks(sessionId)));
-      if (ticketKey !== undefined) {
-        ticketKeys[sessionId] = ticketKey;
-      }
-    }
-    return ticketKeys;
   }
 
   private resolvedLinksFor(sessionId: string, meta: SessionMeta | undefined): ResolvedLink[] | undefined {

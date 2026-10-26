@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-VS Code extension that shows Claude CLI sessions as a sidebar tree, grouped by ticket. Sessions run in real editor terminals, never in webviews or the Claude VS Code panel.
+VS Code extension that shows Claude CLI sessions as a sidebar tree in user groups, plus a Session sidebar for the focused session's work. Sessions run in real editor terminals, never in webviews or the Claude VS Code panel.
 
 ## Commands
 
@@ -25,7 +25,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `gitRoots.ts` | Directory to git root, memoized. Worktrees map to the main repo. |
 | `liveParse.ts` / `liveSessions.ts` | `claude agents --json` plus a watch on `~/.claude/sessions` for busy/idle status. |
 | `registry.ts` | globalState: pinned ids, user groups, assignments, labels, pending sessions, group and session order. One key per field so two windows don't clobber each other. |
-| `grouping.ts` | Pure: builds the group list. User groups, then ticket groups, then Ungrouped, then the saved order on top. |
+| `grouping.ts` | Pure: builds the group list. User groups, then Ungrouped, then the saved order on top. |
 | `reorder.ts` | Pure: drag reorder (`moveBeside`) and saved-order sort. |
 | `tree.ts` | TreeDataProvider and drag-and-drop. |
 | `terminals.ts` | Launch, find, suspend, slash commands. Terminals `exec claude`, so the terminal pid is Claude's pid. |

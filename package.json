@@ -486,7 +486,7 @@
         },
         {
           "command": "overseer.renameGroup",
-          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^group\\.(user|auto)$/",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem == group.user",
           "group": "1_group@1"
         },
         {

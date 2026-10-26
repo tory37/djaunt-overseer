@@ -7,7 +7,6 @@ import {
   linkUrl,
   MarkedLink,
   markLinks,
-  ownedTicketKey,
   sessionPanelLinks,
   withDeclarations,
   visibleLinks,
@@ -106,22 +105,6 @@ describe("link labels", () => {
     expect(linkDisplayId(TOUCHED_TICKET)).toBe("PROJ-5");
   });
 
-  it("picks the owned ticket, not a touched one", () => {
-    expect(ownedTicketKey([OWNED_PR, TOUCHED_TICKET, OWNED_TICKET])).toBe("PROJ-9");
-    expect(ownedTicketKey([TOUCHED_TICKET])).toBeUndefined();
-  });
-
-  it("prefers a pinned ticket and skips a removed one", () => {
-    expect(ownedTicketKey([OWNED_TICKET, { ...TOUCHED_TICKET, mark: "pinned" }])).toBe("PROJ-5");
-    expect(ownedTicketKey([{ ...OWNED_TICKET, mark: "removed" }])).toBeUndefined();
-  });
-
-  it("prefers a declared ticket over the judge's pick but not over a pin", () => {
-    const declaredTicket = { ...TOUCHED_TICKET, isAgentDeclared: true };
-    expect(ownedTicketKey([OWNED_TICKET, declaredTicket])).toBe("PROJ-5");
-    expect(ownedTicketKey([{ ...OWNED_TICKET, mark: "pinned" }, declaredTicket])).toBe("PROJ-9");
-    expect(ownedTicketKey([OWNED_TICKET, { ...declaredTicket, mark: "removed" }])).toBe("PROJ-9");
-  });
 });
 
 describe("withDeclarations", () => {

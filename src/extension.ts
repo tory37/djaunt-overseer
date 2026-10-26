@@ -60,7 +60,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const summaryService = new SessionSummaryService(context.globalStorageUri.fsPath, log);
   const compactMonitor = new CompactMonitor(claudeHome, log);
   const createSectionTree = (section: SessionSection, viewId: string) => {
-    const provider = new SessionTreeProvider(section, sessionIndex, liveMonitor, registry, linkService, compactMonitor);
+    const provider = new SessionTreeProvider(section, sessionIndex, liveMonitor, registry, compactMonitor);
     const view = vscode.window.createTreeView(viewId, {
       treeDataProvider: provider,
       dragAndDropController: provider,
@@ -228,7 +228,6 @@ export function activate(context: vscode.ExtensionContext): void {
       },
     }),
     sessionIndex.onDidChange(refreshTree),
-    linkService.onDidChange(refreshTree),
     compactMonitor,
     declarationMonitor,
     sessionPopulator,

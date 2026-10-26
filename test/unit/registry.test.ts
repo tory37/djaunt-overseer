@@ -151,15 +151,6 @@ describe("Registry", () => {
     expect(registry.userGroups()).toEqual([{ id: "g1", name: "new" }]);
   });
 
-  it("keeps a renamed auto group in its saved position", async () => {
-    const registry = new Registry(memoryStore());
-    await registry.setGroupOrder(["auto:CR-9", "ungrouped"]);
-
-    await registry.replaceGroupRef("auto:CR-9", userGroupRef("g1"));
-
-    expect(registry.groupOrder()).toEqual([userGroupRef("g1"), "ungrouped"]);
-  });
-
   it("drops an unpinned session from the saved order", async () => {
     const registry = new Registry(memoryStore());
     await registry.setSessionOrder(["a", "b"]);

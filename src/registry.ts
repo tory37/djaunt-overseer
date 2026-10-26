@@ -28,10 +28,6 @@ export function userGroupRef(groupId: string): GroupRef {
   return `user:${groupId}`;
 }
 
-export function autoGroupRef(ticketKey: string): GroupRef {
-  return `auto:${ticketKey}`;
-}
-
 const PINNED_KEY = "overseer.pinnedSessionIds";
 const GROUPS_KEY = "overseer.userGroups";
 const ASSIGNMENTS_KEY = "overseer.groupAssignments";
@@ -179,13 +175,6 @@ export class Registry {
 
   async setGroupOrder(groupRefs: GroupRef[]): Promise<void> {
     await this.write(GROUP_ORDER_KEY, groupRefs);
-  }
-
-  async replaceGroupRef(oldRef: GroupRef, newRef: GroupRef): Promise<void> {
-    await this.write(
-      GROUP_ORDER_KEY,
-      this.groupOrder().map((groupRef) => (groupRef === oldRef ? newRef : groupRef)),
-    );
   }
 
   sessionOrder(): string[] {

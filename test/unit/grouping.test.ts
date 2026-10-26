@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildGroups, buildSectionGroups, GroupingInput, pinnedSessionTitle } from "../../src/grouping";
 import { SessionMeta } from "../../src/indexer";
-import { autoGroupRef, UNGROUPED_REF, userGroupRef } from "../../src/registry";
+import { UNGROUPED_REF, userGroupRef } from "../../src/registry";
 
 function sessionMeta(sessionId: string, overrides: Partial<SessionMeta>): SessionMeta {
   return {
@@ -45,19 +45,10 @@ function summarize(input: GroupingInput): Array<[string, string[]]> {
 }
 
 describe("buildGroups", () => {
-  it("groups by ticket key and puts keyless sessions in Ungrouped last", () => {
-    const sessions = [
-      sessionMeta("a", { customTitle: "PROJ-1 triage", lastActivityMs: 10 }),
-      sessionMeta("b", { gitBranch: "fix/proj-1-followup", lastActivityMs: 30 }),
-      sessionMeta("c", { customTitle: "random chat", lastActivityMs: 50 }),
-      sessionMeta("d", { customTitle: "CR-9 fix", lastActivityMs: 20 }),
-    ];
+  it("puts a session with a ticket key in its title but no assignment in Ungrouped", () => {
+    const sessions = [sessionMeta("a", { customTitle: "PROJ-1 triage", gitBranch: "fix/proj-1-followup" })];
 
-    expect(summarize(groupingInput(sessions))).toEqual([
-      ["PROJ-1", ["b", "a"]],
-      ["CR-9", ["d"]],
-      ["Ungrouped", ["c"]],
-    ]);
+    expect(summarize(groupingInput(sessions))).toEqual([["Ungrouped", ["a"]]]);
   });
 
   it("puts user groups first, including empty ones", () => {
@@ -77,43 +68,31 @@ describe("buildGroups", () => {
     ]);
   });
 
-  it("lets an explicit assignment override the ticket key", () => {
-    const sessions = [sessionMeta("a", { customTitle: "CR-9 fix" }), sessionMeta("b", { customTitle: "chat" })];
+  it("puts a session assigned to an unknown group ref in Ungrouped", () => {
+    const sessions = [sessionMeta("a", { customTitle: "CR-9 fix" })];
 
-    const input = groupingInput(sessions, {
-      assignments: { a: UNGROUPED_REF, b: autoGroupRef("CR-9") },
-    });
+    const input = groupingInput(sessions, { assignments: { a: "auto:CR-9" } });
 
-    expect(summarize(input)).toEqual([
-      ["CR-9", ["b"]],
-      ["Ungrouped", ["a"]],
-    ]);
+    expect(summarize(input)).toEqual([["Ungrouped", ["a"]]]);
   });
 
-  it("falls back to the ticket key when the assigned user group was deleted", () => {
+  it("falls back to Ungrouped when the assigned user group was deleted", () => {
     const sessions = [sessionMeta("a", { customTitle: "CR-9 fix" })];
 
     const input = groupingInput(sessions, { assignments: { a: userGroupRef("gone") } });
 
-    expect(summarize(input)).toEqual([["CR-9", ["a"]]]);
+    expect(summarize(input)).toEqual([["Ungrouped", ["a"]]]);
   });
 
-  it("groups by the ticket key in a user-set label before the transcript title", () => {
-    const sessions = [sessionMeta("a", { customTitle: "CR-9 fix" })];
 
-    const input = groupingInput(sessions, { labels: { a: "PROJ-77 renamed" } });
-
-    expect(summarize(input)).toEqual([["PROJ-77", ["a"]]]);
-  });
-
-  it("files a brand-new session by its label before Claude writes a transcript", () => {
+  it("files a brand-new session under Ungrouped before Claude writes a transcript", () => {
     const input = groupingInput([], {
       pinnedSessionIds: ["new"],
       labels: { new: "CR-5 spike" },
       pendingSessions: { new: { cwd: "/repo", createdAtMs: 1 } },
     });
 
-    expect(summarize(input)).toEqual([["CR-5", ["new"]]]);
+    expect(summarize(input)).toEqual([["Ungrouped", ["new"]]]);
   });
 
   it("stops treating a session as pending once its transcript is indexed", () => {
@@ -127,12 +106,13 @@ describe("buildGroups", () => {
     expect(groups[0].sessions[0].pending).toBeUndefined();
   });
 
-  it("titles a terminal session, files it by a ticket key in its label, and sorts it by creation time", () => {
+  it("titles a terminal session, files it by its assignment, and sorts it by creation time", () => {
     const olderClaude = sessionMeta("claude", { lastActivityMs: 1_000 });
     const groups = buildGroups(
       groupingInput([olderClaude], {
         pinnedSessionIds: ["claude", "shell", "ticket-shell"],
-        labels: { "ticket-shell": "PROJ-12 logs" },
+        userGroups: [{ id: "g1", name: "Logs" }],
+        assignments: { "ticket-shell": userGroupRef("g1") },
         terminalSessions: {
           shell: { cwd: "/repo", createdAtMs: 2_000 },
           "ticket-shell": { cwd: "/repo", createdAtMs: 3_000 },
@@ -143,7 +123,7 @@ describe("buildGroups", () => {
     const ungrouped = groups.find((group) => group.ref === UNGROUPED_REF);
     expect(ungrouped?.sessions.map((pinned) => pinned.sessionId)).toEqual(["shell", "claude"]);
     expect(pinnedSessionTitle(ungrouped!.sessions[0])).toBe("Terminal");
-    expect(groups.find((group) => group.ref === autoGroupRef("PROJ-12"))?.sessions[0].terminal?.cwd).toBe("/repo");
+    expect(groups.find((group) => group.ref === userGroupRef("g1"))?.sessions[0].terminal?.cwd).toBe("/repo");
   });
 
   it("keeps pinned sessions missing from the index under Ungrouped", () => {
@@ -152,7 +132,7 @@ describe("buildGroups", () => {
     expect(summarize(input)).toEqual([["Ungrouped", ["missing"]]]);
   });
 
-  it("applies a saved group order and a saved session order", () => {
+  it("applies a saved group order and a saved session order, ignoring unknown group refs", () => {
     const sessions = [
       sessionMeta("a", { customTitle: "PROJ-1 triage", lastActivityMs: 10 }),
       sessionMeta("b", { customTitle: "PROJ-1 notes", lastActivityMs: 30 }),
@@ -161,7 +141,12 @@ describe("buildGroups", () => {
     ];
 
     const input = groupingInput(sessions, {
-      groupOrder: [UNGROUPED_REF, autoGroupRef("PROJ-1"), autoGroupRef("CR-9")],
+      userGroups: [
+        { id: "g1", name: "PROJ-1" },
+        { id: "g2", name: "CR-9" },
+      ],
+      assignments: { a: userGroupRef("g1"), b: userGroupRef("g1"), c: userGroupRef("g2") },
+      groupOrder: [UNGROUPED_REF, "auto:PROJ-1", userGroupRef("g1"), userGroupRef("g2")],
       sessionOrder: ["a", "b"],
     });
 
@@ -173,30 +158,17 @@ describe("buildGroups", () => {
   });
 
   it("puts a group missing from the saved order on top", () => {
-    const sessions = [
-      sessionMeta("a", { customTitle: "PROJ-1 triage" }),
-      sessionMeta("c", { customTitle: "CR-9 fix" }),
-    ];
+    const sessions = [sessionMeta("a", { customTitle: "PROJ-1 triage" }), sessionMeta("c", { customTitle: "chat" })];
 
-    const input = groupingInput(sessions, { groupOrder: [autoGroupRef("PROJ-1")] });
+    const input = groupingInput(sessions, {
+      userGroups: [{ id: "g1", name: "PROJ-1" }],
+      assignments: { a: userGroupRef("g1") },
+      groupOrder: [userGroupRef("g1")],
+    });
 
-    expect(summarize(input).map(([label]) => label)).toEqual(["CR-9", "PROJ-1"]);
+    expect(summarize(input).map(([label]) => label)).toEqual(["Ungrouped", "PROJ-1"]);
   });
 
-  it("files a keyless session under its linked owned ticket, but a title key still wins", () => {
-    const sessions = [
-      sessionMeta("a", { customTitle: "random chat" }),
-      sessionMeta("b", { customTitle: "PROJ-1 triage" }),
-    ];
-    const input = groupingInput(sessions, { linkedTicketKeys: { a: "PROJ-7", b: "PROJ-7" } });
-
-    expect(summarize(input)).toEqual(
-      expect.arrayContaining([
-        ["PROJ-1", ["b"]],
-        ["PROJ-7", ["a"]],
-      ]),
-    );
-  });
 });
 
 describe("buildSectionGroups", () => {
@@ -221,14 +193,14 @@ describe("buildSectionGroups", () => {
     expect(summarizeSection("claude")).toEqual([
       ["Empty", []],
       ["Mixed", ["claude-b"]],
-      ["PROJ-1", ["claude-a"]],
+      ["Ungrouped", ["claude-a"]],
     ]);
   });
 
   it("shows only terminals in the Terminals view, in the groups that hold one", () => {
     expect(summarizeSection("terminal")).toEqual([
       ["Mixed", ["term-b"]],
-      ["PROJ-1", ["term-a"]],
+      ["Ungrouped", ["term-a"]],
     ]);
   });
 });
