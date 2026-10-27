@@ -62,17 +62,6 @@ describe("Registry", () => {
     expect(registry.linkMarks("b")).toEqual({});
   });
 
-  it("keeps link order per session", async () => {
-    const registry = new Registry(memoryStore());
-
-    await registry.setLinkOrder("a", ["ticket:PROJ-5", "pr:acme/web/pull/1"]);
-    await registry.setLinkOrder("b", ["pr:acme/web/pull/1"]);
-
-    expect(registry.linkOrder("a")).toEqual(["ticket:PROJ-5", "pr:acme/web/pull/1"]);
-    expect(registry.linkOrder("b")).toEqual(["pr:acme/web/pull/1"]);
-    expect(registry.linkOrder("c")).toEqual([]);
-  });
-
   it("remembers collapsed groups without a change event", async () => {
     const registry = new Registry(memoryStore());
     let changeCount = 0;
@@ -103,7 +92,6 @@ describe("Registry", () => {
       await registry.setLabel(sessionId, `label ${sessionId}`);
       await registry.assign([sessionId], userGroupRef("g1"));
       await registry.setLinkMark(sessionId, ["ticket:PROJ-5"], "pinned");
-      await registry.setLinkOrder(sessionId, ["ticket:PROJ-5"]);
       await registry.setSessionStatus([sessionId], "blocked", "why");
     }
 
@@ -113,7 +101,6 @@ describe("Registry", () => {
     expect(registry.labels()).toEqual({ b: "label b" });
     expect(registry.assignments()).toEqual({ b: userGroupRef("g1") });
     expect(registry.linkMarks("a")).toEqual({});
-    expect(registry.linkOrder("a")).toEqual([]);
     expect(registry.sessionStatusIds()).toEqual({ b: "blocked" });
     expect(registry.sessionStatusReasons()).toEqual({ b: "why" });
   });

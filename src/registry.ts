@@ -37,7 +37,6 @@ const PENDING_KEY = "overseer.pendingSessions";
 const GROUP_ORDER_KEY = "overseer.groupOrder";
 const SESSION_ORDER_KEY = "overseer.sessionOrder";
 const LINK_MARKS_KEY = "overseer.linkMarks";
-const LINK_ORDER_KEY = "overseer.linkOrder";
 // The first key held edits the old seed made up from link marks, so real user edits start fresh here.
 const WORKSTREAM_EDITS_KEY = "overseer.workstreamEdits.v2";
 const COLLAPSED_GROUPS_KEY = "overseer.collapsedGroupRefs";
@@ -248,14 +247,6 @@ export class Registry {
     await this.write(LINK_MARKS_KEY, { ...this.allLinkMarks(), [toSessionId]: targetMarks });
   }
 
-  linkOrder(sessionId: string): string[] {
-    return this.allLinkOrders()[sessionId] ?? [];
-  }
-
-  async setLinkOrder(sessionId: string, linkKeys: string[]): Promise<void> {
-    await this.write(LINK_ORDER_KEY, { ...this.allLinkOrders(), [sessionId]: linkKeys });
-  }
-
   workstreamEdits(sessionId: string): WorkstreamEdits {
     return readWorkstreamEdits(this.allWorkstreamEdits()[sessionId]);
   }
@@ -412,10 +403,6 @@ export class Registry {
     return this.store.get<Record<string, unknown>>(WORKSTREAM_EDITS_KEY) ?? {};
   }
 
-  private allLinkOrders(): Record<string, string[]> {
-    return this.store.get<Record<string, string[]>>(LINK_ORDER_KEY) ?? {};
-  }
-
   // /clear and /resume swap the session under a running terminal, so the row moves to the new session in place.
   // Link marks describe the old transcript, so they stay with it.
   async moveSession(fromSessionId: string, toSessionId: string): Promise<void> {
@@ -453,7 +440,6 @@ export class Registry {
     await this.write(LABELS_KEY, withoutForgotten(this.labels()));
     await this.write(ASSIGNMENTS_KEY, withoutForgotten(this.assignments()));
     await this.write(LINK_MARKS_KEY, withoutForgotten(this.allLinkMarks()));
-    await this.write(LINK_ORDER_KEY, withoutForgotten(this.allLinkOrders()));
     await this.write(WORKSTREAM_EDITS_KEY, withoutForgotten(this.allWorkstreamEdits()));
     await this.write(SESSION_STATUS_KEY, withoutForgotten(this.sessionStatusIds()));
     await this.write(SESSION_STATUS_REASON_KEY, withoutForgotten(this.sessionStatusReasons()));

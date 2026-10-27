@@ -38,9 +38,8 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - Untitled tabs and tabs pinned in VS Code stay open in every workspace. Split layouts don't come back.
 
 ### Group
-- Pinned sessions group by the ticket key in their name, branch, or first prompt (`PROJ-2567`).
+- Pinned sessions without a group sit in **Ungrouped**.
 - **New Group** (title bar) makes your own group. Drag sessions into it.
-- Renaming a ticket group turns it into your own group in the same spot.
 - Each group row has **+** (new session in that group) and **search** (pull an existing session into that group).
 
 ### Reorder
@@ -134,8 +133,8 @@ Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:
 ## Install
 
 ```bash
-curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.18.vsix
-code --install-extension djaunt-overseer-0.0.18.vsix
+curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.19.vsix
+code --install-extension djaunt-overseer-0.0.19.vsix
 ```
 
 If `code` isn't on your PATH, use `"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"`.
@@ -177,7 +176,7 @@ The analyzer and Summarize with Haiku run through your `claude` CLI, so they cou
 npm install
 npm test
 npm run package
-code --install-extension djaunt-overseer-0.0.18.vsix --force
+code --install-extension djaunt-overseer-0.0.19.vsix --force
 ```
 
 Not affiliated with Anthropic.
