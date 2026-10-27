@@ -5,6 +5,7 @@ import { formatAge } from "./format";
 import { CommitEntry } from "./gitStatus";
 import { SessionMeta } from "./indexer";
 import { isPassiveMention, LinkCandidate, summarizeAllCandidates } from "./linkCandidates";
+import { LinkStatusService } from "./linkStatusService";
 import { linkDisplayId } from "./linkView";
 import { LiveSessionMonitor } from "./liveSessions";
 import { openInBrowser } from "./openUrl";
@@ -12,7 +13,7 @@ import { tildePath } from "./paths";
 import { Registry } from "./registry";
 import { RepoService } from "./repoService";
 import { commitDocumentUri } from "./repoTree";
-import { SessionLinkService } from "./sessionLinks";
+import { readLinkSettings, SessionLinkService } from "./sessionLinks";
 import { SummaryPrompt, summaryPrompt } from "./sessionSidebarText";
 import { SessionSummaryService } from "./sessionSummaries";
 import { pickHoverSummary, readTranscriptTail, SUMMARY_SOURCE_LABELS, transcriptTurns } from "./sessionSummary";
@@ -23,6 +24,7 @@ import {
   previewTabTitle,
   PreviewTurn,
   recentConversation,
+  shownPreviewLinks,
 } from "./sessionPreviewModel";
 
 export const SESSION_PREVIEW_VIEW_TYPE = "overseer.sessionPreview";
@@ -36,6 +38,7 @@ export interface SessionPreviewDependencies {
   summaryService: SessionSummaryService;
   repoService: RepoService;
   linkService: SessionLinkService;
+  linkStatusService: LinkStatusService;
   findSessionMeta: (sessionId: string) => SessionMeta | undefined;
   sessionTitle: (sessionId: string) => string;
 }
@@ -51,8 +54,8 @@ interface SessionDetails {
   loadKey: string;
   turns: PreviewTurn[];
   foundCommits: SessionCommit[];
-  commits: PreviewCommit[];
-  pullRequests: PreviewPullRequest[];
+  commitCandidates: LinkCandidate[];
+  pullRequestCandidates: LinkCandidate[];
 }
 
 interface PreviewSummary {
@@ -87,6 +90,7 @@ interface PreviewState extends PreviewRunState {
   lastPrompt: string | undefined;
   turns: PreviewTurn[] | undefined;
   commits: PreviewCommit[] | undefined;
+  areCommitsEnabled: boolean;
   pullRequests: PreviewPullRequest[] | undefined;
   cwd: string | undefined;
   otherRepos: string[];
@@ -116,6 +120,12 @@ export class SessionPreview implements vscode.Disposable {
       dependencies.registry.onDidChange(postState),
       dependencies.liveMonitor.onDidChange(postState),
       dependencies.summaryService.onDidChange(postState),
+      dependencies.linkStatusService.onDidChange(postState),
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration("overseer.links")) {
+          this.postState();
+        }
+      }),
     );
   }
 
@@ -188,8 +198,8 @@ export class SessionPreview implements vscode.Disposable {
         await vscode.commands.executeCommand("overseer.summarizeSession", sessionId);
         return;
       case "openPullRequest": {
-        const pullRequest = this.details?.pullRequests.find(({ url }) => url === message.url);
-        if (pullRequest !== undefined) {
+        const pullRequest = this.details?.pullRequestCandidates.find(({ url }) => url === message.url);
+        if (pullRequest?.url !== undefined) {
           await openInBrowser(pullRequest.url);
         }
         return;
@@ -227,6 +237,9 @@ export class SessionPreview implements vscode.Disposable {
       this.loadDetails(meta);
     }
     const details = this.details?.sessionId === sessionId ? this.details : undefined;
+    const linkSettings = readLinkSettings();
+    const shownLinks = (candidates: LinkCandidate[]): LinkCandidate[] =>
+      shownPreviewLinks(candidates, (link) => this.dependencies.linkStatusService.statusFor(link), linkSettings);
     const summary = meta && pickHoverSummary(meta.recap, summaryService.summaryFor(sessionId), meta.sizeBytes);
     return {
       title: sessionTitle(sessionId),
@@ -243,8 +256,9 @@ export class SessionPreview implements vscode.Disposable {
       firstPrompt: meta?.firstPrompt,
       lastPrompt: distinctLastPrompt(meta?.firstPrompt, meta?.lastPrompt),
       turns: details?.turns,
-      commits: details?.commits,
-      pullRequests: details?.pullRequests,
+      commits: details === undefined ? undefined : previewCommits(shownLinks(details.commitCandidates), details.foundCommits),
+      areCommitsEnabled: linkSettings.enabledKinds.has("commit"),
+      pullRequests: details === undefined ? undefined : previewPullRequests(shownLinks(details.pullRequestCandidates)),
       cwd: meta === undefined ? undefined : tildePath(meta.resumeCwd ?? meta.startCwd),
       otherRepos: (meta?.otherReposTouched ?? []).map((repoRoot) => path.basename(repoRoot)),
     };
@@ -268,8 +282,8 @@ export class SessionPreview implements vscode.Disposable {
         loadKey,
         turns,
         foundCommits,
-        commits: previewCommits(commitCandidates, foundCommits),
-        pullRequests: previewPullRequests(candidates),
+        commitCandidates,
+        pullRequestCandidates: newestFirst(candidates.filter(isPreviewPullRequest)),
       };
       this.postState();
     });
@@ -336,10 +350,13 @@ function previewCommits(commitCandidates: LinkCandidate[], foundCommits: Session
   });
 }
 
-// A PR seen only in passing is noise; the rest show newest first.
-function previewPullRequests(candidates: LinkCandidate[]): PreviewPullRequest[] {
-  const pullRequests = candidates.filter((candidate) => candidate.kind === "pr" && candidate.url !== undefined && !isPassiveMention(candidate));
-  return newestFirst(pullRequests).map((candidate) => ({
+// A PR seen only in passing is noise.
+function isPreviewPullRequest(candidate: LinkCandidate): boolean {
+  return candidate.kind === "pr" && candidate.url !== undefined && !isPassiveMention(candidate);
+}
+
+function previewPullRequests(pullRequestCandidates: LinkCandidate[]): PreviewPullRequest[] {
+  return pullRequestCandidates.map((candidate) => ({
     url: candidate.url ?? "",
     label: linkDisplayId(candidate),
     title: candidate.title,
@@ -675,6 +692,7 @@ function previewHtml(nonce: string, cspSource: string, codiconStylesheet: string
   }
 
   function renderCommits(state) {
+    byId("commits-section").hidden = !state.areCommitsEnabled;
     const container = byId("commits");
     const commits = state.commits ?? [];
     byId("commit-count").hidden = commits.length === 0;

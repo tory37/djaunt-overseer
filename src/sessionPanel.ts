@@ -5,8 +5,9 @@ import { SessionAnalysis } from "./analysisState";
 import { formatAge } from "./format";
 import { SessionMeta } from "./indexer";
 import { isPassiveMention, LinkCandidate, linkKey, summarizeAllCandidates } from "./linkCandidates";
+import { LinkStatus } from "./linkStatus";
 import { LinkStatusService } from "./linkStatusService";
-import { linkForItemKey, MarkedLink } from "./linkView";
+import { isLinkShown, linkForItemKey, MarkedLink } from "./linkView";
 import { LiveSessionMonitor } from "./liveSessions";
 import { openInBrowser, openInVscode } from "./openUrl";
 import { tildePath } from "./paths";
@@ -159,6 +160,11 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
         this.postState();
       }),
       vscode.window.onDidCloseTerminal(postState),
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration("overseer.links")) {
+          this.postState();
+        }
+      }),
       dependencies.registry.onDidChange(postState),
       dependencies.statusConfig.onDidChange(postState),
       dependencies.linkStatusService.onDidChange(postState),
@@ -232,11 +238,11 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
     analysis: SessionAnalysis | undefined,
     edits: WorkstreamEdits,
   ): WorkView {
-    const { registry, sessionAnalyzer } = this.dependencies;
+    const { registry, sessionAnalyzer, linkStatusService } = this.dependencies;
     const candidates = snapshot?.candidates ?? [];
     const linkMarks = registry.linkMarks(sessionId);
     const removedItemKeys = new Set(edits.removedItems);
-    const { enabledKinds } = readLinkSettings();
+    const linkSettings = readLinkSettings();
     const candidatesByKey = new Map(candidates.map((candidate) => [linkKey(candidate), candidate]));
     const lastActivityByKey = new Map(candidates.map((candidate) => [linkKey(candidate), candidate.lastSeenOffsetBytes ?? 0]));
     const candidateItemKeys = [
@@ -247,12 +253,16 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
     const shownLinksByKey = new Map<string, MarkedLink>();
     const rowFor = (itemKey: string): PanelRow | undefined => {
       const knownLink = candidatesByKey.get(itemKey) ?? linkForItemKey(itemKey);
-      if (knownLink === undefined || !enabledKinds.has(knownLink.kind)) {
+      if (knownLink === undefined) {
+        return undefined;
+      }
+      const status = linkStatusService.statusFor(knownLink);
+      if (!isLinkShown(knownLink, status, linkSettings)) {
         return undefined;
       }
       const link: MarkedLink = { ...knownLink, mark: removedItemKeys.has(itemKey) ? "removed" : linkMarks[itemKey] };
       shownLinksByKey.set(itemKey, link);
-      return this.rowFor(link, analysis?.artifactTitles[itemKey]);
+      return this.rowFor(link, status, analysis?.artifactTitles[itemKey], linkSettings.jiraBaseUrl);
     };
     const display = buildWorkstreamDisplay({
       analysis,
@@ -364,10 +374,8 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
   }
 
   // An artifact shows the analyzer's short title; its slug stays in the hover text.
-  private rowFor(link: MarkedLink, artifactTitle: string | undefined): PanelRow {
-    const { linkStatusService, statusConfig } = this.dependencies;
-    const status = linkStatusService.statusFor(link);
-    const row = resourceRow(link, status, linkStatusColor(statusConfig, link, status), readLinkSettings().jiraBaseUrl, ITEM_ROW_DEPTH);
+  private rowFor(link: MarkedLink, status: LinkStatus | undefined, artifactTitle: string | undefined, jiraBaseUrl: string): PanelRow {
+    const row = resourceRow(link, status, linkStatusColor(this.dependencies.statusConfig, link, status), jiraBaseUrl, ITEM_ROW_DEPTH);
     const shownLabel = link.kind === "artifact" && artifactTitle !== undefined ? artifactTitle : row.label;
     return { ...row, label: shownLabel, shortStatus: shortLinkStatus(row.statusText), hoverTitle: linkRowTitle(row) };
   }

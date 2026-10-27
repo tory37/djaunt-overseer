@@ -1,3 +1,6 @@
+import { LinkCandidate } from "./linkCandidates";
+import { LinkStatus } from "./linkStatus";
+import { isLinkShown, LinkViewSettings } from "./linkView";
 import { LiveSession } from "./liveParse";
 import { clipText, TranscriptTurn } from "./sessionSummary";
 
@@ -52,4 +55,13 @@ export function sidebarRunKind(hasTerminalHere: boolean, liveSession: LiveSessio
     return liveSession?.status === "busy" ? "busy" : "idle";
   }
   return previewRunState(liveSession).isElsewhere ? "elsewhere" : "paused";
+}
+
+// The preview follows the same link settings as the Session sidebar.
+export function shownPreviewLinks(
+  candidates: LinkCandidate[],
+  statusOf: (link: LinkCandidate) => LinkStatus | undefined,
+  settings: LinkViewSettings,
+): LinkCandidate[] {
+  return candidates.filter((candidate) => isLinkShown(candidate, statusOf(candidate), settings));
 }

@@ -44,6 +44,8 @@ interface LinkSettings {
   "jira.enabled": boolean;
   "github.enabled": boolean;
   "artifacts.enabled": boolean;
+  "commits.enabled": boolean;
+  "prs.openOnly": boolean;
   liveStatus: boolean;
 }
 
@@ -79,7 +81,14 @@ type PanelMessage =
   | { type: "openIconReference" };
 
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
-const LINK_SETTING_KEYS: Array<keyof LinkSettings> = ["jira.enabled", "github.enabled", "artifacts.enabled", "liveStatus"];
+const LINK_SETTING_KEYS: Array<keyof LinkSettings> = [
+  "jira.enabled",
+  "github.enabled",
+  "artifacts.enabled",
+  "commits.enabled",
+  "prs.openOnly",
+  "liveStatus",
+];
 const OVERSEER_VIEWS: OverseerView[] = ["sessions", "terminals", "repos"];
 const CODICON_REFERENCE_URL = "https://microsoft.github.io/vscode-codicons/dist/codicon.html";
 const EXTENSION_SETTINGS_QUERY = "@ext:djaunt.djaunt-overseer";
@@ -160,6 +169,8 @@ export class SettingsPanel {
       "jira.enabled": linksConfig.get<boolean>("jira.enabled", true),
       "github.enabled": linksConfig.get<boolean>("github.enabled", true),
       "artifacts.enabled": linksConfig.get<boolean>("artifacts.enabled", true),
+      "commits.enabled": linksConfig.get<boolean>("commits.enabled", false),
+      "prs.openOnly": linksConfig.get<boolean>("prs.openOnly", true),
       liveStatus: linksConfig.get<boolean>("liveStatus", true),
     };
     const projects = statusConfig.projects().map((project) => ({
@@ -507,6 +518,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       <label class="switch"><input type="checkbox" id="github-enabled"> Pull request links and status</label>
       <div class="section-body" id="github-body">
         <p class="note muted">Status comes from <code>gh</code>.</p>
+        <label class="switch"><input type="checkbox" id="prs-open-only"> Hide merged and closed pull requests</label>
         <div id="pr-statuses" class="grid"></div>
       </div>
     </section>
@@ -530,6 +542,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       <label class="switch"><input type="checkbox" id="view-repos"> Repos view</label>
       <label class="switch"><input type="checkbox" id="live-status"> Fetch live ticket and PR status</label>
       <label class="switch"><input type="checkbox" id="artifacts-enabled"> Artifact links</label>
+      <label class="switch"><input type="checkbox" id="commits-enabled"> Commit links</label>
       <div class="general-row"><button id="all-settings">All settings…</button><span class="muted">Every <code>overseer.*</code> setting in the Settings editor.</span></div>
     </section>
   </main>
@@ -762,6 +775,8 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     document.getElementById("jira-enabled").checked = linkSettings["jira.enabled"];
     document.getElementById("github-enabled").checked = linkSettings["github.enabled"];
     document.getElementById("artifacts-enabled").checked = linkSettings["artifacts.enabled"];
+    document.getElementById("commits-enabled").checked = linkSettings["commits.enabled"];
+    document.getElementById("prs-open-only").checked = linkSettings["prs.openOnly"];
     document.getElementById("live-status").checked = linkSettings.liveStatus;
     setSectionEnabled("jira-body", linkSettings["jira.enabled"]);
     setSectionEnabled("github-body", linkSettings["github.enabled"]);
@@ -771,6 +786,8 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     "jira-enabled": "jira.enabled",
     "github-enabled": "github.enabled",
     "artifacts-enabled": "artifacts.enabled",
+    "commits-enabled": "commits.enabled",
+    "prs-open-only": "prs.openOnly",
     "live-status": "liveStatus",
   };
   for (const [checkboxId, settingKey] of Object.entries(LINK_SETTING_CHECKBOXES)) {

@@ -1,9 +1,11 @@
 import { LinkCandidate, LinkKind } from "./linkCandidates";
+import { LinkStatus } from "./linkStatus";
 import { LinkMark } from "./registry";
 
 export interface LinkViewSettings {
   enabledKinds: Set<LinkKind>;
   jiraBaseUrl: string;
+  showsOnlyOpenPrs: boolean;
 }
 
 export interface MarkedLink extends LinkCandidate {
@@ -12,6 +14,15 @@ export interface MarkedLink extends LinkCandidate {
 
 const SHORT_COMMIT_HASH_LENGTH = 7;
 const LINK_KINDS: ReadonlySet<string> = new Set<LinkKind>(["pr", "ticket", "artifact", "commit"]);
+const FINISHED_PR_STATUS_TEXTS: ReadonlySet<string> = new Set(["merged", "closed"]);
+
+// A PR whose status is not known yet still shows.
+export function isLinkShown(link: LinkCandidate, status: LinkStatus | undefined, settings: LinkViewSettings): boolean {
+  if (!settings.enabledKinds.has(link.kind)) {
+    return false;
+  }
+  return !(settings.showsOnlyOpenPrs && link.kind === "pr" && status !== undefined && FINISHED_PR_STATUS_TEXTS.has(status.text));
+}
 
 export function linkUrl(link: LinkCandidate, jiraBaseUrl: string): string | undefined {
   if (link.url !== undefined) {

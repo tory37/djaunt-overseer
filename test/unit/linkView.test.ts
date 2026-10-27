@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConcurrencyLimiter, linkDisplayId, linkForItemKey, linkUrl, MarkedLink } from "../../src/linkView";
+import { ConcurrencyLimiter, isLinkShown, linkDisplayId, linkForItemKey, linkUrl, LinkViewSettings, MarkedLink } from "../../src/linkView";
 import { acceptedOrder, resourceRow } from "../../src/resourceRows";
 import { statusGlyphMarkup } from "../../src/statusIcons";
 
@@ -20,6 +20,37 @@ const OWNED_PR = markedLink({ kind: "pr", id: "acme/web-app/pull/2384", url: "ht
 const TOUCHED_TICKET = markedLink({ kind: "ticket", id: "PROJ-5" });
 const OWNED_TICKET = markedLink({ kind: "ticket", id: "PROJ-9" });
 const NOISE_ARTIFACT = markedLink({ kind: "artifact", id: "abc" });
+
+describe("isLinkShown", () => {
+  const COMMIT = markedLink({ kind: "commit", id: "0123456789abcdef" });
+  const settings = (overrides: Partial<LinkViewSettings> = {}): LinkViewSettings => ({
+    enabledKinds: new Set(["pr", "ticket", "artifact"]),
+    jiraBaseUrl: "",
+    showsOnlyOpenPrs: true,
+    ...overrides,
+  });
+  const prStatus = (text: string) => ({ text, colorKey: text });
+
+  it("hides kinds that are off, commits by default", () => {
+    expect(isLinkShown(COMMIT, undefined, settings())).toBe(false);
+    expect(isLinkShown(COMMIT, undefined, settings({ enabledKinds: new Set(["commit"]) }))).toBe(true);
+    expect(isLinkShown(OWNED_PR, prStatus("open"), settings({ enabledKinds: new Set(["ticket"]) }))).toBe(false);
+  });
+
+  it("hides merged and closed PRs only when open-only is on", () => {
+    expect(isLinkShown(OWNED_PR, prStatus("merged"), settings())).toBe(false);
+    expect(isLinkShown(OWNED_PR, prStatus("closed"), settings())).toBe(false);
+    expect(isLinkShown(OWNED_PR, prStatus("merged"), settings({ showsOnlyOpenPrs: false }))).toBe(true);
+  });
+
+  it("shows open PRs, PRs with no known status, and tickets whose status reads closed", () => {
+    for (const text of ["draft", "open", "review required", "approved", "changes requested"]) {
+      expect(isLinkShown(OWNED_PR, prStatus(text), settings())).toBe(true);
+    }
+    expect(isLinkShown(OWNED_PR, undefined, settings())).toBe(true);
+    expect(isLinkShown(OWNED_TICKET, prStatus("closed"), settings())).toBe(true);
+  });
+});
 
 describe("linkUrl", () => {
   it("prefers the transcript URL and builds ticket URLs from the base URL", () => {

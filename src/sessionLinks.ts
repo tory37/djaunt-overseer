@@ -10,7 +10,10 @@ const MAX_CONCURRENT_SCANS = 2;
 
 export function readLinkSettings(): LinkViewSettings {
   const linksConfig = vscode.workspace.getConfiguration(LINKS_CONFIG_SECTION);
-  const enabledKinds = new Set<LinkKind>(["commit"]);
+  const enabledKinds = new Set<LinkKind>();
+  if (linksConfig.get<boolean>("commits.enabled", false)) {
+    enabledKinds.add("commit");
+  }
   if (linksConfig.get<boolean>("github.enabled", true)) {
     enabledKinds.add("pr");
   }
@@ -20,7 +23,11 @@ export function readLinkSettings(): LinkViewSettings {
   if (linksConfig.get<boolean>("artifacts.enabled", true)) {
     enabledKinds.add("artifact");
   }
-  return { enabledKinds, jiraBaseUrl: linksConfig.get<string>("jira.baseUrl", "") };
+  return {
+    enabledKinds,
+    jiraBaseUrl: linksConfig.get<string>("jira.baseUrl", ""),
+    showsOnlyOpenPrs: linksConfig.get<boolean>("prs.openOnly", true),
+  };
 }
 
 // Scans a session's transcript for links when the analyzer, the Session sidebar, or the preview asks, resuming from the saved offset.

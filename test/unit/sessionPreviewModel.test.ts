@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { LiveSession } from "../../src/liveParse";
-import { distinctLastPrompt, previewRunState, previewTabTitle, recentConversation, sidebarRunKind } from "../../src/sessionPreviewModel";
+import { LinkCandidate } from "../../src/linkCandidates";
+import { LinkStatus } from "../../src/linkStatus";
+import {
+  distinctLastPrompt,
+  previewRunState,
+  previewTabTitle,
+  recentConversation,
+  shownPreviewLinks,
+  sidebarRunKind,
+} from "../../src/sessionPreviewModel";
 
 function liveSession(overrides: Partial<LiveSession>): LiveSession {
   return {
@@ -79,5 +88,38 @@ describe("sidebarRunKind", () => {
   it("tells paused from running somewhere else when there is no terminal here", () => {
     expect(sidebarRunKind(false, undefined)).toBe("paused");
     expect(sidebarRunKind(false, liveSession({ pid: 48211 }))).toBe("elsewhere");
+  });
+});
+
+describe("shownPreviewLinks", () => {
+  const candidate = (kind: LinkCandidate["kind"], id: string): LinkCandidate => ({
+    kind,
+    id,
+    url: undefined,
+    title: undefined,
+    signals: {},
+    snippets: [],
+    firstSeen: undefined,
+    lastSeen: undefined,
+  });
+  const openPr = candidate("pr", "acme/web/pull/1");
+  const mergedPr = candidate("pr", "acme/web/pull/2");
+  const unknownPr = candidate("pr", "acme/web/pull/3");
+  const commit = candidate("commit", "0123456789abcdef");
+  const statuses = new Map<string, LinkStatus>([
+    [openPr.id, { text: "open", colorKey: "open" }],
+    [mergedPr.id, { text: "merged", colorKey: "merged" }],
+  ]);
+  const statusOf = (link: LinkCandidate): LinkStatus | undefined => statuses.get(link.id);
+  const allLinks = [openPr, mergedPr, unknownPr, commit];
+
+  it("drops commits and finished PRs by default, keeping order", () => {
+    const settings = { enabledKinds: new Set<LinkCandidate["kind"]>(["pr"]), jiraBaseUrl: "", showsOnlyOpenPrs: true };
+    expect(shownPreviewLinks(allLinks, statusOf, settings)).toEqual([openPr, unknownPr]);
+  });
+
+  it("shows everything when commits are on and open-only is off", () => {
+    const settings = { enabledKinds: new Set<LinkCandidate["kind"]>(["pr", "commit"]), jiraBaseUrl: "", showsOnlyOpenPrs: false };
+    expect(shownPreviewLinks(allLinks, statusOf, settings)).toEqual(allLinks);
   });
 });

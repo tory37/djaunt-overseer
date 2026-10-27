@@ -145,6 +145,7 @@ export function activate(context: vscode.ExtensionContext): void {
     summaryService,
     repoService,
     linkService,
+    linkStatusService,
     findSessionMeta: findIndexedSession,
     sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
   });

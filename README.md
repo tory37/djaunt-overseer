@@ -156,6 +156,8 @@ Then run **Developer: Reload Window**. Cmd+R only reloads in the F5 development 
 | `overseer.links.github.enabled` | `true` | Show GitHub PRs under each session. |
 | `overseer.links.jira.enabled` | `true` | Show Jira tickets under each session. |
 | `overseer.links.artifacts.enabled` | `true` | Show claude.ai artifacts under each session. |
+| `overseer.links.commits.enabled` | `false` | Show commits in the Session sidebar. |
+| `overseer.links.prs.openOnly` | `true` | Hide merged and closed PRs in the Session sidebar. A PR with no known status still shows. |
 | `overseer.links.jira.baseUrl` | empty | Jira site for tickets whose URL the transcript doesn't show, e.g. `https://acme.atlassian.net`. |
 | `overseer.jira.mcpServer` | `jira` | Name of the stdio Jira MCP server in `~/.claude.json`. |
 | `overseer.links.liveStatus` | `true` | Show PR and ticket status through `gh` and your Jira MCP server. |

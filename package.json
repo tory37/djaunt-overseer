@@ -370,6 +370,26 @@
         "category": "Overseer"
       },
       {
+        "command": "overseer.enableCommits",
+        "title": "Enable Commit Links",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.disableCommits",
+        "title": "Disable Commit Links",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.enableOpenPrsOnly",
+        "title": "Show Only Open Pull Requests",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.disableOpenPrsOnly",
+        "title": "Show Merged and Closed Pull Requests",
+        "category": "Overseer"
+      },
+      {
         "command": "overseer.installCompactHooks",
         "title": "Install Compact Hooks",
         "category": "Overseer"
@@ -732,6 +752,22 @@
           "when": "config.overseer.links.artifacts.enabled"
         },
         {
+          "command": "overseer.enableCommits",
+          "when": "!config.overseer.links.commits.enabled"
+        },
+        {
+          "command": "overseer.disableCommits",
+          "when": "config.overseer.links.commits.enabled"
+        },
+        {
+          "command": "overseer.enableOpenPrsOnly",
+          "when": "!config.overseer.links.prs.openOnly"
+        },
+        {
+          "command": "overseer.disableOpenPrsOnly",
+          "when": "config.overseer.links.prs.openOnly"
+        },
+        {
           "command": "overseer.openTerminal",
           "when": "false"
         },
@@ -942,6 +978,16 @@
           "type": "boolean",
           "default": true,
           "description": "Show claude.ai artifacts under each session."
+        },
+        "overseer.links.commits.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show commits in the Session sidebar."
+        },
+        "overseer.links.prs.openOnly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Hide merged and closed pull requests in the Session sidebar. A PR with no known status still shows."
         },
         "overseer.links.jira.baseUrl": {
           "type": "string",

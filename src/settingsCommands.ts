@@ -24,6 +24,8 @@ const INTEGRATION_SWITCHES: Record<string, IntegrationSwitch> = {
   Jira: { name: "Jira", settingKey: "jira.enabled" },
   Github: { name: "GitHub", settingKey: "github.enabled" },
   Artifacts: { name: "Artifact links", settingKey: "artifacts.enabled" },
+  Commits: { name: "Commit links", settingKey: "commits.enabled" },
+  OpenPrsOnly: { name: "Open PRs only", settingKey: "prs.openOnly" },
 };
 
 const EXTENSION_SETTINGS_QUERY = "@ext:djaunt.djaunt-overseer";
