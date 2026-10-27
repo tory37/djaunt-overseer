@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Overseer — vertical tabs for Claude sessions</title>
-    <meta name="description" content="A VS Code extension that keeps every Claude CLI session in a sidebar tree, grouped by ticket. It shows the PRs and tickets each session worked on, and it can suspend idle sessions and resume any of them from any repo.">
+    <meta name="description" content="A VS Code extension that keeps every Claude CLI session in a sidebar tree, in groups you make. It sorts each session's tickets, PRs, commits, and artifacts into workstreams, and it can suspend idle sessions and resume any of them from any repo.">
     <meta property="og:title" content="Overseer — vertical tabs for Claude sessions">
-    <meta property="og:description" content="Group Claude CLI sessions by ticket, see the PRs and tickets each one worked on, and resume any of them from any repo. Sessions run in normal VS Code terminals.">
+    <meta property="og:description" content="Group Claude CLI sessions your way, see each one's work sorted into workstreams, and resume any of them from any repo. Sessions run in normal VS Code terminals.">
     <meta property="og:image" content="https://tory37.github.io/djaunt-overseer/assets/og.png">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" href="assets/favicon.svg">
@@ -107,30 +107,30 @@
         );
 
         const INITIAL_SESSIONS = [
-            { id: '5f1c9a2e', title: 'PROJ-2567 login timeout', group: 'PROJ-2567', repo: 'web-app', branch: 'fix/proj-2567-login-timeout', extraRepos: ['api'], state: 'running' },
-            { id: 'a83d0b17', title: 'PROJ-2567 review notes', group: 'PROJ-2567', repo: 'web-app', branch: 'main', extraRepos: [], state: 'compacting' },
-            { id: 'c27e4f90', title: 'OPS-4410 billing export', group: 'OPS-4410', repo: 'api', branch: 'ops-4410-export', extraRepos: ['infra', 'web-app'], state: 'working' },
+            { id: '5f1c9a2e', title: 'PROJ-2567 login timeout', group: 'Login sprint', repo: 'web-app', branch: 'fix/proj-2567-login-timeout', extraRepos: ['api'], state: 'running' },
+            { id: 'a83d0b17', title: 'PROJ-2567 review notes', group: 'Login sprint', repo: 'web-app', branch: 'main', extraRepos: [], state: 'compacting' },
+            { id: 'c27e4f90', title: 'OPS-4410 billing export', group: 'Billing export', repo: 'api', branch: 'ops-4410-export', extraRepos: ['infra', 'web-app'], state: 'working' },
             { id: '0d9b6c33', title: 'Rate limiter refactor', group: 'Waiting on review', repo: 'api', branch: 'feat/rate-limit', extraRepos: [], state: 'suspended' },
             { id: '7e15a2c8', title: 'Docs site migration', group: 'Waiting on review', repo: 'docs', branch: 'main', extraRepos: [], state: 'elsewhere' },
             { id: '9a4c7d21', title: 'Flaky e2e triage', group: 'Ungrouped', repo: 'web-app', branch: 'main', extraRepos: [], state: 'duplicate' },
         ];
 
         const GROUPS = [
-            { name: 'PROJ-2567', icon: 'Tag' },
-            { name: 'OPS-4410', icon: 'Tag' },
+            { name: 'Login sprint', icon: 'Folder' },
+            { name: 'Billing export', icon: 'Folder' },
             { name: 'Waiting on review', icon: 'Folder' },
             { name: 'Ungrouped', icon: 'Folder' },
         ];
 
         const INITIAL_TERMINALS = [
-            { id: 't-dev', title: 'api dev server', group: 'OPS-4410', folder: 'api', isOpen: true, lines: [
+            { id: 't-dev', title: 'api dev server', group: 'Billing export', folder: 'api', isOpen: true, lines: [
                 { kind: 'prompt', text: '~/src/api $ npm run dev' },
                 { kind: 'out', text: '> api@1.4.0 dev' },
                 { kind: 'out', text: '> tsx watch src/server.ts' },
                 { kind: 'system', text: 'listening on http://localhost:3000' },
                 { kind: 'muted', text: 'GET /health 200 4ms' },
             ] },
-            { id: 't-tests', title: 'api test watcher', group: 'OPS-4410', folder: 'api', isOpen: true, lines: [
+            { id: 't-tests', title: 'api test watcher', group: 'Billing export', folder: 'api', isOpen: true, lines: [
                 { kind: 'prompt', text: '~/src/api $ npm test -- --watch' },
                 { kind: 'out', text: ' ✓ billing.export (12 tests)' },
                 { kind: 'out', text: ' ✓ rate-limit (8 tests)' },
@@ -143,7 +143,7 @@
         ];
 
         const TERMINAL_GROUPS = [
-            { name: 'OPS-4410', icon: 'Tag' },
+            { name: 'Billing export', icon: 'Folder' },
             { name: 'Ungrouped', icon: 'Folder' },
         ];
 
@@ -234,47 +234,90 @@
             );
         };
 
+        const prItem = (label, text, detail, color = 'green', icon = 'GitPullRequest') => ({ icon, color, label, text, detail });
+        const commitItem = (hash, subject, repo) => ({ icon: 'GitCommitHorizontal', color: 'gray', label: hash, text: subject, detail: repo });
+        const artifactItem = (shortName, slug) => ({ icon: 'Sparkles', color: 'cyan', label: shortName, detail: 'artifact', hover: slug });
+
         const SESSION_DETAILS = {
             '5f1c9a2e': {
                 summary: 'Extended the refresh window in src/auth/session.ts. Tests pass. Next: open the PR.',
-                workingOn: [
-                    { depth: 0, icon: 'Ticket', color: 'gold', label: 'PROJ-2567', text: 'Session timeout', detail: 'In Progress', note: 'fixing the refresh window' },
-                    { depth: 1, icon: 'GitPullRequest', color: 'green', label: 'web-app#412', text: 'Extend refresh window', detail: 'approved' },
+                status: { label: 'In Progress', className: 'text-warning', isAuto: true },
+                where: ['web-app#412 is approved and waits on CI.', 'QA found a redirect loop. The fix is in web-app#418.', 'Next: merge both PRs.'],
+                workstreams: [
+                    {
+                        title: 'Session timeout fix',
+                        tickets: [{ key: 'PROJ-2567', detail: 'In Progress', color: 'gold' }],
+                        items: [
+                            prItem('web-app#412', 'Extend refresh window', 'approved'),
+                            commitItem('a1b2c3d', 'Extend session timeout', 'web-app'),
+                            artifactItem('Timeout repro notes', 'session-timeout-repro-notes-2f81'),
+                        ],
+                    },
+                    {
+                        title: 'QA fix: login redirect loop',
+                        tickets: [],
+                        items: [
+                            prItem('web-app#418', 'Drop stale redirect param', 'open'),
+                            commitItem('4e7f2b1', 'Drop stale redirect param', 'web-app'),
+                        ],
+                    },
+                    {
+                        title: 'Cookie flag',
+                        tickets: [{ key: 'PROJ-2571', detail: 'Done', color: 'green', icon: 'TicketCheck' }],
+                        items: [prItem('web-app#409', 'Set SameSite on the session cookie', 'merged', 'purple', 'GitMerge')],
+                        isDone: true,
+                    },
                 ],
-                alsoSeen: [{ depth: 0, icon: 'TicketCheck', color: 'green', label: 'PROJ-2571', text: 'Cookie flag', detail: 'Done' }],
-                untracked: ['commits'],
                 recapCaption: 'Claude Code recap · 3m ago',
                 lastActive: '3m ago',
             },
             'a83d0b17': {
                 summary: 'Collecting review notes on web-app#412 before the merge.',
-                workingOn: [{ depth: 0, icon: 'GitPullRequest', color: 'green', label: 'web-app#412', detail: 'approved' }],
-                alsoSeen: [],
+                status: { label: 'Human Review', className: 'text-warning', isAuto: false },
+                where: ['Two review threads on web-app#412 are still open.'],
+                workstreams: [{ title: 'Review of the timeout PR', tickets: [], items: [prItem('web-app#412', 'Extend refresh window', 'approved')] }],
             },
             'c27e4f90': {
                 summary: 'Streaming the billing export to S3 in chunks. Infra change pending.',
-                workingOn: [
-                    { depth: 0, icon: 'Ticket', color: 'gold', label: 'OPS-4410', detail: 'In Progress', note: 'chunked export' },
-                    { depth: 1, icon: 'GitPullRequestDraft', color: 'gray', label: 'api#388', detail: 'draft' },
+                status: { label: 'In Progress', className: 'text-warning', isAuto: true },
+                where: ['The export streams in 5 MB chunks.', 'infra#77 adds the bucket policy. It is not merged.'],
+                workstreams: [
+                    {
+                        title: 'Chunked billing export',
+                        tickets: [{ key: 'OPS-4410', detail: 'In Progress', color: 'gold' }],
+                        items: [
+                            prItem('api#388', 'Stream export in chunks', 'draft', 'gray', 'GitPullRequestDraft'),
+                            prItem('infra#77', 'Export bucket policy', 'open'),
+                            commitItem('b7d09e4', 'Write export parts to S3', 'api'),
+                        ],
+                    },
                 ],
-                alsoSeen: [{ depth: 0, icon: 'GitPullRequest', color: 'green', label: 'infra#77', detail: 'open' }],
             },
             '0d9b6c33': {
                 summary: 'Moved the limiter to a token bucket in src/middleware/limit.ts. Waiting on review of api#391.',
                 lastTurns: [{ kind: 'input', text: '> bump the burst to 20 and rerun' }, { kind: 'muted', text: 'Done. 48 tests pass.' }],
-                workingOn: [{ depth: 0, icon: 'GitPullRequest', color: 'green', label: 'api#391', detail: 'review required' }],
-                alsoSeen: [],
+                status: { label: 'Human Review', className: 'text-warning', isAuto: false },
+                where: ['api#391 waits on review.'],
+                workstreams: [
+                    {
+                        title: 'Token bucket limiter',
+                        tickets: [],
+                        items: [prItem('api#391', 'Use a token bucket', 'review required'), commitItem('7c41e0a', 'Use a token bucket', 'api')],
+                    },
+                ],
             },
             '7e15a2c8': {
                 summary: 'Porting the docs site to the new build. Running in another window.',
                 lastTurns: [{ kind: 'input', text: '> fix the broken sidebar links' }, { kind: 'muted', text: 'Fixed 12 links in nav.json.' }],
-                workingOn: [],
-                alsoSeen: [{ depth: 0, icon: 'Ticket', color: 'gray', label: 'DOCS-88', detail: 'To Do' }],
+                status: { label: 'In Progress', className: 'text-warning', isAuto: true },
+                where: ['The new build runs. 12 nav links were fixed.'],
+                workstreams: [],
+                unsorted: [{ icon: 'Ticket', color: 'gray', label: 'DOCS-88', text: 'Docs build migration', detail: 'To Do' }],
             },
             '9a4c7d21': {
                 summary: 'Two copies are running. Fork one or close the other.',
-                workingOn: [],
-                alsoSeen: [],
+                where: [],
+                workstreams: [],
             },
         };
 
@@ -320,6 +363,115 @@
             </div>
         );
 
+        const StatusTag = ({ status }) => (
+            <span className="shrink-0 flex items-center gap-1">
+                <span className={status.className}>{status.label}</span>
+                {status.isAuto && <span className="font-mono text-[10px] uppercase tracking-label text-muted">auto</span>}
+            </span>
+        );
+
+        const WhereLines = ({ lines }) => (
+            <div className="mx-4 mt-3 space-y-1">
+                {lines.map((line) => (
+                    <p key={line} className="flex items-start gap-2 text-muted">
+                        <Icon name="MapPin" className="w-3.5 h-3.5 mt-0.5" />
+                        <span className="min-w-0">{line}</span>
+                    </p>
+                ))}
+            </div>
+        );
+
+        const WorkItemRow = ({ item, action }) => (
+            <div title={item.hover ?? [item.label, item.text, item.detail].filter(Boolean).join(' — ')} className="group/item flex items-center gap-2 h-7 pl-7 pr-4 hover:bg-raised">
+                <LinkIcon name={item.icon} color={item.color} />
+                <span className="shrink-0 font-mono text-bone">{item.label}</span>
+                <span className="flex-1 min-w-0 truncate text-muted">{item.text}</span>
+                {action ?? <span style={{ color: LINK_COLORS[item.color] }} className="shrink-0 text-[11px]">{item.detail}</span>}
+            </div>
+        );
+
+        const TicketChips = ({ tickets }) => (
+            <div className="flex flex-wrap items-center gap-2 min-h-7 pl-7 pr-4">
+                {tickets.map((ticket) => (
+                    <span key={ticket.key} className="inline-flex items-center gap-1 h-5 px-2 border border-line">
+                        <LinkIcon name={ticket.icon ?? 'Ticket'} color={ticket.color} />
+                        <span className="font-mono text-bone">{ticket.key}</span>
+                        <span style={{ color: LINK_COLORS[ticket.color] }} className="text-[11px]">{ticket.detail}</span>
+                    </span>
+                ))}
+            </div>
+        );
+
+        const Workstream = ({ workstream, isDropTarget = false }) => {
+            const [isOpen, setIsOpen] = useState(!workstream.isDone);
+            return (
+                <div className={`mt-2 ${workstream.isDone ? 'opacity-60 hover:opacity-100' : ''} ${isDropTarget ? 'border border-dashed border-accent' : ''} transition-opacity duration-200 ease-dj`}>
+                    <button
+                        onClick={() => setIsOpen(!isOpen)}
+                        aria-expanded={isOpen}
+                        className="w-full flex items-center gap-2 h-7 px-4 text-left hover:bg-raised"
+                    >
+                        <Icon name="ChevronRight" className={`w-3 h-3 text-muted transition-transform duration-100 ease-linear ${isOpen ? 'rotate-90' : ''}`} />
+                        <span className="flex-1 min-w-0 truncate text-bone font-semibold">{workstream.title}</span>
+                        {workstream.isDone && <Icon name="Check" className="w-4 h-4 text-success" />}
+                        <span className="shrink-0 text-muted">{workstream.items.length + workstream.tickets.length}</span>
+                    </button>
+                    {isOpen && workstream.tickets.length > 0 && <TicketChips tickets={workstream.tickets} />}
+                    {isOpen && workstream.items.map((item) => <WorkItemRow key={item.label} item={item} />)}
+                </div>
+            );
+        };
+
+        const UnsortedGroup = ({ items }) => (
+            <div className="mt-2">
+                <div className="flex items-center gap-2 h-7 px-4 text-muted">
+                    <Icon name="Inbox" className="w-3.5 h-3.5" />
+                    <span className="flex-1">Unsorted</span>
+                    <span>{items.length}</span>
+                </div>
+                {items.map((item) => <WorkItemRow key={item.label} item={item} />)}
+            </div>
+        );
+
+        const RestoreAction = () => (
+            <span className="shrink-0 flex items-center gap-1 text-accent"><Icon name="Undo2" className="w-3.5 h-3.5" />Restore</span>
+        );
+
+        const RemovedGroup = ({ items, defaultOpen = false }) => {
+            const [isOpen, setIsOpen] = useState(defaultOpen);
+            return (
+                <div className="mt-2">
+                    <button
+                        onClick={() => setIsOpen(!isOpen)}
+                        aria-expanded={isOpen}
+                        className="w-full flex items-center gap-2 h-7 px-4 text-left text-muted hover:text-bone transition-colors duration-200 ease-dj"
+                    >
+                        <Icon name="ChevronRight" className={`w-3 h-3 transition-transform duration-100 ease-linear ${isOpen ? 'rotate-90' : ''}`} />
+                        Removed ({items.length})
+                    </button>
+                    {isOpen && items.map((item) => <WorkItemRow key={item.label} item={{ ...item, color: 'dim' }} action={<RestoreAction />} />)}
+                </div>
+            );
+        };
+
+        const WorkLabel = () => (
+            <div className="flex items-center h-7 px-4 font-mono uppercase tracking-widest text-muted">Work</div>
+        );
+
+        const WorkSection = ({ details }) => {
+            const unsorted = details.unsorted ?? [];
+            const isEmpty = details.workstreams.length === 0 && unsorted.length === 0;
+            return (
+                <div className="mt-5 pt-3 pb-3 border-t border-line">
+                    <WorkLabel />
+                    {isEmpty
+                        ? <p className="mx-4 mb-1 text-muted">No work yet. Overseer sorts it after the session goes idle.</p>
+                        : details.workstreams.map((workstream) => <Workstream key={workstream.title} workstream={workstream} />)}
+                    {unsorted.length > 0 && <UnsortedGroup items={unsorted} />}
+                </div>
+            );
+        };
+
         const SessionSidebar = ({ session, onToggle }) => {
             const stateIcon = STATE_ICONS[session.state];
             const details = SESSION_DETAILS[session.id];
@@ -329,9 +481,11 @@
                         <div className="flex items-center gap-2 min-w-0">
                             <Icon name={stateIcon.name} className={`w-4 h-4 ${stateIcon.className}`} />
                             <span className="flex-1 min-w-0 truncate text-sm font-semibold text-bone">{session.title}</span>
+                            {details.status !== undefined && <StatusTag status={details.status} />}
                         </div>
                         <p className="mt-1 ml-6 font-mono text-muted truncate">{session.repo} · {session.branch}{reposLabel(session)}</p>
                     </div>
+                    {details.where.length > 0 && <WhereLines lines={details.where} />}
                     <NextStep
                         sentence={stateSentence(session, details.lastActive ?? '2d ago')}
                         isElsewhere={session.state === 'elsewhere'}
@@ -339,14 +493,7 @@
                         caption={details.recapCaption ?? 'Claude Code recap · 1h ago'}
                         mainAction={<SidebarMainAction session={session} onToggle={onToggle} />}
                     />
-                    <div className="mt-5 pt-3 border-t border-line">
-                        <WorkingOnHeading />
-                        {details.workingOn.length === 0
-                            ? <p className="mx-4 mb-1 text-muted">Nothing yet. The agent adds tickets and PRs as it works.</p>
-                            : details.workingOn.map((row) => <PanelLinkRow key={row.label} row={row} />)}
-                        {details.untracked !== undefined && <UntrackedLine kinds={details.untracked} />}
-                        <AlsoSeen rows={details.alsoSeen} />
-                    </div>
+                    <WorkSection key={session.id} details={details} />
                     <div className="mt-auto pt-3" />
                     <SidebarActions showClaude={session.state === 'running'} />
                 </div>
@@ -612,10 +759,11 @@
         const GroupVisual = () => (
             <div className="font-mono text-xs border border-line bg-surface py-1">
                 {[
-                    { indent: false, icon: 'Tag', text: 'PROJ-2567', count: '3' },
+                    { indent: false, icon: 'Folder', text: 'Login sprint', count: '2' },
                     { indent: true, icon: 'SquareTerminal', text: 'PROJ-2567 login timeout' },
-                    { indent: true, icon: 'Pause', text: 'proj-2567 review notes' },
-                    { indent: true, icon: 'Pause', text: 'branch fix/proj-2567-cookie' },
+                    { indent: true, icon: 'Pause', text: 'Cookie flag cleanup' },
+                    { indent: false, icon: 'Folder', text: 'Ungrouped', count: '1' },
+                    { indent: true, icon: 'Pause', text: 'Flaky e2e triage' },
                 ].map((row) => (
                     <div key={row.text} className={`flex items-center gap-2 h-6 ${row.indent ? 'pl-8' : 'pl-3'} text-bone`}>
                         <Icon name={row.icon} className="w-4 h-4 text-muted" />
@@ -715,7 +863,7 @@
 
         const SIDEBAR_ACTION_GROUPS = [
             { label: 'Claude', actions: [['Minimize2', 'Compact'], ['Eraser', 'Clear'], ['Cpu', 'Model'], ['Coins', 'Cost'], ['SquareTerminal', 'Run command']] },
-            { label: 'Session', actions: [['Search', 'Find links'], ['FolderGit2', 'Open repo'], ['Tag', 'Set status'], ['Pencil', 'Rename']] },
+            { label: 'Session', actions: [['RefreshCw', 'Update'], ['Layers', 'Recheck'], ['FolderGit2', 'Open repo'], ['Tag', 'Set status'], ['Pencil', 'Rename']] },
         ];
         const SHORT_ACTION_LABELS = { 'Run command': 'Run…', 'Open repo': 'Repo', 'Set status': 'Status' };
 
@@ -747,10 +895,11 @@
                     <div className="flex items-center gap-2 min-w-0">
                         <Icon name="SquareTerminal" className="w-4 h-4 text-success" />
                         <span className="flex-1 min-w-0 truncate text-sm font-semibold text-bone">PROJ-2567 login timeout</span>
-                        <span className="shrink-0 text-warning">In Progress</span>
+                        <StatusTag status={{ label: 'In Progress', className: 'text-warning', isAuto: true }} />
                     </div>
                     <p className="mt-1 ml-6 text-muted truncate">web-app · fix/proj-2567-login-timeout · +api</p>
                 </div>
+                <WhereLines lines={['web-app#412 is approved and waits on CI.', 'Next: merge it.']} />
                 <NextStep
                     sentence="Idle in this window"
                     isElsewhere={false}
@@ -762,106 +911,6 @@
                 />
                 <div className="h-4" />
                 <SidebarActions />
-            </div>
-        );
-
-        const LinksVisual = () => (
-            <div className="font-mono text-xs border border-line bg-surface">
-                <SidebarActions highlighted="Find links" />
-                <div className="border-t border-line">
-                    <AlsoSeen defaultOpen rows={ALSO_SEEN_FOUND} />
-                </div>
-            </div>
-        );
-
-        const ALSO_SEEN_FOUND = [
-            { depth: 0, icon: 'GitPullRequest', color: 'green', label: 'web-app#418', text: 'Retry on timeout', detail: 'open' },
-            { depth: 0, icon: 'Ticket', color: 'gray', label: 'PROJ-2502', text: 'Login redirect', detail: 'To Do' },
-            { depth: 0, icon: 'Sparkles', color: 'cyan', label: 'Timeout repro notes', detail: 'artifact' },
-        ];
-
-        const WORKING_ON_ROWS = [
-            { depth: 0, icon: 'Ticket', color: 'gold', label: 'PROJ-2560', text: 'Login epic', detail: 'In Progress' },
-            { depth: 1, icon: 'Ticket', color: 'gold', label: 'PROJ-2567', text: 'Session timeout', detail: 'In Progress', note: 'fixing the refresh window', isSelected: true },
-            { depth: 2, icon: 'GitPullRequest', color: 'green', label: 'web-app#412', text: 'Extend refresh window', detail: 'approved' },
-        ];
-        const ALSO_SEEN_ROWS = [
-            { depth: 0, icon: 'TicketCheck', color: 'green', label: 'PROJ-2571', text: 'Cookie flag', detail: 'Done' },
-            { depth: 0, icon: 'GitPullRequest', color: 'dim', label: 'web-app#397', text: 'passing mention', detail: '', isDimmed: true },
-        ];
-        const DEPTH_PADDING = ['pl-4', 'pl-[34px]', 'pl-[52px]'];
-
-        const IconTool = ({ name, label }) => (
-            <span title={label} aria-label={label} className="flex items-center justify-center w-[22px] h-[22px] text-muted hover:text-bone hover:bg-raised transition-colors duration-200 ease-dj">
-                <Icon name={name} className="w-3.5 h-3.5" />
-            </span>
-        );
-
-        const WorkingOnHeading = () => (
-            <div className="flex items-center gap-1.5 h-7 pl-4 pr-2.5">
-                <span className="text-bone font-semibold">Working on</span>
-                <span className="ml-auto flex items-center">
-                    <IconTool name="RefreshCw" label="Refresh statuses and declarations" />
-                    <IconTool name="Plus" label="Pin a ticket by key" />
-                </span>
-            </div>
-        );
-
-        const PanelLinkRow = ({ row }) => (
-            <div
-                title={[row.label, row.text, row.detail, row.note !== undefined ? `Agent: ${row.note}` : undefined].filter(Boolean).join(' — ')}
-                className={`group/link flex items-center gap-2 h-7 pr-4 ${DEPTH_PADDING[row.depth]} ${row.isSelected ? 'bg-raised' : 'hover:bg-raised'} ${row.isDimmed ? 'opacity-80 hover:opacity-100' : ''}`}
-            >
-                <LinkIcon name={row.icon} color={row.color} />
-                <span className="shrink-0 font-mono text-bone">{row.label}</span>
-                <span className="flex-1 min-w-0 truncate text-muted">{row.text}</span>
-                <span style={{ color: LINK_COLORS[row.color] }} className="shrink-0 text-[11px] group-hover/link:hidden">{row.detail}</span>
-                <span className="hidden group-hover/link:flex items-center gap-2 text-muted">
-                    <Icon name="Globe" className="w-4 h-4" />
-                    <Icon name="Pin" className="w-4 h-4" />
-                    <Icon name="Ellipsis" className="w-4 h-4" />
-                </span>
-            </div>
-        );
-
-        const UntrackedLine = ({ kinds }) => (
-            <div className="flex items-center gap-2 h-7 px-4 text-muted">
-                <Icon name="Bot" className="w-4 h-4" />
-                <span className="flex-1 min-w-0 truncate">{kinds.join(', ')} not tracked</span>
-                <span className="shrink-0 text-accent">Fill in</span>
-            </div>
-        );
-
-        const AlsoSeen = ({ rows, defaultOpen = false }) => {
-            const [isOpen, setIsOpen] = useState(defaultOpen);
-            const label = rows.length === 0 ? 'Find links in the transcript' : `${rows.length} more in the transcript`;
-            return (
-                <div className="mt-1 pb-3">
-                    <div className="group/also flex items-center h-7 pr-2.5">
-                        <button
-                            onClick={() => setIsOpen(!isOpen)}
-                            aria-expanded={isOpen}
-                            className="flex-1 flex items-center gap-1.5 h-7 pl-4 text-left text-muted hover:text-bone transition-colors duration-200 ease-dj"
-                        >
-                            <Icon name="ChevronRight" className={`w-3 h-3 transition-transform duration-100 ease-linear ${isOpen ? 'rotate-90' : ''}`} />
-                            {label}
-                        </button>
-                        <span className="flex items-center opacity-0 group-hover/also:opacity-100 transition-opacity duration-200 ease-dj">
-                            <IconTool name="ListFilter" label="Filter" />
-                            <IconTool name="RefreshCw" label="Scan the transcript again" />
-                        </span>
-                    </div>
-                    {isOpen && rows.map((row) => <PanelLinkRow key={row.label} row={{ ...row, depth: 1 }} />)}
-                </div>
-            );
-        };
-
-        const LinksPanelVisual = () => (
-            <div className="font-mono text-xs border border-line bg-surface">
-                <WorkingOnHeading />
-                {WORKING_ON_ROWS.map((row) => <PanelLinkRow key={row.label} row={row} />)}
-                <UntrackedLine kinds={['commits']} />
-                <AlsoSeen defaultOpen rows={ALSO_SEEN_ROWS} />
             </div>
         );
 
@@ -881,28 +930,6 @@
                         <span className="text-bone">{entry.label}</span>
                     </div>
                 ))}
-            </div>
-        );
-
-        const PinVisual = () => (
-            <div className="font-mono text-xs border border-line bg-surface py-1">
-                <div className="flex items-center gap-2 h-6 pl-3 pr-2 bg-raised text-bone">
-                    <LinkIcon name="Ticket" color="gold" />
-                    <span className="truncate">PROJ-2580</span>
-                    <span className="text-muted truncate">pinned · In Progress</span>
-                    <span className="ml-auto flex items-center gap-1 text-accent"><Icon name="Pin" className="w-4 h-4" /></span>
-                </div>
-                <div className="flex items-center gap-2 h-6 pl-3 pr-2 text-bone">
-                    <LinkIcon name="GitPullRequest" color="green" />
-                    <span className="truncate">web-app#412</span>
-                    <span className="text-muted truncate">open</span>
-                </div>
-                <div className="flex items-center gap-2 h-6 pl-3 pr-2 text-muted">
-                    <LinkIcon name="GitPullRequest" color="dim" />
-                    <span className="truncate">web-app#397</span>
-                    <span className="truncate">removed</span>
-                    <span className="ml-auto flex items-center gap-1 text-accent"><Icon name="Undo2" className="w-4 h-4" /></span>
-                </div>
             </div>
         );
 
@@ -935,18 +962,18 @@
                     <span>Terminals</span>
                 </div>
                 <div className="flex items-center gap-2 h-6 pl-6 text-bone">
-                    <Icon name="Tag" className="w-4 h-4 text-muted" />
-                    <span>OPS-4410</span>
+                    <Icon name="Folder" className="w-4 h-4 text-muted" />
+                    <span>Billing export</span>
                     <span className="text-muted">2</span>
                 </div>
                 <div className="flex items-center gap-2 h-6 pl-10 bg-raised text-bone">
                     <Icon name="Terminal" className="w-4 h-4 text-success" />
-                    <span className="truncate">OPS-4410 dev server</span>
+                    <span className="truncate">api dev server</span>
                     <span className="text-muted truncate">api · terminal</span>
                 </div>
                 <div className="flex items-center gap-2 h-6 pl-10 text-bone">
                     <Icon name="Terminal" className="w-4 h-4 text-muted" />
-                    <span className="truncate">OPS-4410 logs</span>
+                    <span className="truncate">api logs</span>
                     <span className="text-muted truncate">api · closed</span>
                 </div>
                 <div className="flex items-center gap-2 h-6 pl-6 text-bone">
@@ -963,6 +990,7 @@
                     { icon: 'LoaderCircle', iconClass: 'text-success', text: 'PROJ-2567 login timeout', badge: 'IP', textClass: 'text-accent' },
                     { icon: 'LoaderCircle', iconClass: 'text-success', text: 'OPS-4410 billing export', badge: 'AI', textClass: 'text-warning' },
                     { icon: 'Terminal', iconClass: 'text-success', text: 'Triage the flaky deploy', badge: 'TR', textClass: 'text-warning' },
+                    { icon: 'Pause', iconClass: 'text-muted', text: 'Docs site migration', badge: 'IP', textClass: 'text-accent', isAuto: true },
                     { icon: 'LoaderCircle', iconClass: 'text-success', text: 'Rate limiter refactor', badge: 'BL', textClass: 'text-warning', reason: 'Waiting on the infra team' },
                     { icon: 'Terminal', iconClass: 'text-success', text: 'Release notes', badge: 'RS', textClass: 'text-success' },
                 ].map((row) => (
@@ -970,7 +998,8 @@
                         <Icon name={row.icon} className={`w-4 h-4 ${row.iconClass}`} />
                         <span className={`truncate ${row.textClass}`}>{row.text}</span>
                         {row.reason && <span className="text-muted truncate">{row.reason}</span>}
-                        <span className={`ml-auto ${row.textClass}`}>{row.badge}</span>
+                        {row.isAuto && <span className="ml-auto text-[10px] uppercase tracking-label text-muted">auto</span>}
+                        <span className={`${row.isAuto ? '' : 'ml-auto'} ${row.textClass}`}>{row.badge}</span>
                     </div>
                 ))}
             </div>
@@ -1057,21 +1086,6 @@
             </div>
         );
 
-        const TrackingVisual = () => (
-            <div className="font-mono text-xs space-y-3">
-                <div className="border border-line bg-bg p-3 space-y-1">
-                    <p className="text-accent truncate">$ overseer ticket add PROJ-2567 --note "fixing the refresh window"</p>
-                    <p className="text-muted">Declared PROJ-2567.</p>
-                    <p className="text-accent truncate">$ overseer pr add https://github.com/acme/web-app/pull/412</p>
-                    <p className="text-muted">Declared acme/web-app#412.</p>
-                </div>
-                <div className="border border-line bg-surface p-3 space-y-2">
-                    <p className="flex items-center gap-2 text-bone"><Icon name="Info" className="w-4 h-4 text-muted" />Not tracked yet: commits, pull requests.</p>
-                    <span className="inline-flex items-center gap-1 px-2 h-6 border border-line text-bone"><Icon name="Sparkles" className="w-3 h-3" />Populate all</span>
-                </div>
-            </div>
-        );
-
         const HistoryVisual = () => (
             <div className="font-mono text-xs border border-line bg-surface">
                 <div className="flex items-center gap-2 h-8 px-3 border-b border-line">
@@ -1123,6 +1137,111 @@
             </div>
         );
 
+        const GateChip = ({ name, value }) => (
+            <span className="inline-flex items-center gap-1 h-6 px-2 border border-line bg-surface">
+                <span className="text-muted">{name}</span>
+                <span className="text-bone">{value}</span>
+            </span>
+        );
+
+        const AnalyzerVisual = () => (
+            <div className="font-mono text-xs space-y-3">
+                <div className="space-y-2">
+                    {[
+                        { icon: 'LoaderCircle', iconClass: 'text-success', label: 'busy', note: 'Claude is working' },
+                        { icon: 'SquareTerminal', iconClass: 'text-success', label: 'idle', note: 'the turn ended' },
+                        { icon: 'Timer', iconClass: 'text-muted', label: 'wait 30s', note: 'then check the gates' },
+                        { icon: 'Sparkles', iconClass: 'text-accent', label: 'Haiku pass', note: 'new part only · 16 KB digest' },
+                    ].map((step) => (
+                        <div key={step.label} className="flex items-center gap-3 h-8 px-3 border border-line bg-surface">
+                            <Icon name={step.icon} className={`w-4 h-4 ${step.iconClass}`} />
+                            <span className="text-bone">{step.label}</span>
+                            <span className="ml-auto text-muted truncate">{step.note}</span>
+                        </div>
+                    ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <GateChip name="auto" value="on" />
+                    <GateChip name="idleSeconds" value="30" />
+                    <GateChip name="minNewPrompts" value="1" />
+                    <GateChip name="minNewKb" value="10" />
+                    <GateChip name="cooldownMinutes" value="10" />
+                </div>
+            </div>
+        );
+
+        const WorkstreamsVisual = () => (
+            <div className="font-mono text-xs border border-line bg-surface pt-2 pb-3">
+                <WorkLabel />
+                <Workstream workstream={{
+                    title: 'Session timeout fix',
+                    tickets: [{ key: 'PROJ-2567', detail: 'In Progress', color: 'gold' }],
+                    items: [
+                        prItem('web-app#412', 'Extend refresh window', 'approved'),
+                        commitItem('a1b2c3d', 'Extend session timeout', 'web-app'),
+                        commitItem('e93c4a0', 'Test the refresh window', 'web-app'),
+                        artifactItem('Timeout repro notes', 'session-timeout-repro-notes-2f81'),
+                        artifactItem('Refresh window test plan', 'proj-2567-refresh-window-test-plan-v2'),
+                    ],
+                }} />
+                <Workstream workstream={{
+                    title: 'QA fix: login redirect loop',
+                    tickets: [],
+                    items: [
+                        prItem('web-app#418', 'Drop stale redirect param', 'open'),
+                        commitItem('4e7f2b1', 'Drop stale redirect param', 'web-app'),
+                        commitItem('c05d8f3', 'Return 401 on expired refresh', 'api'),
+                    ],
+                }} />
+            </div>
+        );
+
+        const EditsVisual = () => (
+            <div className="font-mono text-xs border border-line bg-surface pt-2 pb-3">
+                <WorkLabel />
+                <div className="mt-2 flex items-center gap-2 h-7 px-4">
+                    <Icon name="Pencil" className="w-3.5 h-3.5 text-accent" />
+                    <span className="flex-1 min-w-0 flex items-center h-6 px-2 border border-accent bg-bg text-bone">Billing export to S3</span>
+                </div>
+                <Workstream isDropTarget workstream={{
+                    title: 'Bucket policy',
+                    tickets: [],
+                    items: [prItem('infra#77', 'Export bucket policy', 'open')],
+                }} />
+                <div className="flex items-center gap-2 h-7 pl-7 pr-4 bg-raised border border-accent-deep">
+                    <Icon name="GripVertical" className="w-4 h-4 text-accent" />
+                    <span className="font-mono text-bone">b7d09e4</span>
+                    <span className="flex-1 min-w-0 truncate text-muted">Write export parts to S3</span>
+                </div>
+                <UnsortedGroup items={[{ icon: 'Ticket', color: 'gray', label: 'OPS-4422', text: 'Export retries', detail: 'To Do' }]} />
+                <RemovedGroup defaultOpen items={[
+                    prItem('web-app#397', 'Passing mention', 'merged'),
+                    { icon: 'Ticket', color: 'gray', label: 'PROJ-2502', text: 'Login redirect', detail: 'To Do' },
+                ]} />
+            </div>
+        );
+
+        const RecheckVisual = () => (
+            <div className="font-mono text-xs space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                    {[
+                        { icon: 'RefreshCw', label: 'Update now', lines: ['Haiku', 'what is new', '16 KB digest'] },
+                        { icon: 'Layers', label: 'Recheck', lines: ['Sonnet', 'whole transcript', '64 KB digest'] },
+                    ].map((mode) => (
+                        <div key={mode.label} className="border border-line bg-surface p-3 space-y-1">
+                            <p className="flex items-center gap-2 text-bone"><Icon name={mode.icon} className="w-4 h-4 text-accent" />{mode.label}</p>
+                            {mode.lines.map((line) => <p key={line} className="text-muted">{line}</p>)}
+                        </div>
+                    ))}
+                </div>
+                <p className="flex items-center gap-2 text-bone"><Icon name="Check" className="w-4 h-4 text-success" />Your renames, moves, and removals stay.</p>
+                <div className="flex items-start gap-2 p-3 border border-line bg-raised">
+                    <Icon name="ShieldCheck" className="w-4 h-4 text-warning" />
+                    <span className="text-bone">Recheck dropped 9 of 14 sorted items. Kept the previous grouping.</span>
+                </div>
+            </div>
+        );
+
         // A lone last card spans both columns, so the grid never shows an empty cell.
         const isLastOfOddCount = (index, count) => count % 2 === 1 && index === count - 1;
 
@@ -1131,20 +1250,20 @@
             { title: 'Search every past session', body: 'Session History opens in an editor tab, like Settings. Search every session by title, prompt, recap, branch, or PR, and filter by repo, age, pinned, or running. The detail pane shows more than All Sessions: recap, prompts, commits, and the PR. Open resumes the session. Delete removes one from your machine for good, and Purge removes every session the filters show. Both list what goes and ask first. Running sessions are never deleted, and Purge skips pinned ones.', Visual: HistoryVisual },
             { title: 'Switch between workspaces', isExperimental: true, body: 'Keep work, side projects, and after-hours sessions apart. Each workspace has its own sessions, terminals, and groups. A switch suspends the running sessions, closes the terminals and file tabs, then brings back what was open in the other workspace. It asks first when Claude is mid-task or a file has unsaved changes. This one is experimental. It works, but it needs more testing.', Visual: WorkspaceVisual },
             { title: 'Suspend a session and resume it later', body: 'When a session waits on a review for days, Suspend sends /exit so the process and its memory are freed. Resume starts the same session again with its full history.', Visual: SuspendVisual },
-            { title: 'Follow the focused session in the Session sidebar', body: 'The Session sidebar sits to the right of the editor and follows the session you focus, terminal or preview. The next step comes first: what state the session is in, the recap, and one main button, Suspend, Resume, or Fork here. A sparkle button beside it writes a fresh summary with Haiku. One line under the title shows the repo, the branch, and any other repos. The toolbar at the bottom stays in view. Its Claude actions (Compact, Clear, Model, Cost, Run command) appear when the session runs here and is idle. Its Session actions (Find links, Open repo, Set status, Rename) always show.', Visual: SessionSidebarVisual },
+            { title: 'Follow the focused session in the Session sidebar', body: 'The Session sidebar sits to the right of the editor and follows the session you focus, terminal or preview. The header shows the state, the repo, the branch, any other repos, and the status. Up to three lines say where the work stands. Then comes the recap and one main button, Suspend, Resume, or Fork here. A sparkle button beside it writes a fresh summary with Haiku. The toolbar at the bottom stays in view. Its Claude actions (Compact, Clear, Model, Cost, Run command) appear when the session runs here and is idle. Its Session actions (Update, Recheck, Open repo, Set status, Rename) always show.', Visual: SessionSidebarVisual },
             { title: 'Peek at a paused session without starting it', body: 'Click a session with no terminal here and it opens in one reused Session Preview tab. The preview shows where the session left off, its last turns, its prompts, and the commits and PRs it made. It reads the transcript and git, so it never starts Claude. Resume replaces the preview with the terminal.', Visual: PreviewVisual },
-            { title: 'Let the agent say what it works on', body: 'Sessions that Overseer starts get an overseer CLI on PATH and a track skill. The agent declares the tickets it works on, the commits it makes, and the PRs it opens. It skips what it only read. For an older session, Populate all asks Haiku to read a digest of the transcript and declare the same things.', Visual: TrackingVisual },
-            { title: 'Find the PRs, tickets, and artifacts a session worked on', body: 'Click Find links in the Session sidebar. Overseer scans the transcript, and a short Haiku run sorts what it found into owned, touched, and seen in passing. Nothing scans until you ask.', Visual: LinksVisual },
-            { title: 'See a session\'s links in the sidebar', body: 'The Session sidebar follows the focused session. Working on holds what the agent declared and what you pinned, one line per link with its status on the right. Hover a row for the agent\'s note. Also seen is collapsed to one line until you open it. Links nest as parent ticket, sub-tickets, then the PRs for each ticket. Each row opens in your browser, pins, or opens a menu to open in VS Code, copy, move a ticket to another status, or remove. Drag rows to reorder them.', Visual: LinksPanelVisual },
+            { title: 'Track work without telling the agent', body: 'Sessions launch as plain claude. The agent gets no CLI, no skill, and no extra prompt. When a session goes from busy to idle, Overseer waits 30 seconds and checks its gates: at least one new prompt, 10 KB of new transcript or a new link, and 10 minutes since the last pass. Then Haiku reads only the new part of the transcript and updates the session\'s work. Every gate is an overseer.analyzer setting, and you can turn auto off.', Visual: AnalyzerVisual },
+            { title: 'See a session\'s work as workstreams', body: 'The Session sidebar sorts a session\'s tickets, PRs, commits, and artifacts into workstreams, by when and why the work happened. Each workstream shows its tickets, then its items: PRs with their state, commits with their subject, and artifacts with a short name. Hover an artifact for its full slug. A QA fix that comes later gets its own workstream, even with no ticket. Done workstreams collapse.', Visual: WorkstreamsVisual },
+            { title: 'Fix the grouping, and it stays fixed', body: 'Double-click a workstream to rename it. Drag an item to another workstream, or drag workstreams to reorder them. Mark a workstream done, or remove an item. Items the model has not placed sit under Unsorted. Removed items go under Removed, where Restore brings them back. Your edits win over every later pass.', Visual: EditsVisual },
             { title: 'Check PR and ticket status at a glance', body: 'Each PR and ticket shows its live status, and its icon takes the color you pick for that status. PR status comes from gh. Ticket status comes from the Jira MCP server Claude Code already uses.', Visual: LinkStatusVisual },
-            { title: 'Pin or remove a link', body: 'A pinned link moves to Working on, even when the judge thinks it does not matter. A removed link stays out, even if the agent declares it again. Both survive a rescan. Hover the Also seen row and use Filter to show removed links again, so you can restore them.', Visual: PinVisual },
+            { title: 'Recheck when it looks wrong', body: 'Update runs a Haiku pass on what is new, right now. Recheck rebuilds the workstreams from the whole transcript with Sonnet and a 64 KB digest. It keeps your edits. If a recheck drops much of the sorted work, a guard rejects it and keeps the old grouping.', Visual: RecheckVisual },
             { title: 'Pick your own icons and colors', body: 'The Settings panel sets the icon and color for each session state, a color for every status in each Jira project, a color for each PR state, and which views show. Type Overseer in the Command Palette to reach every setting.', Visual: SettingsVisual },
-            { title: 'Keep plain terminals in their own view', body: 'New Terminal opens a shell in a folder you pick. Terminals get their own Terminals view, apart from your Claude sessions, with the same ticket and custom groups. Click one to bring it forward, and reopen it in the same folder after you close it. Settings can hide the Sessions, Terminals, and Repos views.', Visual: TerminalVisual },
-            { title: 'Mark where each session stands', body: 'Set Status puts a session or terminal in Todo, Triage, In Progress, Blocked, AI Review, Human Review, or Ready to Ship. The status tints the row and adds a short badge. Blocked asks why, and the reason shows in the row\'s tooltip. Statuses do not follow Jira, so a status like Triage works. The Settings panel adds, renames, reorders, and recolors them.', Visual: StatusMarkVisual },
+            { title: 'Keep plain terminals in their own view', body: 'New Terminal opens a shell in a folder you pick. Terminals get their own Terminals view, apart from your Claude sessions, with the same groups. Click one to bring it forward, and reopen it in the same folder after you close it. Settings can hide the Sessions, Terminals, and Repos views.', Visual: TerminalVisual },
+            { title: 'Mark where each session stands', body: 'Set Status puts a session or terminal in Todo, Triage, In Progress, Blocked, AI Review, Human Review, or Ready to Ship. The status tints the row and adds a short badge. Blocked asks why, and the reason shows in the row\'s tooltip. Statuses do not follow Jira, so a status like Triage works. With no status set, Overseer suggests one from the transcript and tags it auto. A status you set wins. The Settings panel adds, renames, reorders, and recolors them.', Visual: StatusMarkVisual },
             { title: 'Send your usual prompts in two clicks', body: 'Click Run command in the Session sidebar while the session is idle. Pick a saved prompt, like Check PR Reviews, and Overseer types it into the session. Write {ticket link} in a prompt and Overseer asks for that value first. The list is the overseer.sessionCommands setting.', Visual: CommandsVisual },
             { title: 'Watch every repo from a window with no folder open', body: 'The Repos view lists the repos your pinned sessions and terminals work in. Each row shows the branch, ahead and behind counts, and uncommitted changes, and updates when the repo changes. Expand a repo for its last 20 commits. A commit a session made shows that session. Click a commit to read its diff, or open the repo in Source Control.', Visual: RepoHistoryVisual },
             { title: 'See when a session is compacting', body: 'A compacting session shows a spinning icon until it finishes. Claude Code does not report compaction, so Overseer offers to install a PreCompact and a PostCompact hook. Skip the prompt and install them later from the Command Palette.', Visual: CompactVisual },
-            { title: 'Group sessions by ticket', body: 'Overseer reads the ticket key from the title, branch, or first prompt and puts the session in that ticket\'s group. Drag a session to put it somewhere else.', Visual: GroupVisual },
+            { title: 'Group sessions your way', body: 'New Group makes a group. Drag sessions into it. Pinned sessions with no group sit in Ungrouped. The order syncs across windows.', Visual: GroupVisual },
             { title: 'Rename a session in one step', body: 'Double-click or F2 renames the row and the tab, even while Claude is busy. When the session is idle, Overseer also sends /rename, so the tree, the tab, and Claude all use the same name.', Visual: RenameVisual },
             { title: 'See which sessions are running', body: 'Status comes from claude agents --json and updates each time a session goes busy or idle. Click a terminal tab and its row in the sidebar is selected, so you can see where you are.', Visual: StatusVisual },
             { title: 'Stop a session from running twice', body: 'Two processes writing to one transcript corrupt it. Overseer marks duplicates and offers to fork a copy instead of resuming a second time.', Visual: DuplicateVisual },
@@ -1156,11 +1275,11 @@
             { step: '01', title: 'Index', body: 'Reads ~/.claude/projects/*/*.jsonl and caches by size and mtime. 130 sessions, 700 MB: 1.6s cold, about 2ms after.' },
             { step: '02', title: 'Watch', body: 'claude agents --json for live status, plus a file watch on ~/.claude/sessions so busy and idle show up within a second.' },
             { step: '03', title: 'Launch', body: 'Each session is a terminal that execs claude directly. /exit closes the tab. A window reload reattaches terminals by pid.' },
-            { step: '04', title: 'Links', body: 'Find links scans one transcript for links. A headless claude -p run with Haiku reads an 8 KB digest of them and sorts them. At most two runs at once, and each result is cached. Status checks run every five minutes while the sidebar shows them.' },
+            { step: '04', title: 'Analyze', body: 'A pass scans the transcript from the last byte offset it read. A diff pass sends Haiku a 16 KB digest of what is new. Recheck sends Sonnet a 64 KB digest. Both run headless through claude -p. At most two passes run at once, one per session, under a lock file every window respects. A pass starts on its own only when the gates pass. PR and ticket status checks run every five minutes while the sidebar shows them.' },
             { step: '05', title: 'Hooks', body: 'Optional PreCompact and PostCompact hooks in ~/.claude/settings.json write and delete a marker per session in ~/.claude/overseer/compacting. Install backs up the file first and leaves your own hooks alone.' },
             { step: '06', title: 'Repos', body: 'git status and git log run per repo, at most four at once, only while the Repos view shows. A watch on each .git folder refreshes a repo a second after it changes. The indexer reads commit hashes from transcripts to match commits to sessions.' },
-            { step: '07', title: 'Track', body: 'The overseer CLI writes small JSON files under ~/.claude/overseer, and every window watches that folder. No server, no port, no login. On /clear the declarations move to the new session ID.' },
-            { step: '08', title: 'Statuses', body: 'The list lives in the overseer.sessionStatuses setting. Each session\'s status and reason are saved in the extension\'s state, and a file decoration tints the row. None of it calls a model.' },
+            { step: '07', title: 'Store', body: 'Each session\'s analysis is one JSON file in ~/.claude/overseer/analysis. Your edits live in the extension\'s state, so a pass never overwrites them. Files from the old tracking setup seed a session\'s first analysis once. No CLI, no server, no port, no login. On /clear or fork the analysis copies to the new session ID.' },
+            { step: '08', title: 'Statuses', body: 'The list lives in the overseer.sessionStatuses setting. Each session\'s status and reason are saved in the extension\'s state, and a file decoration tints the row. A status you set calls no model. The auto status comes from the analyzer.' },
         ];
 
         const INSTALL_COMMANDS = `curl -LO ${VSIX_URL}\ncode --install-extension ${VSIX_NAME}`;
@@ -1218,7 +1337,7 @@
                         </div>
                         <div className="lg:col-span-5 space-y-6">
                             <p className="text-lg text-bone leading-relaxed">
-                                Overseer is a VS Code extension that keeps every Claude CLI session in a sidebar tree, grouped by ticket. For any session, it finds the PRs, tickets, and artifacts that session worked on. You can suspend the sessions you are waiting on and resume any of them from any repo, without remembering an ID.
+                                Overseer is a VS Code extension that keeps every Claude CLI session in a sidebar tree, in groups you make. It sorts each session's tickets, PRs, commits, and artifacts into workstreams by itself, without telling the agent. You can suspend the sessions you are waiting on and resume any of them from any repo, without remembering an ID.
                             </p>
                             <p className="text-muted">Each session runs in a normal VS Code terminal. Plain terminals, like a dev server or a test watcher, get their own view with the same groups.</p>
                             <div className="flex flex-wrap gap-3 pt-2">
@@ -1283,7 +1402,7 @@
                     <div className="max-w-6xl mx-auto px-4 md:px-8 py-24 grid grid-cols-1 md:grid-cols-12 gap-8">
                         <div className="md:col-span-4 space-y-4">
                             <h2 className="font-display font-bold tracking-display text-3xl leading-tight">How it works</h2>
-                            <p className="text-muted">Overseer reads the files Claude Code already writes to disk, plus two optional hooks for compaction. The tree, the grouping, and the live status make no model calls. Link sorting and the Summarize with Haiku button run Haiku through your own claude CLI, so they count against your Claude usage.</p>
+                            <p className="text-muted">Overseer reads the files Claude Code already writes to disk, plus two optional hooks for compaction. The tree, the grouping, and the live status make no model calls. The analyzer and the Summarize with Haiku button run through your own claude CLI, so they count against your Claude usage.</p>
                         </div>
                         <ol className="md:col-span-8 border-t border-line">
                             {HOW_IT_WORKS.map((item) => (
