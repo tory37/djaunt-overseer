@@ -7,7 +7,7 @@ VS Code extension that shows Claude CLI sessions as a sidebar tree in user group
 ```bash
 npm test            # vitest unit tests (test/unit)
 npm run typecheck   # tsc --noEmit
-npm run build       # esbuild bundles to dist/extension.js and dist/overseer.js
+npm run build       # esbuild bundles to dist/extension.js
 npm run package     # build + .vsix
 code --install-extension djaunt-overseer-<version>.vsix --force
 ```
@@ -33,14 +33,15 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `linkCandidates.ts` | Pure: scans a transcript for PR, ticket, artifact, and commit candidates with signals, titles, and the nearest user prompt. Counts user prompts by offset. Resumes from a byte offset. |
 | `candidateEnrichment.ts` | Pure: attaches cached PR and ticket status (title, branch, state, summary, parent) to scanned candidates. |
 | `claudeRunner.ts` | Shared headless `claude -p` runner and its flags (`--json-schema` included). |
-| `linkJudge.ts` | Builds an 8 KB digest and runs a headless `claude -p` judge that sorts links into owned, touched, irrelevant. |
-| `linkCache.ts` | Scan and verdict caches in globalStorage. |
-| `linkView.ts` | Pure: link filters, URLs, labels, icon names, busy-to-idle detection, concurrency limiter. |
+| `linkCache.ts` | The scan cache in globalStorage, and the versioned cache file helpers. |
+| `linkView.ts` | Pure: link URLs, display ids, a row link from an item key, concurrency limiter. |
 | `scripts/link-icons.mjs` | Writes the themed Lucide SVGs in `media/links`. Rerun after changing an icon or color. |
 | `transcriptLines.ts` | Reads complete transcript lines from a byte offset, and one line back from its end offset. |
 | `analysisState.ts` | Pure: per-session analysis state (workstreams, artifact titles, where lines, derived status, watermark) and its defensive reader. |
-| `workstreamEdits.ts` | Pure: the user's workstream edits (`overseer.workstreamEdits`) and the merge that applies them last. |
-| `analysisSeed.ts` | Pure: first analysis state from the old `declared/`, `work/`, `where/` files and link marks. |
+| `workstreamEdits.ts` | Pure: the user's workstream edits (`overseer.workstreamEdits.v2`): renames, pins (to a workstream or Unsorted), done, order. The merge applies them last. Removals come from link marks via `withLinkMarkRemovals`. |
+| `workstreamDisplay.ts` | Pure: the Session sidebar's groups from analysis plus edits: saved order, then active newest, then done; Unsorted; Removed; empty state; drop targets. |
+| `legacyDeclarations.ts` | Pure: readers for the old agent-written `declared/`, `work/`, and `where/` files. Only the seed uses them; the files stay on disk. |
+| `analysisSeed.ts` | Pure: first analysis state from the old declared files and link marks. |
 | `analysisStore.ts` | Reads and writes `~/.claude/overseer/analysis/<sid>.json` and the old declared files for the seed. |
 | `analyzerDigest.ts` | Pure: the analyzer's model input. State, items oldest first with first-seen times and the prompt that began their stretch of work, transcript with timestamped prompts kept first, overlap prompt. 16 KB diff, 64 KB recheck. |
 | `analyzerOps.ts` | Pure: the analyzer's op schema, system prompt, strict parser, and `applyOps`. |
@@ -50,25 +51,19 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `analysisLock.ts` | `<sid>.lock` beside the analysis file: exclusive create with pid and time. Stale after 5 minutes or a dead pid. |
 | `liveTransitions.ts` | Pure: busy-to-idle and left-idle sessions between two live status maps. |
 | `analyzerTrigger.ts` | Starts an `idleSeconds` timer on busy to idle, cancels it on busy or end, then calls `autoAnalyze`. |
-| `sessionLinks.ts` | Scans and judges a session's links only when the user runs Find links, at most 2 judges at once. |
+| `sessionLinks.ts` | Scans a session's transcript for links when the analyzer, the Session sidebar, or the preview asks. Resumes from the cached offset, at most 2 scans at once. |
 | `sessionSummary.ts` / `sessionSummaries.ts` | Summary for the sidebar and preview: newest of Claude Code's recap (`away_summary`) and an on-click Haiku summary of the transcript tail. |
-| `linkStatus.ts` / `linkStatusService.ts` | PR state via `gh`, ticket status via `acli`. Five-minute cache, at most 4 calls at once, on-screen links only. |
+| `linkStatus.ts` / `linkStatusService.ts` | PR state via `gh`, ticket status via the Jira MCP server. Five-minute cache, at most 4 calls at once, on-screen links only. |
 | `repoSet.ts` | Pure: the repos of the pinned sessions and terminals, newest first. |
 | `gitStatus.ts` | Pure: git arguments and parsers for status, log, and commit hashes in transcripts. |
 | `repoService.ts` / `repoTree.ts` | Repos view. Runs git (at most 4 at once), watches each `.git` folder, and builds the rows. |
 | `quickPick.ts` / `repoFilter.ts` | All Sessions picker and the `repo:` filter. |
-| `agentTickets.ts` | Pure: declared-ticket and user-mark files under `~/.claude/overseer/`, parsing, merge, list text. |
-| `agentWork.ts` | Pure: declared commits, PRs, and artifacts under `~/.claude/overseer/work/`, parsing, merge, untracked kinds. |
-| `overseerCli.ts` / `overseerMain.ts` | The `overseer` CLI the agent runs. Bundled to `dist/overseer.js`; `bin/overseer` runs it on VS Code's runtime. |
-| `declarationMonitor.ts` | Watches `declared/` and `work/`, writes `marks/` for `overseer ticket list`, copies declarations to the new ID on `/clear`. |
-| `populateDigest.ts` / `sessionPopulator.ts` | Populate all: a transcript digest that a headless Haiku run reads to declare tickets, commits, and PRs for an old session. |
-| `populateMerge.ts` | Pure: merges a Haiku pass into the declared files. A recheck refreshes notes and parents, never removes, never re-adds removed tickets. |
 | `claudeLaunch.ts` | Pure: the plain `exec claude` launch command and `quoteForShell`. |
 | `sessionFocus.ts` / `sessionFocusState.ts` | The focused session: the active Claude terminal or the preview tab. The state rules are pure. |
-| `sessionPanel.ts` | Secondary Side Bar webview for the focused session: header, summary, resume or suspend, actions, and links of every kind in Working on and Also seen. |
+| `sessionPanel.ts` | Secondary Side Bar webview for the focused session: header with the derived status, where lines, summary, resume or suspend, workstreams with Unsorted and Removed, and the tile toolbar. Edits write `overseer.workstreamEdits.v2` and show at once. |
 | `sessionSidebarText.ts` | Pure: the Session sidebar's meta line, state sentence, short link status, and row hover text. |
-| `resourceRows.ts` / `resourceOrder.ts` | Pure: sidebar link rows, nesting depth, saved order, and stale-drag checks. |
-| `sessionPreview.ts` / `sessionPreviewModel.ts` | One reused editor tab for sessions with no terminal here: summary, last turns, prompts, commits, PRs. Resume replaces it with the terminal. The model is pure. |
+| `resourceRows.ts` | Pure: sidebar link rows and stale-drag checks. |
+| `sessionPreview.ts` / `sessionPreviewModel.ts` | One reused editor tab for sessions with no terminal here: summary, last turns, prompts, and the commits and PRs the transcript scan found. Resume replaces it with the terminal. The model is pure. |
 
 ## Rules
 
@@ -78,7 +73,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 - Send slash commands only when the session is idle. Typed input is lost while Claude is busy.
 - Never resume a session that is live elsewhere. Two processes on one transcript corrupt it. Offer a fork.
 - Session names reach the shell. Quote with `quoteForShell` and strip newlines.
-- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `agentTickets`, `agentWork`, `claudeLaunch`, `populateDigest`, `populateMerge`, `analysisState`, `workstreamEdits`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerGates`, `liveTransitions`, `resourceRows`, `resourceOrder`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`) and test it there. `vscode` can't be imported in unit tests.
+- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `claudeLaunch`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`) and test it there. `vscode` can't be imported in unit tests.
 - The agent is not told about Overseer. Sessions launch as plain `claude`. The extension derives tracking from transcripts.
 - New commands need an entry in `contributes.commands`, a menu `when` clause, and `"when": "false"` under `commandPalette` if they need a tree node.
 

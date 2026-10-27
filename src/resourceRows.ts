@@ -1,7 +1,7 @@
 import { projectKeyOf } from "./jira";
-import { JudgedRole, linkKey } from "./linkJudge";
+import { linkKey } from "./linkCandidates";
 import { LinkStatus, statusGlyph } from "./linkStatus";
-import { isDimmedLink, linkDisplayId, linkUrl, MarkedLink } from "./linkView";
+import { linkDisplayId, linkUrl, MarkedLink } from "./linkView";
 import { LinkMark } from "./registry";
 import { StatusConfig } from "./statusConfig";
 import { statusGlyphMarkup } from "./statusIcons";
@@ -15,12 +15,7 @@ export interface ResourceRow {
   glyph: string;
   statusText: string | undefined;
   statusColor: string | undefined;
-  role: JudgedRole;
   mark: LinkMark | undefined;
-  isDimmed: boolean;
-  isAgentDeclared: boolean;
-  isParentGroup: boolean;
-  agentNote: string | undefined;
   depth: number;
 }
 
@@ -46,17 +41,12 @@ export function resourceRow(
     key: linkKey(link),
     kind: link.kind,
     displayId: linkDisplayId(link),
-    label: link.label ?? status?.title,
+    label: link.title ?? status?.title,
     url: linkUrl(link, jiraBaseUrl),
     glyph: statusGlyphMarkup(glyphName),
     statusText: status?.text,
     statusColor: hasStatus ? statusColor : undefined,
-    role: link.role,
     mark: link.mark,
-    isDimmed: isDimmedLink(link),
-    isAgentDeclared: link.isAgentDeclared === true,
-    isParentGroup: link.isParentGroup === true,
-    agentNote: link.agentNote,
     depth,
   };
 }

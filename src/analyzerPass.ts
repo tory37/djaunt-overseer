@@ -2,7 +2,6 @@ import { SessionAnalysis } from "./analysisState";
 import { AnalyzerDigestInput, AnalyzerMode, buildAnalyzerDigest } from "./analyzerDigest";
 import { analyzerArgs, applyOps, isRecheckDropTooLarge, parseAnalyzerOutput, RecheckDrop, recheckDropOf } from "./analyzerOps";
 import { ClaudeRunner } from "./claudeRunner";
-import { withSeedRemovals } from "./workstreamEdits";
 
 export interface AnalyzerModels {
   model: string;
@@ -51,22 +50,21 @@ type AnalyzerAttempt =
 
 // A diff-model reply that fails the schema, or a recheck that drops too many sorted items, gets one retry on the recheck model; a second failure throws and keeps the previous state.
 export async function runAnalyzerPass(input: AnalyzerPassInput, runClaude: ClaudeRunner): Promise<AnalyzerPassResult> {
-  const passEdits = withSeedRemovals(input.edits, input.analysis.seedFacts);
   const { digestMode, retryModel } = input.plan;
-  const digest = buildAnalyzerDigest({ ...input, mode: digestMode, edits: passEdits });
+  const digest = buildAnalyzerDigest({ ...input, mode: digestMode });
   const statusIds = input.statusOptions.map((option) => option.id);
   const attemptOn = async (model: string): Promise<AnalyzerAttempt> => {
     const ops = parseAnalyzerOutput(await runClaude(analyzerArgs(model, statusIds), digest.text), statusIds);
     if (ops === undefined) {
       return { kind: "schema-failed" };
     }
-    const appliedAnalysis = applyOps(input.analysis, ops, passEdits, {
+    const appliedAnalysis = applyOps(input.analysis, ops, input.edits, {
       mode: digestMode,
       knownItemKeys: new Set(digest.itemKeys),
       statusOptions: input.statusOptions,
     });
     if (digestMode === "recheck") {
-      const drop = recheckDropOf(input.analysis, appliedAnalysis, passEdits);
+      const drop = recheckDropOf(input.analysis, appliedAnalysis, input.edits);
       if (isRecheckDropTooLarge(drop)) {
         return { kind: "dropped-items", drop };
       }

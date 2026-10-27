@@ -8,9 +8,9 @@ import { AnalyzerPassInput, AnalyzerPassPlan, planAnalyzerPass, runAnalyzerPass 
 import { digestEventsOf } from "../../src/analyzerDigest";
 import { EnrichedCandidate } from "../../src/candidateEnrichment";
 import { ClaudeRunner } from "../../src/claudeRunner";
-import { StatusOption } from "../../src/sessionStatusSync";
+import { StatusOption } from "../../src/sessionStatuses";
 import { readCompleteLines, readLineEndingAt } from "../../src/transcriptLines";
-import { emptyWorkstreamEdits } from "../../src/workstreamEdits";
+import { emptyWorkstreamEdits, withLinkMarkRemovals } from "../../src/workstreamEdits";
 
 const STATUS_OPTIONS: StatusOption[] = [
   { id: "in-progress", name: "In Progress", asksReason: false, done: false },
@@ -129,7 +129,9 @@ describe("runAnalyzerPass", () => {
       digests.push(stdinText);
       return envelope({ ops: [...SODA_OPS.ops, { op: "tag_ticket", ticket: "SOA-311", workstream: "new-1" }] });
     };
-    const passResult = await runAnalyzerPass(passInput({ plan: RECHECK_PLAN, analysis: seededAnalysis }), runClaude);
+    // The analyzer folds the live link marks into the edits; the pass itself reads only the edits.
+    const edits = withLinkMarkRemovals(emptyWorkstreamEdits(), { "ticket:SOA-311": "removed" });
+    const passResult = await runAnalyzerPass(passInput({ plan: RECHECK_PLAN, analysis: seededAnalysis, edits }), runClaude);
     expect(digests[0]).toContain("Current workstreams:\n(none)");
     expect(digests[0]).toContain('- ticket:SOA-310 "Story: Spanish SODA E2E. Ready for QA." | parent SOA-300');
     expect(digests[0]).not.toContain("ticket:SOA-311 \"");

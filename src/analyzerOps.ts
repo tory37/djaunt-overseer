@@ -14,7 +14,7 @@ import {
 } from "./analysisState";
 import { AnalyzerMode } from "./analyzerDigest";
 import { headlessClaudeArgs } from "./claudeRunner";
-import { StatusOption } from "./sessionStatusSync";
+import { StatusOption } from "./sessionStatuses";
 import { applyUserEdits, isUserEditedWorkstream, WorkstreamEdits } from "./workstreamEdits";
 
 // workstream names an existing id or a ref from create_workstream in the same reply. An empty workstream on assign_item means Unsorted.

@@ -2,8 +2,8 @@ import { execFile } from "child_process";
 import * as vscode from "vscode";
 import { IssueFacts, projectKeyOf } from "./jira";
 import { JiraService, MAX_TICKETS_PER_CALL } from "./jiraService";
-import { ResolvedLink } from "./linkJudge";
 import { LinkStatus, parsePrStatus, prStatusArgs, ticketStatus } from "./linkStatus";
+import { LinkCandidate } from "./linkCandidates";
 import { ConcurrencyLimiter } from "./linkView";
 import { resolveCliBinary } from "./liveSessions";
 import { StatusCacheEntry, StoredStatusCache } from "./statusCache";
@@ -49,7 +49,7 @@ export class LinkStatusService implements vscode.Disposable {
   }
 
   // Returns the last known status, and starts a fetch when it is missing or older than five minutes.
-  statusFor(link: ResolvedLink): LinkStatus | undefined {
+  statusFor(link: LinkCandidate): LinkStatus | undefined {
     if (!vscode.workspace.getConfiguration("overseer.links").get<boolean>("liveStatus", true)) {
       return undefined;
     }
@@ -95,7 +95,7 @@ export class LinkStatusService implements vscode.Disposable {
   }
 
   // Marks these links stale and redraws, so the next render refetches them without blanking the shown status.
-  refresh(links: ResolvedLink[]): void {
+  refresh(links: LinkCandidate[]): void {
     for (const link of links) {
       const cachedEntry = this.statusCache.get(`${link.kind}:${link.id}`);
       if (cachedEntry !== undefined) {
@@ -177,7 +177,7 @@ export class LinkStatusService implements vscode.Disposable {
     }
   }
 
-  private async fetchPrStatus(link: ResolvedLink, cacheKey: string): Promise<void> {
+  private async fetchPrStatus(link: LinkCandidate, cacheKey: string): Promise<void> {
     this.ghPath ??= resolveCliBinary("gh");
     let status: LinkStatus | undefined;
     try {

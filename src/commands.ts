@@ -11,8 +11,6 @@ import { Registry } from "./registry";
 import { resolveRepos, sessionDirectory } from "./repoSet";
 import { createGitRootResolver } from "./gitRoots";
 import { SessionIndex } from "./sessionIndex";
-import { SessionLinkService } from "./sessionLinks";
-import { LinkStatusService } from "./linkStatusService";
 import { SessionSummaryService } from "./sessionSummaries";
 import {
   attachBackgroundSession,
@@ -28,8 +26,7 @@ import { AnalyzerMode } from "./analyzerDigest";
 import { AnalyzerPassOutcome, SessionAnalyzer } from "./sessionAnalyzer";
 import { SessionFocusTracker } from "./sessionFocus";
 import { SessionPreview } from "./sessionPreview";
-import { SessionStatusRelay } from "./sessionStatusRelay";
-import { askStatusReason, AUTO_STATUS_ID, configuredStatuses, pickSessionStatus } from "./sessionStatusView";
+import { askStatusReason, configuredStatuses, pickSessionStatus } from "./sessionStatusView";
 import { busySessions, confirmStopBusySessions, runningClaudeSessions, suspendSessions } from "./suspend";
 import { TreeNode } from "./tree";
 import { pickTargetWorkspace } from "./workspaceCommands";
@@ -38,13 +35,10 @@ export interface CommandDependencies {
   sessionIndex: SessionIndex;
   liveMonitor: LiveSessionMonitor;
   registry: Registry;
-  linkService: SessionLinkService;
-  linkStatusService: LinkStatusService;
   summaryService: SessionSummaryService;
   sessionViews: vscode.TreeView<TreeNode>[];
   sessionPreview: SessionPreview;
   pinnedSessions: () => PinnedSession[];
-  statusRelay: SessionStatusRelay;
   sessionAnalyzer: SessionAnalyzer;
   sessionFocus: SessionFocusTracker;
   log: vscode.OutputChannel;
@@ -76,9 +70,6 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     sessionIndex,
     liveMonitor,
     registry,
-    linkService,
-    linkStatusService,
-    statusRelay,
     sessionAnalyzer,
     sessionFocus,
     summaryService,
@@ -595,29 +586,6 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         sendToIdleSessions(sessions, prompt);
       }
     }),
-    // The sidebar passes a session ID; the context menu passes the clicked node.
-    vscode.commands.registerCommand("overseer.findResources", async (clicked?: TreeNode | string) => {
-      const sessionMetas =
-        typeof clicked === "string"
-          ? [await findSessionMeta(clicked)].filter(isDefined)
-          : selectedSessionNodes(clicked)
-              .map((node) => node.pinned.meta)
-              .filter(isDefined);
-      linkStatusService.clear();
-      for (const meta of sessionMetas) {
-        await registry.markResourcesFound(meta.sessionId);
-      }
-      await vscode.window.withProgress(
-        { location: { viewId: "overseer.sessions" }, title: "Finding resources" },
-        () => Promise.all(sessionMetas.map((meta) => linkService.findResources(meta))),
-      );
-    }),
-    vscode.commands.registerCommand("overseer.toggleRemovedLinks", async () => {
-      const linksConfig = vscode.workspace.getConfiguration("overseer.links");
-      const isShown = !linksConfig.get<boolean>("showRemoved", false);
-      await linksConfig.update("showRemoved", isShown, vscode.ConfigurationTarget.Global);
-      void vscode.window.showInformationMessage(`Removed links ${isShown ? "shown" : "hidden"}.`);
-    }),
     // The hover link passes a session ID; the context menu passes the clicked node.
     vscode.commands.registerCommand("overseer.summarizeSession", async (clicked?: TreeNode | string) => {
       if (typeof clicked === "string") {
@@ -653,10 +621,6 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       const statusIdBySession = registry.sessionStatusIds();
       const pickedStatusId = await pickSessionStatus(new Set(sessionIds.map((sessionId) => statusIdBySession[sessionId])));
       if (pickedStatusId === null) {
-        return;
-      }
-      if (pickedStatusId === AUTO_STATUS_ID) {
-        await statusRelay.autoSetStatus(sessionIds);
         return;
       }
       const pickedStatus = configuredStatuses().find((status) => status.id === pickedStatusId);

@@ -227,11 +227,6 @@ export function scanLinkLine(
   scanMentions(state, line, "mention", timestamp);
 }
 
-// The link judge and the sidebar do not show commits yet, so they get every kind but those.
-export function summarizeCandidates(state: LinkScanState): LinkCandidate[] {
-  return summarizeAllCandidates(state).filter((candidate) => candidate.kind !== "commit");
-}
-
 export function summarizeAllCandidates(state: LinkScanState): LinkCandidate[] {
   const candidates = Object.values(state.candidates).map((candidate) => ({ ...candidate }));
   const branchTicketKey = extractTicketKey({ gitBranch: state.gitBranch });
@@ -252,7 +247,7 @@ export function summarizeAllCandidates(state: LinkScanState): LinkCandidate[] {
   return candidates.sort((left, right) => roleRank(fallbackRole(right)) - roleRank(fallbackRole(left)));
 }
 
-// Used when the judge agent is unavailable or returns nothing usable.
+// The strongest role the transcript signals prove.
 export function fallbackRole(candidate: LinkCandidate): LinkRole {
   const { signals } = candidate;
   if (signals["pr-created"] || signals["artifact-published"] || signals["commit-created"] || signals.branch) {

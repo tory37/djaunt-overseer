@@ -1,7 +1,5 @@
-import { DeclaredTicket } from "./agentTickets";
-import { SessionWhere } from "./agentTracker";
-import { normalizePullRequestUrl, SessionWork } from "./agentWork";
 import { clipLine, emptyAnalysis, KnownItem, MAX_ARTIFACT_TITLE_CHARS, MAX_SEED_NOTE_CHARS, SessionAnalysis, ticketItemKey, trimToWholeWords } from "./analysisState";
+import { DeclaredTicket, normalizePullRequestUrl, SessionWhere, SessionWork } from "./legacyDeclarations";
 import { artifactUrlParts } from "./linkCandidates";
 import type { LinkMarks } from "./registry";
 

@@ -1,10 +1,9 @@
 import * as fs from "fs";
 import * as vscode from "vscode";
-import { isSafeSessionId } from "./agentTickets";
 import { analysisLockFile, tryAcquireAnalysisLock } from "./analysisLock";
 import { seedAnalysis } from "./analysisSeed";
 import { SessionAnalysis } from "./analysisState";
-import { analysisFile, loadAnalysis, loadLegacySessionData, saveAnalysis } from "./analysisStore";
+import { analysisFile, isSafeSessionId, loadAnalysis, loadLegacySessionData, saveAnalysis } from "./analysisStore";
 import { AnalyzerMode, DigestEventCollector } from "./analyzerDigest";
 import { AnalyzerGateDecision, AnalyzerGateSettings, analyzerGateSettingsFrom, hasCandidateSince, shouldAutoAnalyze } from "./analyzerGates";
 import { AnalyzerModels, planAnalyzerPass, runAnalyzerPass } from "./analyzerPass";
@@ -19,7 +18,7 @@ import { Registry } from "./registry";
 import { SessionLinkService } from "./sessionLinks";
 import { configuredStatusOptions } from "./sessionStatusView";
 import { readCompleteLines, readLineEndingAt } from "./transcriptLines";
-import { applyUserEdits, withSeedRemovals } from "./workstreamEdits";
+import { applyUserEdits, WorkstreamEdits, withLinkMarkRemovals } from "./workstreamEdits";
 
 const ANALYZER_CONFIG_SECTION = "overseer.analyzer";
 const DEFAULT_MODEL = "haiku";
@@ -73,10 +72,17 @@ export class SessionAnalyzer implements vscode.Disposable {
   // The saved state with the user's current edits on top, since edits can change between passes.
   async analysisFor(sessionId: string): Promise<SessionAnalysis | undefined> {
     const storedAnalysis = await this.storedAnalysis(sessionId);
-    if (storedAnalysis === undefined) {
-      return undefined;
-    }
-    return applyUserEdits(storedAnalysis, withSeedRemovals(this.dependencies.registry.workstreamEdits(sessionId), storedAnalysis.seedFacts));
+    return storedAnalysis === undefined ? undefined : applyUserEdits(storedAnalysis, this.currentEdits(sessionId));
+  }
+
+  // The saved state without edits, so the sidebar can apply each edit the moment the user makes it.
+  savedAnalysis(sessionId: string): Promise<SessionAnalysis | undefined> {
+    return this.storedAnalysis(sessionId);
+  }
+
+  currentEdits(sessionId: string): WorkstreamEdits {
+    const { registry } = this.dependencies;
+    return withLinkMarkRemovals(registry.workstreamEdits(sessionId), registry.linkMarks(sessionId));
   }
 
   // A second request for a session joins the pass already running for it.
@@ -174,11 +180,18 @@ export class SessionAnalyzer implements vscode.Disposable {
     }
     await saveAnalysis(toFile, { ...fromAnalysis, watermarkBytes: 0 });
     await registry.copyWorkstreamEdits(fromSessionId, toSessionId);
+    // The copied workstreams still hold the old transcript's items, so its removals must come along.
+    const removedItemKeys = Object.entries(registry.linkMarks(fromSessionId))
+      .filter(([, mark]) => mark === "removed")
+      .map(([itemKey]) => itemKey);
+    if (removedItemKeys.length > 0) {
+      await registry.setLinkMark(toSessionId, removedItemKeys, "removed");
+    }
     this.changeEmitter.fire(toSessionId);
   }
 
   private async runPass(sessionId: string, mode: AnalyzerMode): Promise<AnalyzerPassOutcome> {
-    const { claudeHome, linkService, linkStatusService, registry, findSessionMeta, sessionTitle } = this.dependencies;
+    const { claudeHome, linkService, linkStatusService, findSessionMeta, sessionTitle } = this.dependencies;
     const meta = findSessionMeta(sessionId);
     if (meta === undefined) {
       return { kind: "skipped", detail: "no transcript in the index" };
@@ -215,7 +228,7 @@ export class SessionAnalyzer implements vscode.Disposable {
           plan,
           session: { title: sessionTitle(sessionId), gitBranch: meta.gitBranch, cwd: meta.resumeCwd ?? meta.startCwd },
           analysis: currentAnalysis,
-          edits: registry.workstreamEdits(sessionId),
+          edits: this.currentEdits(sessionId),
           candidates,
           events: eventCollector.events,
           overlapPrompt: plan.digestMode === "diff" ? await this.overlapPrompt(meta.transcriptFile, scanState, startOffsetBytes) : undefined,

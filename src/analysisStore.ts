@@ -1,15 +1,27 @@
 import * as fs from "fs";
 import * as path from "path";
-import { AGENT_TICKETS_SCHEMA_VERSION, declaredTicketsFile, readDeclaredTickets } from "./agentTickets";
-import { AGENT_TRACKER_SCHEMA_VERSION, readSessionWhere, whereFile } from "./agentTracker";
-import { AGENT_WORK_SCHEMA_VERSION, declaredWorkFile, readSessionWork } from "./agentWork";
 import { LegacySessionData } from "./analysisSeed";
 import { ANALYSIS_SCHEMA_VERSION, readSessionAnalysis, SessionAnalysis } from "./analysisState";
+import {
+  declaredTicketsFile,
+  declaredWorkFile,
+  LEGACY_SCHEMA_VERSION,
+  readDeclaredTickets,
+  readSessionWhere,
+  readSessionWork,
+  whereFile,
+} from "./legacyDeclarations";
 import { loadVersionedCache, saveVersionedCache } from "./linkCache";
 import type { LinkMarks } from "./registry";
 
 const OVERSEER_DIR_NAME = "overseer";
 const ANALYSIS_DIR_NAME = "analysis";
+const SAFE_SESSION_ID_PATTERN = /^[A-Za-z0-9-]+$/;
+
+// Session ids become file names, so anything that could escape the directory is refused.
+export function isSafeSessionId(sessionId: string): boolean {
+  return SAFE_SESSION_ID_PATTERN.test(sessionId);
+}
 
 export function analysisDir(claudeHome: string): string {
   return path.join(claudeHome, OVERSEER_DIR_NAME, ANALYSIS_DIR_NAME);
@@ -49,9 +61,9 @@ function parseJson(text: string): unknown {
 // Reads the files the old overseer CLI wrote; it never changes them.
 export async function loadLegacySessionData(claudeHome: string, sessionId: string, linkMarks: LinkMarks): Promise<LegacySessionData> {
   const [ticketEntries, workEntries, whereEntries] = await Promise.all([
-    loadVersionedCache<unknown>(declaredTicketsFile(claudeHome, sessionId), AGENT_TICKETS_SCHEMA_VERSION),
-    loadVersionedCache<unknown>(declaredWorkFile(claudeHome, sessionId), AGENT_WORK_SCHEMA_VERSION),
-    loadVersionedCache<unknown>(whereFile(claudeHome, sessionId), AGENT_TRACKER_SCHEMA_VERSION),
+    loadVersionedCache<unknown>(declaredTicketsFile(claudeHome, sessionId), LEGACY_SCHEMA_VERSION),
+    loadVersionedCache<unknown>(declaredWorkFile(claudeHome, sessionId), LEGACY_SCHEMA_VERSION),
+    loadVersionedCache<unknown>(whereFile(claudeHome, sessionId), LEGACY_SCHEMA_VERSION),
   ]);
   return {
     declaredTickets: readDeclaredTickets(ticketEntries),

@@ -13,6 +13,9 @@ export interface SessionStatus {
   done: boolean;
 }
 
+// A status as the analyzer model sees it.
+export type StatusOption = Pick<SessionStatus, "id" | "name" | "asksReason" | "done">;
+
 // A status as one session carries it: the reason is the note the user gave when setting it.
 export interface MarkedStatus extends SessionStatus {
   reason?: string;

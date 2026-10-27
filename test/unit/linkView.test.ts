@@ -1,23 +1,9 @@
 import { describe, expect, it } from "vitest";
-import {
-  ConcurrencyLimiter,
-  linkDisplayId,
-  isDimmedLink,
-  LinkViewSettings,
-  linkUrl,
-  MarkedLink,
-  markLinks,
-  sessionPanelLinks,
-  withDeclarations,
-  visibleLinks,
-  withParentGroups,
-} from "../../src/linkView";
-import { LinkStatus } from "../../src/linkStatus";
-import { orderResources } from "../../src/resourceOrder";
+import { ConcurrencyLimiter, linkDisplayId, linkForItemKey, linkUrl, MarkedLink } from "../../src/linkView";
 import { acceptedOrder, resourceRow } from "../../src/resourceRows";
 import { statusGlyphMarkup } from "../../src/statusIcons";
 
-function resolvedLink(overrides: Partial<MarkedLink> & Pick<MarkedLink, "kind" | "id" | "role">): MarkedLink {
+function markedLink(overrides: Partial<MarkedLink> & Pick<MarkedLink, "kind" | "id">): MarkedLink {
   return {
     url: undefined,
     title: undefined,
@@ -25,71 +11,15 @@ function resolvedLink(overrides: Partial<MarkedLink> & Pick<MarkedLink, "kind" |
     snippets: [],
     firstSeen: undefined,
     lastSeen: undefined,
-    stillRelevant: true,
-    label: undefined,
-    judged: true,
     mark: undefined,
     ...overrides,
   };
 }
 
-const OWNED_PR = resolvedLink({ kind: "pr", id: "acme/web-app/pull/2384", role: "owned", url: "https://github.com/acme/web-app/pull/2384" });
-const TOUCHED_TICKET = resolvedLink({ kind: "ticket", id: "PROJ-5", role: "touched" });
-const OWNED_TICKET = resolvedLink({ kind: "ticket", id: "PROJ-9", role: "owned" });
-const NOISE_ARTIFACT = resolvedLink({ kind: "artifact", id: "abc", role: "irrelevant" });
-
-function settings(overrides: Partial<LinkViewSettings> = {}): LinkViewSettings {
-  return { enabledKinds: new Set(["pr", "ticket", "artifact"]), showIrrelevant: false, showRemoved: false, jiraBaseUrl: "", ...overrides };
-}
-
-describe("visibleLinks", () => {
-  it("hides irrelevant links and disabled sources", () => {
-    const links = [OWNED_PR, TOUCHED_TICKET, NOISE_ARTIFACT];
-
-    expect(visibleLinks(links, settings()).map((link) => link.id)).toEqual(["acme/web-app/pull/2384", "PROJ-5"]);
-    expect(visibleLinks(links, settings({ enabledKinds: new Set(["ticket"]) })).map((link) => link.id)).toEqual(["PROJ-5"]);
-    expect(visibleLinks(links, settings({ showIrrelevant: true }))).toHaveLength(3);
-  });
-
-  it("shows pinned links first, even irrelevant ones, and hides removed links until asked", () => {
-    const pinnedNoise = { ...NOISE_ARTIFACT, mark: "pinned" as const };
-    const removedPr = { ...OWNED_PR, mark: "removed" as const };
-    const links = [removedPr, TOUCHED_TICKET, pinnedNoise];
-
-    expect(visibleLinks(links, settings()).map((link) => link.id)).toEqual(["abc", "PROJ-5"]);
-    expect(visibleLinks(links, settings({ showRemoved: true })).map((link) => link.id)).toEqual([
-      "abc",
-      "PROJ-5",
-      "acme/web-app/pull/2384",
-    ]);
-    expect(visibleLinks([pinnedNoise], settings({ enabledKinds: new Set(["pr"]) }))).toEqual([]);
-  });
-
-  it("sorts by the saved order within each mark and puts unsaved links first", () => {
-    const pinnedTicket = { ...OWNED_TICKET, mark: "pinned" as const };
-    const links = [OWNED_PR, TOUCHED_TICKET, pinnedTicket];
-    const savedOrder = ["ticket:PROJ-5", "ticket:PROJ-9"];
-
-    expect(visibleLinks(links, settings(), savedOrder).map((link) => link.id)).toEqual([
-      "PROJ-9",
-      "acme/web-app/pull/2384",
-      "PROJ-5",
-    ]);
-    expect(visibleLinks(links, settings(), [...savedOrder, "pr:acme/web-app/pull/2384"]).map((link) => link.id)).toEqual([
-      "PROJ-9",
-      "PROJ-5",
-      "acme/web-app/pull/2384",
-    ]);
-  });
-});
-
-describe("markLinks", () => {
-  it("matches marks by kind and id", () => {
-    const markedLinks = markLinks([OWNED_PR, TOUCHED_TICKET], { "ticket:PROJ-5": "removed" });
-
-    expect(markedLinks.map((link) => link.mark)).toEqual([undefined, "removed"]);
-  });
-});
+const OWNED_PR = markedLink({ kind: "pr", id: "acme/web-app/pull/2384", url: "https://github.com/acme/web-app/pull/2384" });
+const TOUCHED_TICKET = markedLink({ kind: "ticket", id: "PROJ-5" });
+const OWNED_TICKET = markedLink({ kind: "ticket", id: "PROJ-9" });
+const NOISE_ARTIFACT = markedLink({ kind: "artifact", id: "abc" });
 
 describe("linkUrl", () => {
   it("prefers the transcript URL and builds ticket URLs from the base URL", () => {
@@ -104,63 +34,14 @@ describe("link labels", () => {
     expect(linkDisplayId(OWNED_PR)).toBe("web-app#2384");
     expect(linkDisplayId(TOUCHED_TICKET)).toBe("PROJ-5");
   });
-
 });
 
-describe("withDeclarations", () => {
-  it("marks a scanned ticket as declared and owned", () => {
-    const [declaredLink] = withDeclarations([TOUCHED_TICKET], [{ key: "PROJ-5", note: "fixing it", addedAt: 1 }]);
-    expect(declaredLink).toMatchObject({ id: "PROJ-5", role: "owned", isAgentDeclared: true, agentNote: "fixing it", judged: true });
-  });
-
-  it("adds declared tickets the scan never saw, first", () => {
-    const links = withDeclarations([OWNED_PR], [{ key: "PROJ-77", addedAt: 1 }]);
-    expect(links.map((link) => link.id)).toEqual(["PROJ-77", OWNED_PR.id]);
-    expect(links[0]).toMatchObject({ kind: "ticket", role: "owned", isAgentDeclared: true, judged: false });
-  });
-
-  it("leaves links alone when nothing is declared", () => {
-    expect(withDeclarations([OWNED_PR, TOUCHED_TICKET], [], [])).toEqual([OWNED_PR, TOUCHED_TICKET]);
-  });
-
-  it("matches a declared PR to the scanned one, whatever the URL's case", () => {
-    const scannedPr = resolvedLink({ kind: "pr", id: "acme/web/pull/12", url: "https://github.com/acme/web/pull/12", role: "touched" });
-    const links = withDeclarations([scannedPr], [], [{ url: "https://github.com/Acme/Web/pull/12", note: "the fix", addedAt: 1 }]);
-    expect(links).toHaveLength(1);
-    expect(links[0]).toMatchObject({ id: "acme/web/pull/12", role: "owned", isAgentDeclared: true, agentNote: "the fix" });
-  });
-
-  it("passes the declared parent through as a link key", () => {
-    const links = withDeclarations(
-      [TOUCHED_TICKET],
-      [{ key: "PROJ-5", parentKey: "PROJ-1", addedAt: 1 }],
-      [{ url: "https://github.com/acme/web/pull/40", parentKey: "PROJ-5", addedAt: 1 }],
-      [{ url: "https://claude.ai/artifact/abc-1", parentKey: "https://github.com/Acme/Web/pull/40", addedAt: 1 }],
-    );
-    const parentsById = Object.fromEntries(links.map((link) => [link.id, link.declaredParentKey]));
-    expect(parentsById).toEqual({ "PROJ-5": "ticket:PROJ-1", "acme/web/pull/40": "ticket:PROJ-5", "abc-1": "pr:acme/web/pull/40" });
-  });
-
-  it("adds declared artifacts as owned links that land in Working on", () => {
-    const scannedArtifact = resolvedLink({ kind: "artifact", id: "seen", url: "https://claude.ai/artifact/seen", role: "irrelevant" });
-    const links = withDeclarations(
-      [scannedArtifact],
-      [],
-      [],
-      [
-        { url: "https://claude.ai/code/artifact/seen", note: "report", addedAt: 1 },
-        { url: "https://claude.ai/artifact/new-1", addedAt: 1 },
-      ],
-    );
-    expect(links.map((link) => link.id)).toEqual(["new-1", "seen"]);
-    expect(links[0]).toMatchObject({ kind: "artifact", url: "https://claude.ai/artifact/new-1", isAgentDeclared: true, judged: false });
-    expect(links[1]).toMatchObject({ role: "owned", isAgentDeclared: true, agentNote: "report" });
-    expect(sessionPanelLinks(markLinks(links, {}), {}).workingOn).toHaveLength(2);
-  });
-
-  it("adds a declared PR the scan never saw, with its URL", () => {
-    const [declaredPr] = withDeclarations([], [], [{ url: "https://github.com/acme/web/pull/40", addedAt: 1 }]);
-    expect(declaredPr).toMatchObject({ kind: "pr", id: "acme/web/pull/40", url: "https://github.com/acme/web/pull/40", isAgentDeclared: true });
+describe("linkForItemKey", () => {
+  it("rebuilds a row link from an item key and rejects unknown kinds", () => {
+    expect(linkForItemKey("pr:acme/web/pull/3")).toMatchObject({ kind: "pr", id: "acme/web/pull/3", url: "https://github.com/acme/web/pull/3" });
+    expect(linkForItemKey("ticket:PROJ-1")).toMatchObject({ kind: "ticket", id: "PROJ-1", url: undefined });
+    expect(linkForItemKey("note:x")).toBeUndefined();
+    expect(linkForItemKey("ticket:")).toBeUndefined();
   });
 });
 
@@ -180,18 +61,6 @@ describe("ConcurrencyLimiter", () => {
     await Promise.all([...firstWave, limiter.run(task), limiter.run(task)]);
 
     expect(peakActiveCount).toBe(2);
-  });
-});
-
-describe("isDimmedLink", () => {
-  it("dims removed, irrelevant, and inactive links, unless pinned", () => {
-    const irrelevantTicket = resolvedLink({ kind: "ticket", id: "ABC-1", role: "irrelevant" });
-    const inactivePr = { ...OWNED_PR, stillRelevant: false };
-    expect(isDimmedLink(OWNED_PR)).toBe(false);
-    expect(isDimmedLink(irrelevantTicket)).toBe(true);
-    expect(isDimmedLink(inactivePr)).toBe(true);
-    expect(isDimmedLink({ ...OWNED_PR, mark: "removed" })).toBe(true);
-    expect(isDimmedLink({ ...inactivePr, mark: "pinned" })).toBe(false);
   });
 });
 
@@ -228,71 +97,5 @@ describe("acceptedOrder", () => {
     expect(acceptedOrder(["a", "b", "c"], ["c", "a"])).toBeUndefined();
     expect(acceptedOrder(["a", "b", "c"], ["c", "a", "a"])).toBeUndefined();
     expect(acceptedOrder(["a", "b"], ["a", "x"])).toBeUndefined();
-  });
-});
-
-describe("sessionPanelLinks", () => {
-  it("puts declared and pinned links of every kind under Working on and the rest under Also seen", () => {
-    const declaredTicket = { ...OWNED_TICKET, isAgentDeclared: true };
-    const pinnedTicket = { ...TOUCHED_TICKET, mark: "pinned" as const };
-    const declaredPr = { ...OWNED_PR, id: "acme/web/pull/3", isAgentDeclared: true };
-    const seenTicket = resolvedLink({ kind: "ticket", id: "PROJ-30", role: "touched" });
-    const { workingOn, alsoSeen } = sessionPanelLinks([OWNED_PR, declaredTicket, pinnedTicket, declaredPr, seenTicket], {});
-    expect(workingOn.map((link) => link.id)).toEqual(["PROJ-9", "PROJ-5", "acme/web/pull/3"]);
-    expect(alsoSeen.map((link) => link.id)).toEqual([OWNED_PR.id, "PROJ-30"]);
-  });
-
-  it("sends a removed link to Also seen, even a declared one", () => {
-    const removedDeclared = { ...OWNED_TICKET, isAgentDeclared: true, mark: "removed" as const };
-    expect(sessionPanelLinks([removedDeclared], {})).toEqual({ workingOn: [], alsoSeen: [removedDeclared] });
-  });
-
-  it("shows a ticket pinned by key that no scan has seen", () => {
-    const { workingOn } = sessionPanelLinks([TOUCHED_TICKET], { "ticket:PROJ-88": "pinned", "ticket:PROJ-5": "removed", "pr:x": "pinned" });
-    expect(workingOn).toHaveLength(1);
-    expect(workingOn[0]).toMatchObject({ kind: "ticket", id: "PROJ-88", mark: "pinned" });
-  });
-});
-
-describe("withParentGroups", () => {
-  const firstChild = resolvedLink({ kind: "ticket", id: "PROJ-2", role: "owned", isAgentDeclared: true, declaredParentKey: "ticket:EPIC-1" });
-  const secondChild = resolvedLink({ kind: "ticket", id: "PROJ-3", role: "owned", isAgentDeclared: true });
-  const jiraStatuses: Record<string, LinkStatus> = { "PROJ-3": { text: "To Do", colorKey: "To Do", parentKey: "EPIC-1" } };
-  const statusFor = (link: MarkedLink): LinkStatus | undefined => jiraStatuses[link.id];
-
-  it("adds a shared parent that is not shown as a group row, and the tickets nest under it", () => {
-    const { workingOn, alsoSeen } = withParentGroups({ workingOn: [firstChild, secondChild], alsoSeen: [] }, statusFor, {});
-    expect(workingOn[0]).toMatchObject({ kind: "ticket", id: "EPIC-1", role: "touched", isParentGroup: true });
-    expect(workingOn[0].isAgentDeclared).toBeUndefined();
-    expect(alsoSeen).toEqual([]);
-    const ordered = orderResources(workingOn, statusFor, false).map(({ link, depth }) => [link.id, depth]);
-    expect(ordered).toEqual([
-      ["EPIC-1", 0],
-      ["PROJ-2", 1],
-      ["PROJ-3", 1],
-    ]);
-  });
-
-  it("moves a parent seen in the transcript up from Also seen", () => {
-    const seenEpic = resolvedLink({ kind: "ticket", id: "EPIC-1", role: "touched", label: "Epic" });
-    const { workingOn, alsoSeen } = withParentGroups({ workingOn: [firstChild, secondChild], alsoSeen: [seenEpic, OWNED_PR] }, statusFor, {});
-    expect(workingOn[0]).toMatchObject({ id: "EPIC-1", label: "Epic", isParentGroup: true });
-    expect(alsoSeen).toEqual([OWNED_PR]);
-  });
-
-  it("needs two tickets, an unshown parent, and a parent the user kept", () => {
-    const sections = { workingOn: [firstChild, secondChild], alsoSeen: [] };
-    expect(withParentGroups({ workingOn: [firstChild], alsoSeen: [] }, statusFor, {}).workingOn).toEqual([firstChild]);
-    expect(withParentGroups(sections, statusFor, { "ticket:EPIC-1": "removed" })).toBe(sections);
-    const shownEpic = resolvedLink({ kind: "ticket", id: "EPIC-1", role: "owned", isAgentDeclared: true });
-    const withShownEpic = { workingOn: [shownEpic, firstChild, secondChild], alsoSeen: [] };
-    expect(withParentGroups(withShownEpic, statusFor, {})).toBe(withShownEpic);
-  });
-
-  it("ignores the parents of PRs and artifacts", () => {
-    const prs = [1, 2].map((number) =>
-      resolvedLink({ kind: "pr", id: `acme/web/pull/${number}`, role: "owned", isAgentDeclared: true, declaredParentKey: "ticket:EPIC-1" }),
-    );
-    expect(withParentGroups({ workingOn: prs, alsoSeen: [] }, statusFor, {}).workingOn).toEqual(prs);
   });
 });

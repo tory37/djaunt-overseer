@@ -2,12 +2,10 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { afterEach, describe, expect, it } from "vitest";
-import { declaredTicketsFile } from "../../src/agentTickets";
-import { declaredWorkFile } from "../../src/agentWork";
-import { whereFile } from "../../src/agentTracker";
 import { pullRequestItemKey, seedAnalysis } from "../../src/analysisSeed";
 import { ANALYSIS_SCHEMA_VERSION, emptyAnalysis } from "../../src/analysisState";
 import { analysisFile, loadAnalysis, loadLegacySessionData, saveAnalysis } from "../../src/analysisStore";
+import { declaredTicketsFile, declaredWorkFile, whereFile } from "../../src/legacyDeclarations";
 
 const PR_URL = "https://github.com/Amira/API/pull/7";
 const PR_KEY = "pr:amira/api/pull/7";

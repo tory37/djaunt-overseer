@@ -1,37 +1,43 @@
 import * as crypto from "crypto";
 import * as path from "path";
 import * as vscode from "vscode";
-import { normalizeTicketKey } from "./agentTickets";
-import { TRACKED_KIND_LABELS, untrackedKinds } from "./agentWork";
-import { DeclarationMonitor } from "./declarationMonitor";
+import { SessionAnalysis } from "./analysisState";
 import { formatAge } from "./format";
 import { SessionMeta } from "./indexer";
-import { linkKey } from "./linkJudge";
-import { LinkStatus } from "./linkStatus";
+import { isPassiveMention, LinkCandidate, linkKey, summarizeAllCandidates } from "./linkCandidates";
 import { LinkStatusService } from "./linkStatusService";
-import { MarkedLink, sessionPanelLinks, withParentGroups } from "./linkView";
+import { linkForItemKey, MarkedLink } from "./linkView";
 import { LiveSessionMonitor } from "./liveSessions";
 import { openInBrowser, openInVscode } from "./openUrl";
 import { tildePath } from "./paths";
-import { LinkMark, Registry } from "./registry";
-import { OrderedResource, orderResources } from "./resourceOrder";
+import { Registry } from "./registry";
 import { acceptedOrder, linkStatusColor, ResourceRow, resourceRow } from "./resourceRows";
 import { readLinkSettings, SessionLinkService } from "./sessionLinks";
+import { SessionAnalyzer } from "./sessionAnalyzer";
 import { SessionFocusTracker } from "./sessionFocus";
-import { PopulateSummary } from "./populateMerge";
-import { SessionPopulator } from "./sessionPopulator";
-import { linkRowTitle, metaLine, metaTitle, recheckSummaryText, shortLinkStatus, stateSentence, SummaryPrompt, summaryPrompt } from "./sessionSidebarText";
+import { linkRowTitle, metaLine, metaTitle, shortLinkStatus, stateSentence, SummaryPrompt, summaryPrompt } from "./sessionSidebarText";
 import { SessionPreview } from "./sessionPreview";
 import { previewRunState, SidebarRunKind, sidebarRunKind } from "./sessionPreviewModel";
 import { statusColorId } from "./sessionStatuses";
-import { sessionStatusFor } from "./sessionStatusView";
+import { configuredStatuses, sessionStatusFor } from "./sessionStatusView";
 import { SessionSummaryService } from "./sessionSummaries";
 import { pickHoverSummary, SUMMARY_SOURCE_LABELS } from "./sessionSummary";
 import { StatusConfig } from "./statusConfig";
 import { sessionIdOfTerminal } from "./terminals";
+import { buildWorkstreamDisplay, DisplayGroup, resolveItemDrop } from "./workstreamDisplay";
+import {
+  applyUserEdits,
+  withoutRemovedItem,
+  withPinnedItem,
+  withRenamedWorkstream,
+  withWorkstreamDone,
+  withWorkstreamOrder,
+  WorkstreamEdits,
+} from "./workstreamEdits";
 
 export const SESSION_PANEL_VIEW_ID = "overseer.session";
 const PANEL_INTRODUCED_KEY = "overseer.sessionPanelIntroduced";
+const ITEM_ROW_DEPTH = 1;
 
 export interface SessionPanelDependencies {
   extensionUri: vscode.Uri;
@@ -43,16 +49,18 @@ export interface SessionPanelDependencies {
   sessionFocus: SessionFocusTracker;
   sessionPreview: SessionPreview;
   summaryService: SessionSummaryService;
-  declarationMonitor: DeclarationMonitor;
-  populator: SessionPopulator;
+  sessionAnalyzer: SessionAnalyzer;
   findSessionMeta: (sessionId: string) => SessionMeta | undefined;
   sessionTitle: (sessionId: string) => string;
   globalState: vscode.Memento;
 }
 
-type RecheckState = { status: "running" } | { status: "done"; summary: PopulateSummary } | { status: "failed"; reason: string };
-
-type RecheckLine = { status: "running" } | { status: "done"; text: string } | { status: "failed"; reason: string };
+interface HeaderStatus {
+  name: string;
+  color: string;
+  reason: string | undefined;
+  isDerived: boolean;
+}
 
 interface SessionDetails {
   sessionId: string;
@@ -67,13 +75,11 @@ interface SessionDetails {
   metaLine: string;
   metaTitle: string;
   stateSentence: string;
-  status: { name: string; icon: string; color: string; reason: string | undefined } | undefined;
+  status: HeaderStatus | undefined;
   summary: { text: string; caption: string } | undefined;
   summaryPrompt: SummaryPrompt | undefined;
   isSummarizing: boolean;
   hasTranscript: boolean;
-  untracked: string[];
-  recheck: RecheckLine | undefined;
 }
 
 interface PanelRow extends ResourceRow {
@@ -81,36 +87,39 @@ interface PanelRow extends ResourceRow {
   hoverTitle: string;
 }
 
-type LinkFilter = "showIrrelevant" | "showRemoved";
+interface WorkView {
+  isLoaded: boolean;
+  isAnalyzing: boolean;
+  where: string[];
+  updatedAgo: string | undefined;
+  groups: DisplayGroup<PanelRow>[];
+  removedRows: PanelRow[];
+  isEmpty: boolean;
+}
 
 interface PanelState {
   session: SessionDetails | undefined;
-  workingOn: PanelRow[];
-  alsoSeen: PanelRow[];
-  filters: Record<LinkFilter, boolean>;
+  work: WorkView | undefined;
   isJiraEnabled: boolean;
-  isFinding: boolean;
-  canFind: boolean;
+}
+
+// The saved analysis before edits, plus the transcript's items, loaded together because both are async.
+interface WorkSnapshot {
+  savedAnalysis: SessionAnalysis | undefined;
+  candidates: LinkCandidate[];
 }
 
 type PanelMessage =
   | { type: "ready" }
   | { type: "open"; key: string; target: "vscode" | "browser" }
   | { type: "copy"; key: string }
-  | { type: "setMark"; key: string; mark: LinkMark | null }
+  | { type: "setMark"; key: string; mark: "removed" | null }
   | { type: "moveStatus"; key: string }
-  | { type: "reorder"; keys: string[] }
-  | { type: "setFilter"; filter: LinkFilter; value: boolean }
-  | { type: "pinByKey" }
-  | { type: "findAgain" }
-  | { type: "refreshWorkingOn" }
-  | { type: "action"; action: string }
-  | { type: "recheck" }
-  | { type: "dismissRecheck" };
-
-const LINK_MARKS = new Set<string>(["pinned", "removed"]);
-const LINK_FILTERS: LinkFilter[] = ["showIrrelevant", "showRemoved"];
-const NO_FILTERS: Record<LinkFilter, boolean> = { showIrrelevant: false, showRemoved: false };
+  | { type: "renameWorkstream"; id: string; title: string }
+  | { type: "moveItem"; key: string; workstreamId: string }
+  | { type: "reorderWorkstreams"; ids: string[] }
+  | { type: "setWorkstreamDone"; id: string; done: boolean }
+  | { type: "action"; action: string };
 
 // Each sidebar action runs the same command as the tree's context menu, given the session ID.
 const ACTION_COMMANDS: Record<string, string> = {
@@ -121,7 +130,6 @@ const ACTION_COMMANDS: Record<string, string> = {
   cost: "overseer.costSession",
   command: "overseer.runSessionCommand",
   summarize: "overseer.summarizeSession",
-  findLinks: "overseer.findResources",
   analyze: "overseer.analyzeSession",
   recheckAnalysis: "overseer.recheckSession",
   openRepo: "overseer.openRepoInScm",
@@ -129,27 +137,41 @@ const ACTION_COMMANDS: Record<string, string> = {
   rename: "overseer.renameSession",
 };
 
-// Shows the tickets of the focused session, beside it in the Secondary Side Bar.
+// Shows the focused session's workstreams, beside it in the Secondary Side Bar.
 export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private view: vscode.WebviewView | undefined;
   private shownLinks: MarkedLink[] = [];
-  private readonly recheckStates = new Map<string, RecheckState>();
+  private shownGroups: DisplayGroup<PanelRow>[] = [];
+  private readonly workSnapshots = new Map<string, WorkSnapshot>();
+  private readonly workLoadsInFlight = new Set<string>();
+  private readonly staleWorkLoads = new Set<string>();
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(private readonly dependencies: SessionPanelDependencies) {
     const postState = (): void => this.postState();
     this.disposables.push(
       vscode.window.onDidChangeActiveTerminal((terminal) => void this.introduceOnce(terminal)),
-      dependencies.sessionFocus.onDidChange(postState),
+      dependencies.sessionFocus.onDidChange(() => {
+        const sessionId = dependencies.sessionFocus.focusedSessionId();
+        if (sessionId !== undefined && this.workSnapshots.has(sessionId)) {
+          this.reloadWork(sessionId);
+        }
+        this.postState();
+      }),
       vscode.window.onDidCloseTerminal(postState),
       dependencies.registry.onDidChange(postState),
       dependencies.statusConfig.onDidChange(postState),
-      dependencies.linkService.onDidChange(postState),
       dependencies.linkStatusService.onDidChange(postState),
       dependencies.liveMonitor.onDidChange(postState),
       dependencies.summaryService.onDidChange(postState),
-      dependencies.declarationMonitor.onDidChange(postState),
-      dependencies.populator.onDidChange(postState),
+      dependencies.sessionAnalyzer.onDidChange((sessionId) => {
+        if (sessionId === dependencies.sessionFocus.focusedSessionId()) {
+          this.reloadWork(sessionId);
+        } else {
+          this.workSnapshots.delete(sessionId);
+        }
+        this.postState();
+      }),
     );
   }
 
@@ -182,43 +204,117 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
     void this.view.webview.postMessage({ type: "state", state: this.panelState() });
   }
 
+  // The snapshot loads async; edits apply here on every render, so a user edit shows without waiting for a reload or a model pass.
   private panelState(): PanelState {
     const sessionId = this.dependencies.sessionFocus.focusedSessionId();
     if (sessionId === undefined) {
       this.shownLinks = [];
-      return { session: undefined, workingOn: [], alsoSeen: [], filters: NO_FILTERS, isJiraEnabled: false, isFinding: false, canFind: false };
+      this.shownGroups = [];
+      return { session: undefined, work: undefined, isJiraEnabled: false };
     }
-    const { registry, linkService, linkStatusService, findSessionMeta } = this.dependencies;
-    const meta = findSessionMeta(sessionId);
-    const visibleLinks = linkService.visibleLinksFor(sessionId, meta) ?? [];
-    const linkMarks = registry.linkMarks(sessionId);
-    const statusFor = (link: MarkedLink): LinkStatus | undefined => linkStatusService.statusFor(link);
-    const { workingOn, alsoSeen } = withParentGroups(sessionPanelLinks(visibleLinks, linkMarks), statusFor, linkMarks);
-    const hasSavedOrder = registry.linkOrder(sessionId).length > 0;
-    const orderedWorkingOn = orderResources(workingOn, statusFor, hasSavedOrder);
-    const orderedAlsoSeen = orderResources(alsoSeen, statusFor, hasSavedOrder);
-    this.shownLinks = [...orderedWorkingOn, ...orderedAlsoSeen].map((resource) => resource.link);
-    const linkSettings = readLinkSettings();
+    const meta = this.dependencies.findSessionMeta(sessionId);
+    const snapshot = this.workSnapshots.get(sessionId);
+    if (snapshot === undefined) {
+      this.startWorkLoad(sessionId);
+    }
+    const edits = this.dependencies.sessionAnalyzer.currentEdits(sessionId);
+    const analysis = snapshot?.savedAnalysis === undefined ? undefined : applyUserEdits(snapshot.savedAnalysis, edits);
     return {
-      session: this.sessionDetails(sessionId, meta),
-      workingOn: orderedWorkingOn.map((resource) => this.rowFor(resource)),
-      alsoSeen: orderedAlsoSeen.map((resource) => this.rowFor(resource)),
-      filters: { showIrrelevant: linkSettings.showIrrelevant, showRemoved: linkSettings.showRemoved },
-      isJiraEnabled: linkSettings.enabledKinds.has("ticket"),
-      isFinding: linkService.isFinding(sessionId),
-      canFind: meta !== undefined,
+      session: this.sessionDetails(sessionId, meta, analysis),
+      work: this.workView(sessionId, snapshot, analysis, edits),
+      isJiraEnabled: readLinkSettings().enabledKinds.has("ticket"),
     };
   }
 
-  private sessionDetails(sessionId: string, meta: SessionMeta | undefined): SessionDetails {
-    const { registry, liveMonitor, sessionFocus, summaryService, declarationMonitor, populator, sessionTitle } = this.dependencies;
+  private workView(
+    sessionId: string,
+    snapshot: WorkSnapshot | undefined,
+    analysis: SessionAnalysis | undefined,
+    edits: WorkstreamEdits,
+  ): WorkView {
+    const { registry, sessionAnalyzer } = this.dependencies;
+    const candidates = snapshot?.candidates ?? [];
+    const linkMarks = registry.linkMarks(sessionId);
+    const removedItemKeys = new Set(edits.removedItems);
+    const { enabledKinds } = readLinkSettings();
+    const candidatesByKey = new Map(candidates.map((candidate) => [linkKey(candidate), candidate]));
+    const lastActivityByKey = new Map(candidates.map((candidate) => [linkKey(candidate), candidate.lastSeenOffsetBytes ?? 0]));
+    const candidateItemKeys = [
+      ...candidates.filter((candidate) => !isPassiveMention(candidate)).map(linkKey),
+      ...Object.keys(linkMarks).filter((itemKey) => linkMarks[itemKey] === "pinned"),
+      ...(analysis?.seedFacts.keptItemKeys ?? []),
+    ];
+    const shownLinksByKey = new Map<string, MarkedLink>();
+    const rowFor = (itemKey: string): PanelRow | undefined => {
+      const knownLink = candidatesByKey.get(itemKey) ?? linkForItemKey(itemKey);
+      if (knownLink === undefined || !enabledKinds.has(knownLink.kind)) {
+        return undefined;
+      }
+      const link: MarkedLink = { ...knownLink, mark: removedItemKeys.has(itemKey) ? "removed" : linkMarks[itemKey] };
+      shownLinksByKey.set(itemKey, link);
+      return this.rowFor(link, analysis?.artifactTitles[itemKey]);
+    };
+    const display = buildWorkstreamDisplay({
+      analysis,
+      workstreamOrder: edits.workstreamOrder,
+      candidateItemKeys,
+      removedItemKeys: [...removedItemKeys],
+      lastActivityOf: (itemKey) => lastActivityByKey.get(itemKey) ?? 0,
+      rowFor,
+    });
+    this.shownLinks = [...shownLinksByKey.values()];
+    this.shownGroups = display.groups;
+    return {
+      isLoaded: snapshot !== undefined,
+      isAnalyzing: sessionAnalyzer.isAnalyzing(sessionId),
+      where: analysis?.where ?? [],
+      updatedAgo: analysis?.lastPassAt === undefined ? undefined : formatAge(analysis.lastPassAt),
+      groups: display.groups,
+      removedRows: display.removedRows,
+      isEmpty: display.isEmpty,
+    };
+  }
+
+  private startWorkLoad(sessionId: string): void {
+    if (!this.workLoadsInFlight.has(sessionId)) {
+      void this.loadWork(sessionId);
+    }
+  }
+
+  // A change during a load means the load may have read old data, so one more load follows it.
+  private reloadWork(sessionId: string): void {
+    if (this.workLoadsInFlight.has(sessionId)) {
+      this.staleWorkLoads.add(sessionId);
+      return;
+    }
+    void this.loadWork(sessionId);
+  }
+
+  private async loadWork(sessionId: string): Promise<void> {
+    const { sessionAnalyzer, linkService, findSessionMeta } = this.dependencies;
+    this.workLoadsInFlight.add(sessionId);
+    const meta = findSessionMeta(sessionId);
+    const snapshot = await Promise.all([sessionAnalyzer.savedAnalysis(sessionId), meta === undefined ? undefined : linkService.scanStateFor(meta)])
+      .then(([savedAnalysis, scanState]): WorkSnapshot => ({
+        savedAnalysis,
+        candidates: scanState === undefined ? [] : summarizeAllCandidates(scanState),
+      }))
+      .catch((): WorkSnapshot => ({ savedAnalysis: undefined, candidates: [] }));
+    this.workSnapshots.set(sessionId, snapshot);
+    this.workLoadsInFlight.delete(sessionId);
+    if (this.staleWorkLoads.delete(sessionId)) {
+      void this.loadWork(sessionId);
+    }
+    this.postState();
+  }
+
+  private sessionDetails(sessionId: string, meta: SessionMeta | undefined, analysis: SessionAnalysis | undefined): SessionDetails {
+    const { liveMonitor, sessionFocus, summaryService, sessionTitle } = this.dependencies;
     const liveSession = liveMonitor.get(sessionId);
     const runKind = sidebarRunKind(sessionFocus.focusSource() === "terminal", liveSession);
     const isLive = runKind === "idle" || runKind === "busy";
     const { stateLabel, resumeLabel } = previewRunState(isLive ? undefined : liveSession);
-    const status = sessionStatusFor(registry, sessionId);
     const summary = meta && pickHoverSummary(meta.recap, summaryService.summaryFor(sessionId), meta.sizeBytes);
-    const untracked = untrackedKinds(declarationMonitor.sessionWork(sessionId), declarationMonitor.declaredTickets(sessionId).length);
     const lastActive = meta === undefined ? undefined : formatAge(meta.lastActivityMs);
     const cwd = meta === undefined ? undefined : tildePath(meta.resumeCwd ?? meta.startCwd);
     const branch = meta?.gitBranch || undefined;
@@ -237,10 +333,7 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
       metaLine: metaLine(cwd, branch, otherRepos),
       metaTitle: metaTitle(cwd, branch),
       stateSentence: stateSentence({ runKind, lastActive, isBackgroundAgent }),
-      status:
-        status === undefined
-          ? undefined
-          : { name: status.name, icon: status.icon, color: `--vscode-${statusColorId(status.color).replace(/\./g, "-")}`, reason: status.reason },
+      status: this.headerStatus(sessionId, analysis),
       summary:
         summary === undefined
           ? undefined
@@ -248,24 +341,35 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
       summaryPrompt: summaryPrompt(summary, meta !== undefined),
       isSummarizing: summaryService.isSummarizing(sessionId),
       hasTranscript: meta !== undefined,
-      untracked: untracked.map((kind) => TRACKED_KIND_LABELS[kind]),
-      recheck: populator.isPopulating(sessionId) ? { status: "running" } : this.recheckLine(sessionId),
     };
   }
 
-  private recheckLine(sessionId: string): RecheckLine | undefined {
-    const recheckState = this.recheckStates.get(sessionId);
-    if (recheckState?.status === "done") {
-      return { status: "done", text: recheckSummaryText(recheckState.summary) };
+  // A status the user set wins; otherwise the analyzer's derived status shows, tagged as automatic.
+  private headerStatus(sessionId: string, analysis: SessionAnalysis | undefined): HeaderStatus | undefined {
+    const userStatus = sessionStatusFor(this.dependencies.registry, sessionId);
+    const derivedStatus =
+      userStatus === undefined && analysis?.sessionStatus !== undefined
+        ? configuredStatuses().find((status) => status.id === analysis.sessionStatus)
+        : undefined;
+    const shownStatus = userStatus ?? derivedStatus;
+    if (shownStatus === undefined) {
+      return undefined;
     }
-    return recheckState;
+    return {
+      name: shownStatus.name,
+      color: `--vscode-${statusColorId(shownStatus.color).replace(/\./g, "-")}`,
+      reason: userStatus?.reason,
+      isDerived: userStatus === undefined,
+    };
   }
 
-  private rowFor({ link, depth }: OrderedResource): PanelRow {
+  // An artifact shows the analyzer's short title; its slug stays in the hover text.
+  private rowFor(link: MarkedLink, artifactTitle: string | undefined): PanelRow {
     const { linkStatusService, statusConfig } = this.dependencies;
     const status = linkStatusService.statusFor(link);
-    const row = resourceRow(link, status, linkStatusColor(statusConfig, link, status), readLinkSettings().jiraBaseUrl, depth);
-    return { ...row, shortStatus: shortLinkStatus(row.statusText), hoverTitle: linkRowTitle(row) };
+    const row = resourceRow(link, status, linkStatusColor(statusConfig, link, status), readLinkSettings().jiraBaseUrl, ITEM_ROW_DEPTH);
+    const shownLabel = link.kind === "artifact" && artifactTitle !== undefined ? artifactTitle : row.label;
+    return { ...row, label: shownLabel, shortStatus: shortLinkStatus(row.statusText), hoverTitle: linkRowTitle(row) };
   }
 
   private urlFor(key: string): string | undefined {
@@ -275,6 +379,10 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
 
   private shownLink(key: string): MarkedLink | undefined {
     return this.shownLinks.find((link) => linkKey(link) === key);
+  }
+
+  private isShownWorkstream(workstreamId: unknown): workstreamId is string {
+    return this.shownGroups.some((group) => !group.isUnsorted && group.id === workstreamId);
   }
 
   private async receive(message: PanelMessage): Promise<void> {
@@ -287,6 +395,7 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
       return;
     }
     const { registry } = this.dependencies;
+    const storedEdits = registry.workstreamEdits(sessionId);
     switch (message.type) {
       case "open": {
         const url = this.urlFor(message.key);
@@ -309,42 +418,33 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
         }
         return;
       }
-      case "reorder": {
-        const reorderedKeys = acceptedOrder(this.shownLinks.map(linkKey), message.keys);
-        if (reorderedKeys !== undefined) {
-          // Hidden links keep their saved place after the shown ones, so showing them again does not move them.
-          const hiddenKeys = registry.linkOrder(sessionId).filter((key) => !reorderedKeys.includes(key));
-          await registry.setLinkOrder(sessionId, [...reorderedKeys, ...hiddenKeys]);
-        }
-        return;
-      }
-      case "setFilter":
-        if (LINK_FILTERS.includes(message.filter) && typeof message.value === "boolean") {
-          await vscode.workspace.getConfiguration("overseer.links").update(message.filter, message.value, vscode.ConfigurationTarget.Global);
-        }
-        return;
       case "setMark":
-        if (this.shownLink(message.key) !== undefined && (message.mark === null || LINK_MARKS.has(message.mark))) {
-          await registry.setLinkMark(sessionId, [message.key], message.mark ?? undefined);
+        await this.setRemoved(sessionId, message.key, message.mark === "removed", storedEdits);
+        return;
+      case "renameWorkstream":
+        if (this.isShownWorkstream(message.id) && typeof message.title === "string") {
+          await registry.setWorkstreamEdits(sessionId, withRenamedWorkstream(storedEdits, message.id, message.title));
         }
         return;
-      case "pinByKey": {
-        const typedKey = await vscode.window.showInputBox({
-          title: "Pin a ticket to this session",
-          placeHolder: "PROJ-123",
-          validateInput: (input) => (normalizeTicketKey(input) === undefined ? "Enter a Jira key like PROJ-123." : undefined),
-        });
-        const ticketKey = typedKey === undefined ? undefined : normalizeTicketKey(typedKey);
-        if (ticketKey !== undefined) {
-          await registry.setLinkMark(sessionId, [`ticket:${ticketKey}`], "pinned");
+      case "moveItem": {
+        const targetWorkstreamId = resolveItemDrop(this.shownGroups, message.key, message.workstreamId);
+        if (targetWorkstreamId !== undefined) {
+          await registry.setWorkstreamEdits(sessionId, withPinnedItem(storedEdits, message.key, targetWorkstreamId));
         }
         return;
       }
-      case "refreshWorkingOn":
-        this.refreshWorkingOn();
+      case "reorderWorkstreams": {
+        const shownWorkstreamIds = this.shownGroups.filter((group) => !group.isUnsorted).map((group) => group.id);
+        const workstreamOrder = Array.isArray(message.ids) ? acceptedOrder(shownWorkstreamIds, message.ids) : undefined;
+        if (workstreamOrder !== undefined) {
+          await registry.setWorkstreamEdits(sessionId, withWorkstreamOrder(storedEdits, workstreamOrder));
+        }
         return;
-      case "findAgain":
-        await vscode.commands.executeCommand("overseer.findResources", sessionId);
+      }
+      case "setWorkstreamDone":
+        if (this.isShownWorkstream(message.id) && typeof message.done === "boolean") {
+          await registry.setWorkstreamEdits(sessionId, withWorkstreamDone(storedEdits, message.id, message.done));
+        }
         return;
       case "action":
         if (message.action === "resume") {
@@ -353,40 +453,19 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
           await vscode.commands.executeCommand(ACTION_COMMANDS[message.action], sessionId);
         }
         return;
-      case "recheck":
-        await this.recheck(sessionId);
-        return;
-      case "dismissRecheck":
-        this.recheckStates.delete(sessionId);
-        this.postState();
-        return;
     }
   }
 
-  private refreshWorkingOn(): void {
-    this.dependencies.declarationMonitor.rescan();
-    this.dependencies.linkStatusService.refresh(this.shownLinks);
-  }
-
-  // Find links runs after the Haiku pass so new artifacts and the judge's parents show too.
-  private async recheck(sessionId: string): Promise<void> {
-    const { findSessionMeta, populator } = this.dependencies;
-    const meta = findSessionMeta(sessionId);
-    if (meta === undefined || this.recheckStates.get(sessionId)?.status === "running") {
+  // Link marks hold removals; a restore also clears an older removal kept in the stored edits.
+  private async setRemoved(sessionId: string, itemKey: string, isRemoved: boolean, storedEdits: WorkstreamEdits): Promise<void> {
+    const { registry } = this.dependencies;
+    if (this.shownLink(itemKey) === undefined) {
       return;
     }
-    this.recheckStates.set(sessionId, { status: "running" });
-    this.postState();
-    try {
-      const summary = await populator.populate(meta, { isRecheck: true });
-      // The declarations are already saved, so a failed scan must not hide them.
-      await Promise.resolve(vscode.commands.executeCommand("overseer.findResources", sessionId)).catch(() => undefined);
-      this.recheckStates.set(sessionId, { status: "done", summary });
-    } catch (error) {
-      this.recheckStates.set(sessionId, { status: "failed", reason: error instanceof Error ? error.message : String(error) });
+    await registry.setLinkMark(sessionId, [itemKey], isRemoved ? "removed" : undefined);
+    if (!isRemoved && storedEdits.removedItems.includes(itemKey)) {
+      await registry.setWorkstreamEdits(sessionId, withoutRemovedItem(storedEdits, itemKey));
     }
-    this.refreshWorkingOn();
-    this.postState();
   }
 
   // Resuming the previewed session opens its terminal in the preview's place.
@@ -416,6 +495,15 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
 <style nonce="${nonce}">
   :root {
     color-scheme: light dark;
+    --s1: 4px;
+    --s2: 8px;
+    --s3: 12px;
+    --s4: 16px;
+    --row-height: 28px;
+    --indent: 12px;
+    --icon-size: 14px;
+    --mono: var(--vscode-editor-font-family);
+    --muted: var(--vscode-descriptionForeground);
     --hairline: var(--vscode-sideBarSectionHeader-border, var(--vscode-widget-border, transparent));
     --outline: var(--vscode-button-border, var(--vscode-contrastBorder, var(--vscode-widget-border, var(--vscode-descriptionForeground))));
   }
@@ -424,133 +512,149 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     margin: 0;
     padding: 0;
     font-family: var(--vscode-font-family);
-    font-size: var(--vscode-font-size);
+    font-size: 13px;
     color: var(--vscode-foreground);
     background: var(--vscode-sideBar-background);
   }
   #root { display: flex; flex-direction: column; }
   button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
   :focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
-  .scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 12px; }
+  .scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: var(--s3); }
   .scroll.centered { display: flex; align-items: center; justify-content: center; padding-bottom: 0; }
-  .mono { font-family: var(--vscode-editor-font-family); }
+  .mono { font-family: var(--mono); }
   .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .header { padding: 14px 16px 0; }
-  .title-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .title-line > .codicon { flex-shrink: 0; font-size: 14px; }
-  h1 { flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 600; }
-  .status-text { flex-shrink: 0; font-size: 11px; }
-  .meta-line { margin: 4px 0 0 22px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+  .header { padding: var(--s4) var(--s4) 0; }
+  .title-line { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+  .title-line > .codicon { flex-shrink: 0; font-size: var(--icon-size); }
+  h1 { flex: 1 1 auto; min-width: 64px; margin: 0; font-size: 14px; font-weight: 600; }
+  .header-status { flex: 0 1 auto; display: flex; align-items: baseline; gap: var(--s1); min-width: 0; max-width: 50%; font-size: 11px; color: var(--status-color, var(--muted)); }
+  .header-status .name { min-width: 0; }
+  .auto-tag { flex-shrink: 0; font-size: 10px; color: var(--muted); }
+  .meta-line { margin: var(--s1) 0 0 calc(var(--icon-size) + var(--s2)); font-size: 11px; color: var(--muted); }
   .busy { color: var(--vscode-charts-blue); }
   .idle { color: var(--vscode-charts-green); }
   .paused { color: var(--vscode-icon-foreground); }
   .elsewhere { color: var(--vscode-charts-orange); }
-  .next { margin: 16px 16px 0; }
-  .state-sentence { margin: 0 0 6px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+  .where { margin: var(--s3) var(--s4) 0; padding-top: var(--s2); border-top: 1px solid var(--hairline); }
+  .where-line { margin: 0; font-family: var(--mono); font-size: 12px; line-height: 18px; text-wrap: pretty; }
+  .where-caption { display: flex; align-items: center; gap: var(--s1); margin: var(--s1) 0 0; font-size: 11px; color: var(--muted); }
+  .where-caption .codicon { font-size: 12px; }
+  .next { margin: var(--s4) var(--s4) 0; }
+  .state-sentence { margin: 0 0 var(--s2); font-size: 11px; color: var(--muted); }
   .state-sentence.elsewhere { color: var(--vscode-charts-orange); }
   .recap-text { display: block; width: 100%; text-align: left; font-size: 14px; line-height: 22px; text-wrap: pretty; }
   .recap-text.clamped { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-  .caption { margin: 6px 0 0; font-size: 11px; color: var(--vscode-disabledForeground); }
-  .summary-prompt.stale { margin-top: 4px; }
-  .summary-prompt .codicon { font-size: 14px; color: var(--vscode-editorWarning-foreground); }
-  .muted { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--vscode-descriptionForeground); }
-  .main-actions { display: flex; gap: 8px; margin-top: 12px; }
-  .button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 2px; font-size: 13px; font-weight: 500; transition: background-color 80ms linear; }
-  .button .codicon { font-size: 14px; }
+  .caption { margin: var(--s1) 0 0; font-size: 11px; color: var(--vscode-disabledForeground); }
+  .summary-prompt.stale { margin-top: var(--s1); }
+  .summary-prompt .codicon { font-size: var(--icon-size); color: var(--vscode-editorWarning-foreground); }
+  .muted { display: flex; align-items: center; gap: var(--s2); margin: 0; font-size: 12px; color: var(--muted); }
+  .main-actions { display: flex; gap: var(--s2); margin-top: var(--s3); }
+  .button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: var(--s2); height: 32px; padding: 0 var(--s3); border-radius: 2px; font-size: 13px; font-weight: 500; transition: background-color 80ms linear; }
+  .button .codicon { font-size: var(--icon-size); }
   .button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
   .button.primary:hover { background: var(--vscode-button-hoverBackground); }
   .button.outline { border: 1px solid var(--outline); color: var(--vscode-foreground); }
   .button.outline:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
   .button.square { flex: none; width: 32px; padding: 0; }
+  .button.compact { flex: none; height: var(--row-height); }
   .button:disabled { opacity: 0.5; cursor: default; }
-  .work { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--hairline); }
-  .work-heading { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 16px; }
-  .work-heading h2 { flex: 1; margin: 0; font-size: 12px; font-weight: 600; }
-  .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 4px; color: var(--vscode-descriptionForeground); }
+  .work { margin-top: var(--s4); padding-top: var(--s3); border-top: 1px solid var(--hairline); }
+  .section-heading { display: flex; align-items: center; gap: var(--s1); height: var(--row-height); padding: 0 var(--s2) 0 var(--s4); }
+  .section-heading h2 { flex: 1; margin: 0; font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 4px; color: var(--muted); transition: background-color 80ms linear; }
   .icon-button:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); color: var(--vscode-foreground); }
   .icon-button:disabled { opacity: 0.4; cursor: default; }
-  .icon-button .codicon { font-size: 14px; }
-  .list { list-style: none; margin: 0; padding: 0; }
-  .link-row { position: relative; display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 16px; transition: background-color 80ms linear; }
-  .link-row:hover { background: var(--vscode-list-hoverBackground); }
-  .glyph { flex-shrink: 0; width: 14px; height: 14px; }
-  .glyph:not([data-status]) { stroke: var(--vscode-descriptionForeground); }
-  .key { flex-shrink: 0; font-family: var(--vscode-editor-font-family); font-size: 12px; color: var(--vscode-foreground); white-space: nowrap; text-decoration: none; }
-  a.key { cursor: pointer; }
-  a.key:hover { text-decoration: underline; }
-  .label { flex: 1; min-width: 0; font-size: 12px; color: var(--vscode-descriptionForeground); }
-  .short-status { flex-shrink: 0; font-size: 11px; color: var(--vscode-descriptionForeground); }
-  .actions { display: none; flex-shrink: 0; margin: -4px -6px -4px 0; }
-  .link-row:hover .actions, .link-row:focus-within .actions, .actions:has(.menu) { display: flex; }
-  .link-row:hover .short-status, .link-row:focus-within .short-status, .link-row:has(.menu) .short-status { display: none; }
-  .gripper { position: absolute; left: 1px; visibility: hidden; cursor: grab; font-size: 14px; color: var(--vscode-descriptionForeground); }
-  .link-row:hover .gripper { visibility: visible; }
-  .seen { height: 26px; padding-left: 34px; opacity: 0.8; }
-  .seen .gripper { left: 16px; }
-  .seen:hover, .seen:focus-within { opacity: 1; }
-  .seen.dimmed { opacity: 0.5; }
-  .seen.dimmed:hover, .seen.dimmed:focus-within { opacity: 1; }
-  .parent-group { opacity: 0.5; }
-  .parent-group:hover, .parent-group:focus-within { opacity: 1; }
-  .removed .key { text-decoration: line-through; }
-  .tag { flex-shrink: 0; font-size: 11px; font-style: italic; color: var(--vscode-descriptionForeground); }
-  .seen:hover .tag, .seen:focus-within .tag { display: none; }
-  .untracked { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 16px; font-size: 12px; color: var(--vscode-descriptionForeground); }
-  .untracked .codicon { flex-shrink: 0; font-size: 14px; }
-  .untracked .text { flex: 1; min-width: 0; }
+  .icon-button .codicon { font-size: var(--icon-size); }
+  .loading-work { padding: 0 var(--s4); }
   .link-button { flex-shrink: 0; color: var(--vscode-textLink-foreground); }
   .link-button:hover { text-decoration: underline; }
-  .empty-work { margin: 0 16px 4px; font-size: 12px; line-height: 18px; color: var(--vscode-descriptionForeground); }
-  .disclosure-row { display: flex; align-items: center; margin-top: 4px; padding-right: 10px; }
-  .disclosure { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 0 0 16px; font-size: 12px; text-align: left; color: var(--vscode-descriptionForeground); }
-  .disclosure:hover:not(:disabled) { color: var(--vscode-foreground); }
-  .disclosure:disabled { cursor: default; }
-  .disclosure .codicon { flex-shrink: 0; font-size: 12px; transition: transform 100ms linear; }
+  .empty-work { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); margin: var(--s1) var(--s4) 0; font-size: 12px; line-height: 18px; color: var(--muted); }
+  .empty-work p { margin: 0; }
+  .ws-group { margin-top: var(--s2); }
+  .ws-group.done { opacity: 0.6; }
+  .ws-group.done:hover, .ws-group.done:focus-within { opacity: 1; }
+  .ws-group.drop-target { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+  .ws-header { position: relative; display: flex; align-items: center; gap: var(--s1); height: var(--row-height); padding: 0 var(--s2) 0 var(--s4); transition: background-color 80ms linear; }
+  .ws-header:hover { background: var(--vscode-list-hoverBackground); }
+  .chevron { flex-shrink: 0; display: inline-flex; color: var(--muted); }
+  .chevron .codicon { font-size: var(--icon-size); transition: transform 120ms ease-out; }
+  .ws-group.expanded .chevron .codicon { transform: rotate(90deg); }
+  .done-check { flex-shrink: 0; font-size: var(--icon-size); color: var(--vscode-charts-green); }
+  .ws-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; }
+  .unsorted .ws-title { font-weight: 400; color: var(--muted); }
+  .ws-count { flex-shrink: 0; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .rename-input { flex: 1; min-width: 0; height: 22px; padding: 0 var(--s1); border: 1px solid var(--vscode-focusBorder); border-radius: 2px; font: inherit; font-size: 13px; font-weight: 600; color: var(--vscode-input-foreground); background: var(--vscode-input-background); outline: none; }
+  .ws-actions { display: none; flex-shrink: 0; }
+  .ws-header:hover .ws-actions, .ws-header:focus-within .ws-actions, .ws-header:has(.is-open) .ws-actions { display: flex; }
+  .ws-header:hover .ws-count, .ws-header:focus-within .ws-count, .ws-header:has(.is-open) .ws-count { display: none; }
+  .ticket-line { display: flex; flex-wrap: wrap; gap: 0 var(--s2); max-height: 36px; overflow: hidden; padding: 0 var(--s4) var(--s1) calc(var(--s4) + var(--icon-size) + var(--s1)); }
+  .ticket-chip { display: inline-flex; align-items: center; gap: var(--s1); font-family: var(--mono); font-size: 11px; line-height: 18px; color: var(--vscode-foreground); text-decoration: none; }
+  a.ticket-chip:hover { text-decoration: underline; }
+  .dot { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--status-color, var(--muted)); }
+  .list { list-style: none; margin: 0; padding: 0; }
+  .link-row { position: relative; display: flex; align-items: center; gap: var(--s2); height: var(--row-height); padding: 0 var(--s4) 0 calc(var(--s4) + var(--depth, 0) * var(--indent)); transition: background-color 80ms linear; }
+  .link-row:hover { background: var(--vscode-list-hoverBackground); }
+  .glyph { flex-shrink: 0; width: var(--icon-size); height: var(--icon-size); stroke: var(--status-color, var(--muted)); }
+  .key { flex: 0 1 auto; min-width: 32px; max-width: 72px; font-family: var(--mono); font-size: 11px; color: var(--vscode-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
+  a.key { cursor: pointer; }
+  a.key:hover { text-decoration: underline; }
+  .label { flex: 1 1 0; min-width: 0; font-size: 13px; color: var(--muted); }
+  .short-status { flex: 0 1 auto; min-width: 0; max-width: 30%; font-family: var(--mono); font-size: 11px; color: var(--status-color, var(--muted)); }
+  .actions { display: none; flex-shrink: 0; margin: calc(-1 * var(--s1)) calc(-1 * var(--s2)) calc(-1 * var(--s1)) 0; }
+  .link-row:hover .actions, .link-row:focus-within .actions, .link-row:has(.is-open) .actions { display: flex; }
+  .link-row:hover .short-status, .link-row:focus-within .short-status, .link-row:has(.is-open) .short-status { display: none; }
+  .gripper { position: absolute; left: 1px; visibility: hidden; cursor: grab; font-size: var(--icon-size); color: var(--muted); }
+  .link-row:hover .gripper, .ws-header:hover .gripper { visibility: visible; }
+  .removed .key { text-decoration: line-through; }
+  .disclosure { display: flex; align-items: center; gap: var(--s1); width: 100%; height: var(--row-height); margin-top: var(--s2); padding: 0 var(--s4); font-size: 12px; text-align: left; color: var(--muted); }
+  .disclosure:hover { color: var(--vscode-foreground); }
+  .disclosure .codicon { flex-shrink: 0; font-size: var(--icon-size); transition: transform 120ms ease-out; }
   .disclosure[aria-expanded="true"] .codicon-chevron-right { transform: rotate(90deg); }
-  .disclosure-tools { display: flex; visibility: hidden; }
-  .disclosure-row:hover .disclosure-tools, .disclosure-row:focus-within .disclosure-tools, .disclosure-row.is-filtering .disclosure-tools { visibility: visible; }
-  .filter-note { margin: 0; padding: 0 16px 4px 34px; font-size: 11px; color: var(--vscode-descriptionForeground); }
   .dragging { opacity: 0.4; }
   .drop-before { box-shadow: inset 0 2px 0 var(--vscode-focusBorder); }
   .drop-after { box-shadow: inset 0 -2px 0 var(--vscode-focusBorder); }
-  .menu-anchor { position: relative; display: inline-flex; }
   .menu {
-    position: absolute;
-    right: 0;
-    top: 24px;
+    position: fixed;
+    top: var(--menu-top, 0);
+    left: var(--menu-left, 0);
     z-index: 10;
     min-width: 184px;
-    padding: 4px 0;
+    max-width: calc(100vw - 2 * var(--s1));
+    padding: var(--s1) 0;
+    box-sizing: border-box;
     border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, transparent));
     border-radius: 4px;
     background: var(--vscode-menu-background);
     color: var(--vscode-menu-foreground);
+    box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
   }
-  .menu-item { display: flex; align-items: center; gap: 8px; width: 100%; height: 22px; padding: 0 8px; font-size: 13px; text-align: left; white-space: nowrap; }
+  .menu-item { display: flex; align-items: center; gap: var(--s2); width: 100%; height: 22px; padding: 0 var(--s2); font-size: 13px; text-align: left; white-space: nowrap; }
+  .menu-item span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .menu-item:hover, .menu-item:focus-visible { background: var(--vscode-menu-selectionBackground); color: var(--vscode-menu-selectionForeground); outline: none; }
-  .menu-item .codicon { font-size: 14px; }
-  .menu-separator { height: 1px; margin: 4px 0; background: var(--vscode-menu-separatorBackground, var(--vscode-menu-border)); }
+  .menu-item .codicon { flex-shrink: 0; font-size: var(--icon-size); }
+  .menu-heading { margin: 0; padding: var(--s1) var(--s2) 2px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .menu-separator { height: 1px; margin: var(--s1) 0; background: var(--vscode-menu-separatorBackground, var(--vscode-menu-border)); }
   .toolbar {
     flex-shrink: 0;
-    padding: 8px 8px 10px;
+    padding: var(--s2);
     border-top: 1px solid var(--hairline);
     background: var(--vscode-sideBarSectionHeader-background, var(--vscode-editorWidget-background));
   }
-  .group-label { margin: 0; padding: 2px 8px 4px; font-family: var(--vscode-editor-font-family); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--vscode-descriptionForeground); }
-  .group-hint { margin-left: 6px; font-family: var(--vscode-font-family); font-size: 11px; letter-spacing: normal; text-transform: none; color: var(--vscode-disabledForeground); }
-  .tile-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; margin-bottom: 6px; }
+  .group-label { margin: 0; padding: 2px var(--s2) var(--s1); font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .group-hint { margin-left: var(--s1); font-family: var(--vscode-font-family); font-size: 11px; letter-spacing: normal; text-transform: none; color: var(--vscode-disabledForeground); }
+  .tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(56px, 1fr)); gap: 2px; margin-bottom: var(--s2); }
   .tile-grid:last-child { margin-bottom: 0; }
-  .tile { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; padding: 6px 0 5px; border-radius: 4px; color: var(--vscode-icon-foreground); transition: background-color 80ms linear, color 80ms linear; }
+  .tile { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: var(--s1) 0; border-radius: 4px; color: var(--vscode-icon-foreground); transition: background-color 80ms linear, color 80ms linear; }
   .tile:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); color: var(--vscode-textLink-activeForeground); }
   .tile:disabled { opacity: 0.5; cursor: default; }
-  .tile .codicon { font-size: 16px; }
+  .tile .codicon { font-size: var(--s4); }
   .tile span:last-child { max-width: 100%; padding: 0 2px; box-sizing: border-box; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .empty { padding: 24px 20px; font-size: 13px; line-height: 20px; text-align: center; color: var(--vscode-descriptionForeground); }
-  .empty p { margin: 4px 0 0; }
-  .empty .lead { margin-top: 8px; color: var(--vscode-foreground); }
-  .empty .codicon { font-size: 16px; }
+  .empty { padding: var(--s4); font-size: 13px; line-height: 20px; text-align: center; color: var(--muted); }
+  .empty p { margin: var(--s1) 0 0; }
+  .empty .lead { margin-top: var(--s2); color: var(--vscode-foreground); }
+  .empty .codicon { font-size: var(--s4); }
   @media (prefers-reduced-motion: reduce) {
-    .link-row, .button, .tile, .disclosure .codicon { transition: none; }
+    .link-row, .ws-header, .button, .icon-button, .tile, .chevron .codicon, .disclosure .codicon { transition: none; }
   }
 </style>
 </head>
@@ -558,12 +662,14 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
 <div id="root"></div>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
-  const savedViewState = { isAlsoSeenExpanded: Boolean(vscode.getState()?.isAlsoSeenExpanded) };
+  const savedViewState = readSavedViewState();
   let isRecapExpanded = false;
   let shownSessionId = undefined;
   const RUN_ICONS = { idle: "circle-filled", busy: "loading", paused: "debug-pause", elsewhere: "broadcast" };
-  const NESTED_ROW_INDENT_PX = 18;
-  const ROW_GUTTER_PX = 16;
+  const UNSORTED_GROUP_ID = "unsorted";
+  const REMOVED_GROUP_ID = "removed";
+  const MENU_MARGIN_PX = 4;
+  const MENU_GAP_PX = 2;
   const CLAUDE_ACTIONS = [
     ["compact", "fold", "Compact", "Compact"],
     ["clear", "clear-all", "Clear", "Clear"],
@@ -572,17 +678,38 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     ["command", "terminal", "Run…", "Run command"],
   ];
   const SESSION_ACTIONS = [
-    ["findLinks", "search", "Find links", "Find links"],
-    ["analyze", "refresh", "Update", "Update now"],
-    ["recheckAnalysis", "debug-restart", "Recheck", "Recheck from scratch"],
+    ["analyze", "sync", "Update", "Update now"],
+    ["recheckAnalysis", "layers", "Recheck", "Recheck from scratch"],
     ["openRepo", "source-control", "Repo", "Open repo"],
     ["status", "tag", "Status", "Set status"],
     ["rename", "edit", "Rename", "Rename"],
   ];
   const ACTIONS_WITHOUT_TRANSCRIPT = new Set(["rename", "status"]);
+  const MISSING_LABELS = { ticket: "Summary loads from Jira", pr: "Title loads from GitHub", artifact: "", commit: "" };
   let panelState = undefined;
   let openMenuId = undefined;
-  let draggedRow = undefined;
+  let menuBuilders = new Map();
+  let renaming = undefined;
+  let draggedItem = undefined;
+  let draggedGroupId = undefined;
+
+  // Collapse choices are kept per session; a group with no choice uses its default.
+  function readSavedViewState() {
+    const saved = vscode.getState();
+    const collapsedBySession = saved && typeof saved.collapsedBySession === "object" && saved.collapsedBySession !== null ? saved.collapsedBySession : {};
+    return { collapsedBySession };
+  }
+
+  function isCollapsed(groupId, isCollapsedByDefault) {
+    const choice = savedViewState.collapsedBySession[shownSessionId]?.[groupId];
+    return typeof choice === "boolean" ? choice : isCollapsedByDefault;
+  }
+
+  function setCollapsed(groupId, collapsed) {
+    savedViewState.collapsedBySession[shownSessionId] = { ...savedViewState.collapsedBySession[shownSessionId], [groupId]: collapsed };
+    vscode.setState(savedViewState);
+    render();
+  }
 
   function element(tagName, className, text) {
     const created = document.createElement(tagName);
@@ -593,6 +720,10 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       created.textContent = text;
     }
     return created;
+  }
+
+  function classNames(...names) {
+    return names.filter(Boolean).join(" ");
   }
 
   function codicon(iconName, title) {
@@ -631,10 +762,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     svg.setAttribute("stroke-width", "2");
     svg.setAttribute("stroke-linecap", "round");
     svg.setAttribute("stroke-linejoin", "round");
-    if (row.statusColor) {
-      svg.setAttribute("stroke", row.statusColor);
-      svg.setAttribute("data-status", "");
-    }
     svg.innerHTML = row.glyph;
     return svg;
   }
@@ -643,21 +770,24 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     vscode.postMessage(message);
   }
 
-  const MISSING_LABELS = { ticket: "Summary loads from Jira", pr: "Title loads from GitHub", artifact: "" };
+  function runAction(action) {
+    send({ type: "action", action });
+  }
 
-  function keyElement(row) {
+  function keyElement(row, className) {
     if (row.url === undefined) {
-      const plainKey = element("span", "key", row.displayId);
+      const plainKey = element("span", className, row.displayId);
       if (row.kind === "ticket") {
         plainKey.title = "Set overseer.links.jira.baseUrl to open tickets";
       }
       return plainKey;
     }
-    const link = element("a", "key", row.displayId);
+    const link = element("a", className, row.displayId);
     link.href = "#";
     link.title = "Open " + row.displayId;
     link.addEventListener("click", (event) => {
       event.preventDefault();
+      event.stopPropagation();
       send({ type: "open", key: row.key, target: "browser" });
     });
     return link;
@@ -677,37 +807,59 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     return item;
   }
 
+  // The menu itself is drawn on the panel after render, so a row's edge never clips it.
   function menuButton(menuId, iconName, label, buildItems) {
-    const anchor = element("span", "menu-anchor");
+    menuBuilders.set(menuId, buildItems);
+    const isOpen = openMenuId === menuId;
     const button = iconButton(iconName, label, () => {
-      openMenuId = openMenuId === menuId ? undefined : menuId;
+      openMenuId = isOpen ? undefined : menuId;
       render();
     });
+    button.dataset.menuId = menuId;
+    button.classList.toggle("is-open", isOpen);
     button.setAttribute("aria-haspopup", "menu");
-    button.setAttribute("aria-expanded", String(openMenuId === menuId));
-    anchor.append(button);
-    if (openMenuId === menuId) {
-      const menu = element("div", "menu");
-      menu.setAttribute("role", "menu");
-      menu.append(...buildItems());
-      anchor.append(menu);
-    }
-    return anchor;
+    button.setAttribute("aria-expanded", String(isOpen));
+    return button;
   }
 
-  // Open and Pin stay on the row; the rest goes in a menu so the key keeps its room at narrow widths.
-  function rowActions(row, pinLabel) {
+  function drawOpenMenu(root) {
+    const anchor = openMenuId === undefined ? null : root.querySelector('[data-menu-id="' + CSS.escape(openMenuId) + '"]');
+    if (anchor === null) {
+      openMenuId = undefined;
+      return;
+    }
+    const menu = element("div", "menu");
+    menu.setAttribute("role", "menu");
+    menu.append(...menuBuilders.get(openMenuId)());
+    menu.addEventListener("click", (event) => event.stopPropagation());
+    root.append(menu);
+    const anchorBounds = anchor.getBoundingClientRect();
+    const menuBounds = menu.getBoundingClientRect();
+    const rightmostLeft = window.innerWidth - menuBounds.width - MENU_MARGIN_PX;
+    const left = Math.max(MENU_MARGIN_PX, Math.min(anchorBounds.right - menuBounds.width, rightmostLeft));
+    const fitsBelow = anchorBounds.bottom + MENU_GAP_PX + menuBounds.height <= window.innerHeight - MENU_MARGIN_PX;
+    const top = fitsBelow ? anchorBounds.bottom + MENU_GAP_PX : Math.max(MENU_MARGIN_PX, anchorBounds.top - MENU_GAP_PX - menuBounds.height);
+    menu.style.setProperty("--menu-left", left + "px");
+    menu.style.setProperty("--menu-top", top + "px");
+  }
+
+  function moveTargetItems(row, group) {
+    const targets = panelState.work.groups.filter((otherGroup) => otherGroup.id !== group.id && !otherGroup.isUnsorted);
+    const items = targets.map((target) => menuItem("arrow-right", target.title, () => send({ type: "moveItem", key: row.key, workstreamId: target.id })));
+    if (!group.isUnsorted) {
+      items.push(menuItem("inbox", "Unsorted", () => send({ type: "moveItem", key: row.key, workstreamId: UNSORTED_GROUP_ID })));
+    }
+    return items.length === 0 ? [] : [element("div", "menu-separator"), element("p", "menu-heading", "Move to"), ...items];
+  }
+
+  function rowActions(row, group) {
     const actions = element("div", "actions");
     if (row.mark === "removed") {
       actions.append(iconButton("discard", "Restore", () => send({ type: "setMark", key: row.key, mark: null })));
       return actions;
     }
-    const isPinned = row.mark === "pinned";
     actions.append(
       iconButton("link-external", "Open in Browser", () => send({ type: "open", key: row.key, target: "browser" }), row.url === undefined),
-      iconButton(isPinned ? "pinned-dirty" : "pin", isPinned ? "Unpin" : pinLabel, () =>
-        send({ type: "setMark", key: row.key, mark: isPinned ? null : "pinned" }),
-      ),
       menuButton("row:" + row.key, "ellipsis", "More Actions", () => {
         const items = [];
         if (row.url !== undefined) {
@@ -717,108 +869,288 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
         if (row.kind === "ticket" && panelState.isJiraEnabled) {
           items.push(menuItem("arrow-swap", "Move to Status…", () => send({ type: "moveStatus", key: row.key })));
         }
-        if (!row.isParentGroup) {
-          items.push(element("div", "menu-separator"));
-          items.push(menuItem("close", "Remove from This Session", () => send({ type: "setMark", key: row.key, mark: "removed" })));
-        }
+        items.push(...moveTargetItems(row, group));
+        items.push(element("div", "menu-separator"));
+        items.push(menuItem("close", "Remove from This Session", () => send({ type: "setMark", key: row.key, mark: "removed" })));
         return items;
       }),
     );
     return actions;
   }
 
-  // Rows reorder only within their own section; the extension saves one order across both.
-  function makeDraggable(item, row, sectionRows) {
+  function itemRow(row, group) {
+    const item = element("li", classNames("link-row", row.mark === "removed" && "removed"));
+    item.style.setProperty("--depth", String(row.depth));
+    if (row.statusColor) {
+      item.style.setProperty("--status-color", row.statusColor);
+    }
+    item.title = row.hoverTitle;
+    item.append(glyphElement(row), keyElement(row, "key"), element("span", "label ellipsis", row.label || MISSING_LABELS[row.kind]));
+    if (row.shortStatus) {
+      item.append(element("span", "short-status ellipsis", row.shortStatus));
+    }
+    if (row.mark === "removed") {
+      item.append(rowActions(row, undefined));
+      return item;
+    }
+    item.append(rowActions(row, group));
+    makeItemDraggable(item, row, group);
+    return item;
+  }
+
+  function makeItemDraggable(item, row, group) {
     item.draggable = true;
-    item.dataset.key = row.key;
-    item.prepend(codicon("gripper", "Drag to Reorder"));
-    item.firstChild.classList.add("gripper");
+    const gripper = codicon("gripper", "Drag to Another Workstream");
+    gripper.classList.add("gripper");
+    item.prepend(gripper);
     item.addEventListener("dragstart", (event) => {
-      draggedRow = { key: row.key, sectionRows };
+      event.stopPropagation();
+      draggedItem = { key: row.key, groupId: group.id };
       event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", row.key);
       item.classList.add("dragging");
     });
     item.addEventListener("dragend", () => {
-      draggedRow = undefined;
+      draggedItem = undefined;
       item.classList.remove("dragging");
       clearDropMarks();
     });
-    item.addEventListener("dragover", (event) => {
-      if (draggedRow === undefined || draggedRow.sectionRows !== sectionRows || draggedRow.key === row.key) {
+  }
+
+  function makeGroupDraggable(header, group) {
+    header.draggable = true;
+    const gripper = codicon("gripper", "Drag to Reorder");
+    gripper.classList.add("gripper");
+    header.prepend(gripper);
+    header.addEventListener("dragstart", (event) => {
+      draggedGroupId = group.id;
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", group.id);
+      header.parentElement.classList.add("dragging");
+    });
+    header.addEventListener("dragend", () => {
+      draggedGroupId = undefined;
+      header.parentElement.classList.remove("dragging");
+      clearDropMarks();
+    });
+  }
+
+  // A row dropped anywhere on another group moves there; a header dropped on another workstream reorders.
+  function makeDropTarget(block, group) {
+    block.addEventListener("dragover", (event) => {
+      if (draggedItem !== undefined && draggedItem.groupId !== group.id) {
+        event.preventDefault();
+        if (!block.classList.contains("drop-target")) {
+          clearDropMarks();
+          block.classList.add("drop-target");
+        }
         return;
       }
-      event.preventDefault();
-      const rowBounds = item.getBoundingClientRect();
-      clearDropMarks();
-      item.classList.add(event.clientY > rowBounds.top + rowBounds.height / 2 ? "drop-after" : "drop-before");
+      if (draggedGroupId !== undefined && draggedGroupId !== group.id && !group.isUnsorted) {
+        event.preventDefault();
+        const bounds = block.getBoundingClientRect();
+        clearDropMarks();
+        block.classList.add(event.clientY > bounds.top + bounds.height / 2 ? "drop-after" : "drop-before");
+      }
     });
-    item.addEventListener("drop", (event) => {
+    block.addEventListener("dragleave", (event) => {
+      if (!block.contains(event.relatedTarget)) {
+        block.classList.remove("drop-target", "drop-before", "drop-after");
+      }
+    });
+    block.addEventListener("drop", (event) => {
       event.preventDefault();
-      const isAfter = item.classList.contains("drop-after");
+      const isAfter = block.classList.contains("drop-after");
       clearDropMarks();
-      if (draggedRow !== undefined) {
-        moveRow(sectionRows, draggedRow.key, row.key, isAfter);
+      if (draggedItem !== undefined) {
+        send({ type: "moveItem", key: draggedItem.key, workstreamId: group.id });
+      } else if (draggedGroupId !== undefined) {
+        send({ type: "reorderWorkstreams", ids: reorderedWorkstreamIds(draggedGroupId, group.id, isAfter) });
       }
     });
   }
 
   function clearDropMarks() {
-    document.querySelectorAll(".drop-before, .drop-after").forEach((item) => item.classList.remove("drop-before", "drop-after"));
+    document.querySelectorAll(".drop-target, .drop-before, .drop-after").forEach((marked) => marked.classList.remove("drop-target", "drop-before", "drop-after"));
   }
 
-  function moveRow(sectionRows, movedKey, targetKey, isAfter) {
-    const movedRow = sectionRows.find((row) => row.key === movedKey);
-    if (movedRow === undefined || movedKey === targetKey) {
+  function shownWorkstreamIds() {
+    return panelState.work.groups.filter((group) => !group.isUnsorted).map((group) => group.id);
+  }
+
+  function reorderedWorkstreamIds(movedId, targetId, isAfter) {
+    const ids = shownWorkstreamIds().filter((id) => id !== movedId);
+    ids.splice(ids.indexOf(targetId) + (isAfter ? 1 : 0), 0, movedId);
+    return ids;
+  }
+
+  function moveWorkstreamBy(groupId, step) {
+    const ids = shownWorkstreamIds();
+    const index = ids.indexOf(groupId);
+    const targetIndex = index + step;
+    if (index < 0 || targetIndex < 0 || targetIndex >= ids.length) {
       return;
     }
-    const reorderedRows = sectionRows.filter((row) => row.key !== movedKey);
-    reorderedRows.splice(reorderedRows.findIndex((row) => row.key === targetKey) + (isAfter ? 1 : 0), 0, movedRow);
-    sectionRows.splice(0, sectionRows.length, ...reorderedRows);
+    ids.splice(index, 1);
+    ids.splice(targetIndex, 0, groupId);
+    send({ type: "reorderWorkstreams", ids });
+  }
+
+  function startRename(group) {
+    openMenuId = undefined;
+    renaming = { groupId: group.id, draft: group.title, isNew: true };
     render();
-    send({ type: "reorder", keys: [...panelState.workingOn, ...panelState.alsoSeen].map((row) => row.key) });
   }
 
-  function workingOnItem(row) {
-    const classNames = ["link-row", row.mark === "removed" ? "removed" : "", row.isParentGroup ? "parent-group" : ""].filter(Boolean).join(" ");
-    const item = element("li", classNames);
-    item.style.paddingLeft = ROW_GUTTER_PX + row.depth * NESTED_ROW_INDENT_PX + "px";
-    item.title = row.hoverTitle;
-    item.append(glyphElement(row), keyElement(row), element("span", "label ellipsis", row.label || MISSING_LABELS[row.kind]));
-    if (row.shortStatus) {
-      const shortStatus = element("span", "short-status", row.shortStatus);
-      if (row.statusColor) {
-        shortStatus.style.color = row.statusColor;
+  function commitRename() {
+    if (renaming === undefined) {
+      return;
+    }
+    const { groupId, draft } = renaming;
+    renaming = undefined;
+    const group = panelState.work?.groups.find((shownGroup) => shownGroup.id === groupId);
+    if (group !== undefined && draft.trim() !== group.title) {
+      send({ type: "renameWorkstream", id: groupId, title: draft });
+    }
+    render();
+  }
+
+  function cancelRename() {
+    renaming = undefined;
+    render();
+  }
+
+  function renameInput() {
+    const input = element("input", "rename-input");
+    input.type = "text";
+    input.value = renaming.draft;
+    input.setAttribute("aria-label", "Workstream name");
+    input.addEventListener("input", () => {
+      renaming.draft = input.value;
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitRename();
+      } else if (event.key === "Escape") {
+        event.stopPropagation();
+        cancelRename();
       }
-      item.append(shortStatus);
-    }
-    item.append(rowActions(row, row.isParentGroup ? "Pin as Working On" : "Pin"));
-    makeDraggable(item, row, panelState.workingOn);
-    return item;
+    });
+    input.addEventListener("click", (event) => event.stopPropagation());
+    return input;
   }
 
-  function alsoSeenItem(row) {
-    const classNames = ["link-row seen", row.isDimmed ? "dimmed" : "", row.mark === "removed" ? "removed" : ""].filter(Boolean).join(" ");
-    const item = element("li", classNames);
-    item.title = row.hoverTitle;
-    item.append(glyphElement(row), keyElement(row), element("span", "label ellipsis", row.label || ""));
-    if (row.mark === "removed" || row.role === "irrelevant") {
-      item.append(element("span", "tag", row.mark === "removed" ? "removed" : "passing"));
+  // render() rebuilds the DOM, so the open rename input gets its focus back each time.
+  function focusRenameInput(root) {
+    const input = root.querySelector(".rename-input");
+    if (input === null) {
+      return;
     }
-    item.append(rowActions(row, "Pin as Working On"));
-    makeDraggable(item, row, panelState.alsoSeen);
-    return item;
+    input.focus();
+    if (renaming.isNew) {
+      input.select();
+      renaming.isNew = false;
+    } else {
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
   }
 
-  function filterButton() {
-    const { showIrrelevant, showRemoved } = panelState.filters;
-    const filterItem = (filter, label) =>
-      menuItem(panelState.filters[filter] ? "check" : "blank", label, () =>
-        send({ type: "setFilter", filter, value: !panelState.filters[filter] }),
-      );
-    return menuButton("filter", showIrrelevant || showRemoved ? "filter-filled" : "filter", "Filter", () => [
-      filterItem("showIrrelevant", "Passing mentions"),
-      filterItem("showRemoved", "Removed"),
-    ]);
+  function groupActions(group) {
+    const actions = element("div", "ws-actions");
+    const doneLabel = group.isDone ? "Mark Active" : "Mark Done";
+    const setDone = () => send({ type: "setWorkstreamDone", id: group.id, done: !group.isDone });
+    actions.append(
+      iconButton("edit", "Rename", () => startRename(group)),
+      iconButton(group.isDone ? "circle-large-outline" : "check", doneLabel, setDone),
+      menuButton("group:" + group.id, "ellipsis", "More Actions", () => [
+        menuItem("edit", "Rename", () => startRename(group)),
+        menuItem(group.isDone ? "circle-large-outline" : "check", doneLabel, setDone),
+        element("div", "menu-separator"),
+        menuItem("arrow-up", "Move Up", () => moveWorkstreamBy(group.id, -1)),
+        menuItem("arrow-down", "Move Down", () => moveWorkstreamBy(group.id, 1)),
+      ]),
+    );
+    return actions;
+  }
+
+  function groupHeader(group, collapsed) {
+    const header = element("div", "ws-header");
+    const toggle = element("button", "chevron");
+    toggle.type = "button";
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    toggle.setAttribute("aria-label", (collapsed ? "Expand " : "Collapse ") + group.title);
+    toggle.append(codicon("chevron-right"));
+    toggle.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setCollapsed(group.id, !collapsed);
+    });
+    header.append(toggle);
+    if (group.isDone) {
+      const check = codicon("check", "Done");
+      check.classList.add("done-check");
+      header.append(check);
+    }
+    if (renaming?.groupId === group.id) {
+      header.append(renameInput());
+      return header;
+    }
+    const title = element("span", "ws-title ellipsis", group.title);
+    title.title = group.title;
+    header.append(title, element("span", "ws-count", String(group.tickets.length + group.rows.length)));
+    if (!group.isUnsorted) {
+      title.addEventListener("dblclick", () => startRename(group));
+      header.append(groupActions(group));
+      makeGroupDraggable(header, group);
+    }
+    return header;
+  }
+
+  function ticketLine(tickets) {
+    const line = element("div", "ticket-line");
+    for (const ticket of tickets) {
+      const chip = keyElement(ticket, "ticket-chip");
+      chip.textContent = "";
+      if (ticket.statusColor) {
+        chip.style.setProperty("--status-color", ticket.statusColor);
+      }
+      chip.title = ticket.hoverTitle;
+      chip.append(element("span", "dot"), element("span", "", ticket.displayId));
+      line.append(chip);
+    }
+    return line;
+  }
+
+  function groupElement(group) {
+    const collapsed = isCollapsed(group.id, group.isCollapsedByDefault);
+    const block = element("div", classNames("ws-group", group.isUnsorted && "unsorted", group.isDone && "done", !collapsed && "expanded"));
+    block.append(groupHeader(group, collapsed));
+    if (group.tickets.length > 0) {
+      block.append(ticketLine(group.tickets));
+    }
+    if (!collapsed && group.rows.length > 0) {
+      const list = element("ul", "list");
+      list.append(...group.rows.map((row) => itemRow(row, group)));
+      block.append(list);
+    }
+    makeDropTarget(block, group);
+    return block;
+  }
+
+  function removedDisclosure(work) {
+    const count = work.removedRows.length;
+    if (count === 0) {
+      return [];
+    }
+    const collapsed = isCollapsed(REMOVED_GROUP_ID, true);
+    const toggle = textButton("disclosure", "chevron-right", "Removed (" + count + ")", () => setCollapsed(REMOVED_GROUP_ID, !collapsed));
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    if (collapsed) {
+      return [toggle];
+    }
+    const list = element("ul", "list");
+    list.append(...work.removedRows.map((row) => itemRow(row, undefined)));
+    return [toggle, list];
   }
 
   function emptyNote(iconName, lead, body) {
@@ -838,10 +1170,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     return button;
   }
 
-  function runAction(action) {
-    send({ type: "action", action });
-  }
-
   function sessionHeader(session) {
     const header = element("header", "header");
     const titleLine = element("div", "title-line");
@@ -854,10 +1182,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     title.title = session.title;
     titleLine.append(runIcon, title);
     if (session.status) {
-      const statusText = element("span", "status-text mono", session.status.name);
-      statusText.style.color = "var(" + session.status.color + ")";
-      statusText.title = session.status.reason ? "Why: " + session.status.reason : session.status.name;
-      titleLine.append(statusText);
+      titleLine.append(headerStatus(session.status));
     }
     header.append(titleLine);
     if (session.metaLine) {
@@ -866,6 +1191,37 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       header.append(meta);
     }
     return header;
+  }
+
+  function headerStatus(status) {
+    const statusElement = element("span", "header-status mono");
+    statusElement.style.setProperty("--status-color", "var(" + status.color + ")");
+    statusElement.append(element("span", "name ellipsis", status.name));
+    if (status.isDerived) {
+      statusElement.append(element("span", "auto-tag", "auto"));
+      statusElement.title = status.name + " (set by the analyzer)";
+    } else {
+      statusElement.title = status.reason ? "Why: " + status.reason : status.name;
+    }
+    return statusElement;
+  }
+
+  function whereSection(work) {
+    if (!work.isLoaded || (work.where.length === 0 && !work.isAnalyzing)) {
+      return undefined;
+    }
+    const block = element("section", "where");
+    block.append(...work.where.map((line) => element("p", "where-line", line)));
+    const caption = element("p", "where-caption");
+    if (work.isAnalyzing) {
+      caption.append(spinner(), element("span", "", "Updating…"));
+    } else if (work.updatedAgo) {
+      caption.append(element("span", "", "updated " + work.updatedAgo));
+    }
+    if (caption.childNodes.length > 0) {
+      block.append(caption);
+    }
+    return block;
   }
 
   function recapNodes(session) {
@@ -927,117 +1283,48 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     if (session.runKind === "elsewhere") {
       sentence.title = session.stateLabel;
     }
-    block.append(sentence, ...recapNodes(session), mainActions(session));
+    block.append(sentence, ...recapNodes(session).filter(Boolean), mainActions(session));
     return block;
   }
 
-  function untrackedLine(session) {
-    if (session.untracked.length === 0 || session.recheck?.status === "running") {
-      return undefined;
-    }
-    const text = session.untracked.join(", ") + " not tracked";
-    const line = element("div", "untracked");
-    const label = element("span", "text ellipsis", text);
-    label.title = text;
-    line.append(codicon("hubot"), label, textButton("link-button", undefined, "Fill in", () => send({ type: "recheck" })));
-    return line;
-  }
-
-  function recheckLine(recheck) {
-    if (recheck === undefined) {
-      return undefined;
-    }
-    const line = element("div", "untracked");
-    if (recheck.status === "running") {
-      line.append(spinner(), element("span", "text ellipsis", "Haiku is reading the whole transcript…"));
-      return line;
-    }
-    if (recheck.status === "failed") {
-      const errorIcon = codicon("error");
-      errorIcon.style.color = "var(--vscode-errorForeground)";
-      const reason = element("span", "text ellipsis", recheck.reason);
-      reason.title = recheck.reason;
-      line.append(errorIcon, reason, textButton("link-button", undefined, "Retry", () => send({ type: "recheck" })));
-      return line;
-    }
-    const summary = element("span", "text ellipsis", recheck.text);
-    summary.title = recheck.text;
-    line.append(codicon("check"), summary, iconButton("close", "Dismiss", () => send({ type: "dismissRecheck" })));
-    return line;
-  }
-
-  function recheckButton(session) {
-    const isRechecking = session.recheck?.status === "running";
-    const label = session.hasTranscript ? "Recheck with Haiku" : "No transcript yet";
-    const button = iconButton(isRechecking ? "loading" : "sparkle", label, () => send({ type: "recheck" }), isRechecking || !session.hasTranscript);
-    if (isRechecking) {
+  function updateButton(session, work) {
+    const label = session.hasTranscript ? (work.isAnalyzing ? "Updating…" : "Update Now") : "No transcript yet";
+    const button = iconButton("sync", label, () => runAction("analyze"), work.isAnalyzing || !session.hasTranscript);
+    if (work.isAnalyzing) {
       button.firstChild.classList.add("codicon-modifier-spin");
     }
     return button;
   }
 
-  function alsoSeenDisclosure() {
-    const { showIrrelevant, showRemoved } = panelState.filters;
-    const count = panelState.alsoSeen.length;
-    if (count === 0 && !panelState.canFind && !panelState.isFinding) {
-      return [];
-    }
-    const row = element("div", "disclosure-row");
-    row.classList.toggle("is-filtering", showIrrelevant || showRemoved || openMenuId === "filter");
-    let toggle;
-    if (panelState.isFinding && count === 0) {
-      toggle = element("button", "disclosure");
-      toggle.disabled = true;
-      toggle.append(spinner(), element("span", "ellipsis", "Scanning the transcript…"));
-    } else if (count === 0) {
-      toggle = textButton("disclosure", "search", "Find links in the transcript", () => send({ type: "findAgain" }));
-    } else {
-      toggle = textButton("disclosure", "chevron-right", count + " more in the transcript", () => {
-        savedViewState.isAlsoSeenExpanded = !savedViewState.isAlsoSeenExpanded;
-        vscode.setState(savedViewState);
-        render();
-      });
-      toggle.setAttribute("aria-expanded", String(savedViewState.isAlsoSeenExpanded));
-    }
-    toggle.type = "button";
-    const findLabel = panelState.isFinding ? "Scanning the Transcript…" : "Scan the Transcript Again";
-    const tools = element("div", "disclosure-tools");
-    tools.append(filterButton(), iconButton("refresh", findLabel, () => send({ type: "findAgain" }), panelState.isFinding || !panelState.canFind));
-    row.append(toggle, tools);
-
-    const nodes = [row];
-    const isOpen = savedViewState.isAlsoSeenExpanded && count > 0;
-    if (isOpen && (showIrrelevant || showRemoved)) {
-      const shownExtras = [showIrrelevant && "passing mentions", showRemoved && "removed"].filter(Boolean).join(" and ");
-      nodes.push(element("p", "filter-note", "Showing " + shownExtras));
-    }
-    if (isOpen) {
-      const list = element("ul", "list");
-      list.append(...panelState.alsoSeen.map(alsoSeenItem));
-      nodes.push(list);
-    }
-    return nodes;
+  function emptyWork(session, work) {
+    const empty = element("div", "empty-work");
+    const update = textButton("button outline compact", "sync", "Update", () => runAction("analyze"));
+    update.disabled = work.isAnalyzing || !session.hasTranscript;
+    empty.append(element("p", "", "No work found yet. Update reads the transcript."), update);
+    return empty;
   }
 
-  function workSection(session) {
-    const work = element("section", "work");
-    const heading = element("div", "work-heading");
+  function workSection(session, work) {
+    const section = element("section", "work");
+    const heading = element("div", "section-heading");
+    const canRecheck = session.hasTranscript && !work.isAnalyzing;
     heading.append(
-      element("h2", "", "Working on"),
-      recheckButton(session),
-      iconButton("refresh", "Refresh Statuses and Declarations", () => send({ type: "refreshWorkingOn" })),
-      iconButton("add", "Pin a Ticket by Key", () => send({ type: "pinByKey" })),
+      element("h2", "", "Work"),
+      updateButton(session, work),
+      iconButton("layers", session.hasTranscript ? "Recheck from Scratch" : "No transcript yet", () => runAction("recheckAnalysis"), !canRecheck),
     );
-    work.append(...[heading, recheckLine(session.recheck)].filter(Boolean));
-    if (panelState.workingOn.length > 0) {
-      const list = element("ul", "list");
-      list.append(...panelState.workingOn.map(workingOnItem));
-      work.append(list);
+    section.append(heading);
+    if (!work.isLoaded) {
+      const loading = element("p", "muted loading-work");
+      loading.append(spinner(), element("span", "", "Reading the analysis…"));
+      section.append(loading);
+    } else if (work.isEmpty) {
+      section.append(emptyWork(session, work));
     } else {
-      work.append(element("p", "empty-work", "Nothing yet. The agent adds tickets and PRs as it works."));
+      section.append(...work.groups.map(groupElement));
     }
-    work.append(...[untrackedLine(session), ...alsoSeenDisclosure()].filter(Boolean));
-    return work;
+    section.append(...removedDisclosure(work));
+    return section;
   }
 
   function actionTile([action, iconName, shortLabel, fullLabel], disabledReason) {
@@ -1076,6 +1363,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   function render() {
     const root = document.getElementById("root");
     root.replaceChildren();
+    menuBuilders = new Map();
     if (panelState === undefined) {
       return;
     }
@@ -1090,12 +1378,21 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     if (session.sessionId !== shownSessionId) {
       shownSessionId = session.sessionId;
       isRecapExpanded = false;
+      renaming = undefined;
+      openMenuId = undefined;
     }
-    scroll.append(sessionHeader(session), nextStep(session), workSection(session));
+    const work = panelState.work;
+    scroll.append(...[sessionHeader(session), whereSection(work), nextStep(session), workSection(session, work)].filter(Boolean));
     root.append(toolbar(session));
+    drawOpenMenu(root);
+    focusRenameInput(root);
   }
 
-  document.addEventListener("click", () => {
+  document.addEventListener("click", (event) => {
+    if (renaming !== undefined && !event.target.closest(".rename-input")) {
+      commitRename();
+      return;
+    }
     if (openMenuId !== undefined) {
       openMenuId = undefined;
       render();
@@ -1103,6 +1400,12 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && openMenuId !== undefined) {
+      openMenuId = undefined;
+      render();
+    }
+  });
+  window.addEventListener("resize", () => {
+    if (openMenuId !== undefined) {
       openMenuId = undefined;
       render();
     }

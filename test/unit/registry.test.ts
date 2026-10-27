@@ -170,20 +170,6 @@ describe("Registry", () => {
 
     expect(changeCount).toBe(2);
   });
-  it("remembers which sessions ran Find Resources, and forgets one when it is unpinned", async () => {
-    const registry = new Registry(memoryStore());
-    await registry.pin("a");
-    await registry.pin("b");
-    await registry.markResourcesFound("a");
-    await registry.markResourcesFound("a");
-    await registry.markResourcesFound("b");
-
-    expect(registry.resourceSessionIds()).toEqual(["a", "b"]);
-    await registry.unpin("a");
-    expect(registry.hasFoundResources("a")).toBe(false);
-    expect(registry.hasFoundResources("b")).toBe(true);
-  });
-
   describe("workspaces", () => {
     it("keeps a snapshot per workspace and drops it with the workspace", async () => {
       const registry = new Registry(memoryStore());

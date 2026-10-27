@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 import { AnalyzerTrigger } from "./analyzerTrigger";
 import { registerCommands } from "./commands";
 import { CompactMonitor, registerCompactHookCommands } from "./compactMonitor";
-import { DeclarationMonitor } from "./declarationMonitor";
 import { PinnedSession, SessionSection } from "./grouping";
 import { displayTitle, SessionMeta } from "./indexer";
 import { LiveSessionMonitor } from "./liveSessions";
@@ -28,8 +27,6 @@ import { COMMIT_DOCUMENT_SCHEME, CommitDocumentProvider, RepoTreeProvider } from
 import { CommitAuthorship, indexCommitAuthorship } from "./gitStatus";
 import { HistoryPanel } from "./historyPanel";
 import { SessionFocusTracker } from "./sessionFocus";
-import { SessionPopulator } from "./sessionPopulator";
-import { SessionStatusRelay } from "./sessionStatusRelay";
 import { SessionPreview } from "./sessionPreview";
 import { SESSION_PANEL_VIEW_ID, SessionPanelProvider } from "./sessionPanel";
 import { SessionTreeProvider } from "./tree";
@@ -47,15 +44,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const registry = new Registry(context.globalState);
   const findIndexedSession = (sessionId: string) =>
     sessionIndex.currentSessions.find((session) => session.sessionId === sessionId);
-  const declarationMonitor = new DeclarationMonitor(claudeHome, log);
-  const linkService = new SessionLinkService(
-    context.globalStorageUri.fsPath,
-    findIndexedSession,
-    (sessionId) => registry.linkMarks(sessionId),
-    (sessionId) => registry.linkOrder(sessionId),
-    declarationMonitor,
-    log,
-  );
+  const linkService = new SessionLinkService(context.globalStorageUri.fsPath, log);
   const statusConfig = new StatusConfig(context.globalState);
   const jiraService = new JiraService(log);
   const linkStatusService = new LinkStatusService(log, jiraService, statusConfig, new StoredStatusCache(context.globalState));
@@ -139,7 +128,6 @@ export function activate(context: vscode.ExtensionContext): void {
     for (const { fromSessionId, toSessionId } of await followSwitchedSessions(liveSessions)) {
       log.appendLine(`Session ${fromSessionId} became ${toSessionId} in the same terminal; moving its row`);
       await registry.copyTicketMarks(fromSessionId, toSessionId);
-      await declarationMonitor.copySession(fromSessionId, toSessionId);
       await sessionAnalyzer.copySession(fromSessionId, toSessionId);
       const previousTitle = sessionTitle(fromSessionId, registry, findIndexedSession);
       const isNewSession = !registry.isPinned(toSessionId) && findIndexedSession(toSessionId) === undefined;
@@ -150,24 +138,13 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
   registry.onDidChange(refreshTree);
-  const sessionPopulator = new SessionPopulator(claudeHome, registry, declarationMonitor, log);
-  const statusRelay = new SessionStatusRelay({
-    claudeHome,
-    registry,
-    linkService,
-    linkStatusService,
-    jiraService,
-    findSessionMeta: findIndexedSession,
-    log,
-  });
   const sessionPreview = new SessionPreview({
     extensionUri: context.extensionUri,
     registry,
     liveMonitor,
     summaryService,
     repoService,
-    declarationMonitor,
-    populator: sessionPopulator,
+    linkService,
     findSessionMeta: findIndexedSession,
     sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
   });
@@ -187,19 +164,11 @@ export function activate(context: vscode.ExtensionContext): void {
     sessionFocus,
     sessionPreview,
     summaryService,
-    declarationMonitor,
-    populator: sessionPopulator,
+    sessionAnalyzer,
     findSessionMeta: findIndexedSession,
     sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
     globalState: context.globalState,
   });
-  const syncUserTicketMarks = (): void => {
-    declarationMonitor
-      .syncUserMarks(registry.allLinkMarks())
-      .catch((error: unknown) => log.appendLine(`Can't write ticket marks for the overseer CLI: ${String(error)}`));
-  };
-  registry.onDidChange(syncUserTicketMarks);
-  syncUserTicketMarks();
   statusConfig.onDidChange(() => {
     refreshTree();
     SettingsPanel.notifyConfigChanged();
@@ -213,7 +182,6 @@ export function activate(context: vscode.ExtensionContext): void {
     linkService,
     linkStatusService,
     jiraService,
-    statusRelay,
     summaryService,
     sessionAnalyzer,
     analyzerTrigger,
@@ -244,8 +212,6 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     sessionIndex.onDidChange(refreshTree),
     compactMonitor,
-    declarationMonitor,
-    sessionPopulator,
     sessionPreview,
     sessionFocus,
     sessionPanelProvider,
@@ -292,13 +258,10 @@ export function activate(context: vscode.ExtensionContext): void {
       sessionIndex,
       liveMonitor,
       registry,
-      linkService,
-      linkStatusService,
       summaryService,
       sessionViews: [treeView, terminalTreeView],
       sessionPreview,
       pinnedSessions,
-      statusRelay,
       sessionAnalyzer,
       sessionFocus,
       log,

@@ -1,7 +1,7 @@
 import { clipLine, SessionAnalysis, TICKET_ITEM_PREFIX, workstreamOfItem } from "./analysisState";
 import { EnrichedCandidate } from "./candidateEnrichment";
 import { isPassiveMention, linkKey, userPromptTextOf } from "./linkCandidates";
-import { StatusOption } from "./sessionStatusSync";
+import { StatusOption } from "./sessionStatuses";
 import { isLockedItem, isUserEditedWorkstream, WorkstreamEdits } from "./workstreamEdits";
 
 export type AnalyzerMode = "diff" | "recheck";

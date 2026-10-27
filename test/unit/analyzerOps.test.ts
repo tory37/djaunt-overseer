@@ -11,7 +11,7 @@ import {
   parseAnalyzerOutput,
   recheckDropOf,
 } from "../../src/analyzerOps";
-import { StatusOption } from "../../src/sessionStatusSync";
+import { StatusOption } from "../../src/sessionStatuses";
 import { applyUserEdits, emptyWorkstreamEdits, readWorkstreamEdits, WorkstreamEdits } from "../../src/workstreamEdits";
 
 const STATUS_OPTIONS: StatusOption[] = [

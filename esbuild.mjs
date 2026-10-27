@@ -14,14 +14,6 @@ const buildOptions = {
   sourcemap: true,
 };
 
-// The overseer CLI runs in Claude's Bash tool, outside VS Code, so it is its own bundle.
-const cliBuildOptions = {
-  ...buildOptions,
-  entryPoints: ["src/overseerMain.ts"],
-  outfile: "dist/overseer.js",
-  external: [],
-};
-
 // The settings panel previews session icons with the Codicon font, so the font ships in media/.
 const CODICON_SOURCE_DIR = "node_modules/@vscode/codicons/dist";
 const CODICON_TARGET_DIR = "media/codicons";
@@ -31,10 +23,8 @@ for (const codiconFile of ["codicon.css", "codicon.ttf"]) {
 }
 
 if (isWatchMode) {
-  for (const options of [buildOptions, cliBuildOptions]) {
-    const context = await esbuild.context(options);
-    await context.watch();
-  }
+  const context = await esbuild.context(buildOptions);
+  await context.watch();
 } else {
-  await Promise.all([esbuild.build(buildOptions), esbuild.build(cliBuildOptions)]);
+  await esbuild.build(buildOptions);
 }

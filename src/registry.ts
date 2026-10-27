@@ -41,7 +41,6 @@ const LINK_ORDER_KEY = "overseer.linkOrder";
 // The first key held edits the old seed made up from link marks, so real user edits start fresh here.
 const WORKSTREAM_EDITS_KEY = "overseer.workstreamEdits.v2";
 const COLLAPSED_GROUPS_KEY = "overseer.collapsedGroupRefs";
-const RESOURCE_SESSIONS_KEY = "overseer.resourceSessionIds";
 const TERMINAL_SESSIONS_KEY = "overseer.terminalSessions";
 const SESSION_STATUS_KEY = "overseer.sessionStatusIds";
 const SESSION_STATUS_REASON_KEY = "overseer.sessionStatusReasons";
@@ -112,7 +111,6 @@ export class Registry {
   async unpin(sessionId: string): Promise<void> {
     await this.write(PINNED_KEY, this.pinnedSessionIds().filter((pinnedId) => pinnedId !== sessionId));
     await this.write(SESSION_ORDER_KEY, this.sessionOrder().filter((orderedId) => orderedId !== sessionId));
-    await this.write(RESOURCE_SESSIONS_KEY, this.resourceSessionIds().filter((foundId) => foundId !== sessionId));
     const { [sessionId]: _removedPending, ...remainingPending } = this.pendingSessions();
     await this.write(PENDING_KEY, remainingPending);
     const { [sessionId]: _removedTerminal, ...remainingTerminals } = this.terminalSessions();
@@ -221,7 +219,7 @@ export class Registry {
     }
   }
 
-  // Marks are keyed by link, not by scan, so a rescan or a new judge verdict keeps them.
+  // Marks are keyed by link, not by scan, so a rescan keeps them.
   linkMarks(sessionId: string): LinkMarks {
     return this.allLinkMarks()[sessionId] ?? {};
   }
@@ -276,20 +274,6 @@ export class Registry {
     const fromEdits = this.allWorkstreamEdits()[fromSessionId];
     if (fromEdits !== undefined && !this.hasStoredWorkstreamEdits(toSessionId)) {
       await this.write(WORKSTREAM_EDITS_KEY, { ...this.allWorkstreamEdits(), [toSessionId]: fromEdits });
-    }
-  }
-
-  resourceSessionIds(): string[] {
-    return this.store.get<string[]>(RESOURCE_SESSIONS_KEY) ?? [];
-  }
-
-  hasFoundResources(sessionId: string): boolean {
-    return this.resourceSessionIds().includes(sessionId);
-  }
-
-  async markResourcesFound(sessionId: string): Promise<void> {
-    if (!this.hasFoundResources(sessionId)) {
-      await this.write(RESOURCE_SESSIONS_KEY, [...this.resourceSessionIds(), sessionId]);
     }
   }
 
@@ -420,7 +404,7 @@ export class Registry {
     return this.store.get<Record<string, WorkspaceSnapshot>>(WORKSPACE_SNAPSHOTS_KEY) ?? {};
   }
 
-  allLinkMarks(): Record<string, LinkMarks> {
+  private allLinkMarks(): Record<string, LinkMarks> {
     return this.store.get<Record<string, LinkMarks>>(LINK_MARKS_KEY) ?? {};
   }
 
@@ -433,7 +417,7 @@ export class Registry {
   }
 
   // /clear and /resume swap the session under a running terminal, so the row moves to the new session in place.
-  // Link marks and found resources describe the old transcript, so they stay with it.
+  // Link marks describe the old transcript, so they stay with it.
   async moveSession(fromSessionId: string, toSessionId: string): Promise<void> {
     if (!this.isPinned(fromSessionId)) {
       return;

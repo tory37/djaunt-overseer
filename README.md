@@ -47,7 +47,7 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - Drag a group onto another group, or a session onto another session.
 - Dragging down puts the item after the target. Dragging up puts it before. VS Code trees can't show an insertion line.
 - The order syncs across windows.
-- Links reorder in the Session sidebar. See [Links](#links).
+- Workstreams reorder in the Session sidebar. See [Workstreams](#workstreams).
 
 ### Run
 - Clicking a session with a terminal in this window focuses the terminal. Clicking any other session opens it in the [preview](#session-preview).
@@ -64,6 +64,7 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 
 ### Statuses
 - **Set status** (Session sidebar, or **Set Status…** in the palette for the selected rows) marks a session or terminal with a status. **Clear Status** removes it.
+- With no status set, the Session sidebar shows the status the analyzer derived, marked as automatic. A status you set wins.
 - The defaults are Todo, Triage, In Progress, Blocked, AI Review, Human Review, and Ready to Ship. They do not follow Jira, so a status like Triage works.
 - A status with **Ask why** on (Blocked, by default) asks for a reason when you set it. Press Enter to skip. The reason shows in the row's tooltip and on the badge's hover. Setting another status clears it.
 - A status tints the row's label and adds a short badge on the right, like `IP`. The icon shows in the picker and the hover, so the row keeps one icon.
@@ -93,33 +94,29 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - **Suspend** or **Resume** sits under the summary. A session running in another window offers a fork instead.
 - **Actions** holds the rest:
   - **Claude**: Compact, Clear, Model, Cost, and Run command. They send `/compact`, `/clear`, `/model`, `/cost`, or one of your saved prompts. They show only for a session running in this window, and they wait until it is idle.
-  - **Session**: Summarize, Find links, Open repo, Set status, and Rename.
+  - **Session**: Update, Recheck, Open repo, Set status, and Rename.
 - **Run command** prompts come from the `overseer.sessionCommands` setting, as `{name, prompt}` entries, like "Latest reviews are in on the PR. Pull them and evaluate." A `{ticket link}` in a prompt asks for that value first.
 
 ### Session preview
 - A session with no terminal in this window opens in one reused **Session Preview** tab. Clicking another session replaces it.
-- It shows where the session left off, its last turns, its prompts, the commits and pull requests it made, and the other repos it touched.
+- It shows where the session left off, its last turns, its prompts, the commits and pull requests the transcript shows it made or worked on, and the other repos it touched.
 - **Resume** opens the terminal in the preview's place and closes the preview.
 - The preview reads the transcript and git, so it costs nothing and never starts Claude.
 
-### Links
-- **Working on** lists the tickets and PRs the agent declared and the ones you pinned, with live status, summary or title, and the agent's note. **+** pins a ticket by key.
-- **Also seen** (collapsed) lists the other GitHub PRs, Jira tickets, and claude.ai artifacts in the transcript. **Find links** scans for them. Overseer never scans on its own.
-- A headless `claude -p` run with Haiku sorts the scanned links into owned, touched, and seen in passing.
-- An owned ticket names the auto-group when the title and branch have no ticket key. A ticket you pinned wins, then one the agent declared, then the judge's pick.
-- Each row has **Open in Browser**, **Pin** or **Unpin**, and a **More Actions** menu: **Open in VS Code**, **Copy Link**, **Move to Status…** (tickets), and **Remove from This Session**. A removed link stays out for good, even if the agent declares it again. **Restore** brings it back.
+### Workstreams
+- The Session sidebar groups a session's PRs, tickets, artifacts, and commits into workstreams, with a few lines on where the work stands.
+- A headless Haiku pass builds them from the transcript. It runs on its own after a session goes idle, when the gates in **Settings…** → **Analyzer** pass: idle seconds, new prompts, new KB or a new link, and a cooldown. `overseer.analyzer.auto` turns it off.
+- **Update** runs a pass on what is new now. **Recheck** rebuilds the workstreams from the whole transcript.
+- Your edits win over every pass: rename a workstream, drag an item to another one, reorder workstreams, mark one done, or remove an item.
+- Items the model has not placed show under **Unsorted**. Removed items show under **Removed**, where **Restore** brings them back.
+- Each row has **Open in Browser** and a **More Actions** menu: **Open in VS Code**, **Copy Link**, **Move to Status…** (tickets), and **Remove from This Session**.
 - **Open in VS Code** always opens a new browser tab. VS Code gives extensions no way to find an open one.
-- Links nest: parent ticket, then its sub-tickets, then the PRs for each ticket. Jira's parent field and the ticket key in a PR's branch or title decide the nesting. Haiku places the rest. Other tickets, PRs, and artifacts follow.
-- Drag rows to reorder them within their section. A saved order beats the computed one.
-- Hover the **Also seen** header for its tools. **Filter** shows passing mentions and removed links again, dimmed. **Scan the Transcript Again** rescans the session.
 - Each PR and ticket shows its live status, and its icon takes that status's color. Overseer checks every five minutes while the sidebar shows them.
 - PR status comes from `gh`. Ticket status comes from the Jira MCP server in your `~/.claude.json`, the same one Claude Code uses. Overseer starts it on its own and reads all visible tickets in one call.
 - **Jira Settings…** lists each Jira project Overseer has seen, like ASSMNT or CR, with its full status list and a color for each status. Turn a project off to stop its status lookups.
 - **GitHub Settings…** sets one color per PR state: draft, open, review required, approved, changes requested, merged, and closed.
-
-### Agent tracking
 - Overseer tells the agent nothing. Sessions launch as plain `claude`, with no plugin, skill, or CLI.
-- The sidebar says what isn't tracked yet. **Populate all** asks Haiku to read a digest of the transcript and declare its tickets, commits, PRs, and artifacts. It costs cents, not a full resume.
+- Old `~/.claude/overseer/declared/`, `work/`, and `where/` files seed a session's first analysis once. Overseer never changes or deletes them.
 
 ### Settings
 Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:
@@ -162,9 +159,6 @@ Then run **Developer: Reload Window**. Cmd+R only reloads in the F5 development 
 | `overseer.links.artifacts.enabled` | `true` | Show claude.ai artifacts under each session. |
 | `overseer.links.jira.baseUrl` | empty | Jira site for tickets whose URL the transcript doesn't show, e.g. `https://acme.atlassian.net`. |
 | `overseer.jira.mcpServer` | `jira` | Name of the stdio Jira MCP server in `~/.claude.json`. |
-| `overseer.links.judgeModel` | `haiku` | Model that sorts links. |
-| `overseer.links.showIrrelevant` | `false` | Also show links seen in passing, dimmed. |
-| `overseer.links.showRemoved` | `false` | Also show links you removed, dimmed. |
 | `overseer.links.liveStatus` | `true` | Show PR and ticket status through `gh` and your Jira MCP server. |
 | `overseer.summary.model` | `haiku` | Model for Summarize with Haiku. |
 | `overseer.sessionCommands` | three starters | Prompts the **Commands…** picker sends. `{name}` in a prompt asks for a value. |
@@ -175,7 +169,7 @@ Then run **Developer: Reload Window**. Cmd+R only reloads in the F5 development 
 | `overseer.sessionIcons.duplicate` | `warning` | Icon for a session with more than one copy running. |
 | `overseer.sessionIcons.compacting` | `sync~spin` | Icon for a session that is compacting. |
 
-Link sorting and Summarize with Haiku run through your `claude` CLI, so they count against your Claude usage. Everything else makes no model calls.
+The analyzer and Summarize with Haiku run through your `claude` CLI, so they count against your Claude usage. Everything else makes no model calls.
 
 ## Build from source
 

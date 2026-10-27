@@ -11,7 +11,6 @@ import {
   scanStatsSince,
   scanTranscriptLinks,
   summarizeAllCandidates,
-  summarizeCandidates,
 } from "../../src/linkCandidates";
 import { loadLinkCache, saveLinkCache } from "../../src/linkCache";
 import { findTicketKeysInText } from "../../src/ticket";
@@ -60,7 +59,7 @@ describe("scanLinkLine", () => {
       toolUse("t1", "Bash", { command: 'gh pr create --base develop --title "PROJ-1068: Spanish SODA" --body "x"' }),
       toolResult("t1", PR_URL),
     ]);
-    const pr = find(summarizeCandidates(state), "pr", "acme/web-app/pull/2384");
+    const pr = find(summarizeAllCandidates(state), "pr", "acme/web-app/pull/2384");
 
     expect(pr).toMatchObject({ url: PR_URL, title: "PROJ-1068: Spanish SODA" });
     expect(pr?.signals["pr-created"]).toBe(1);
@@ -69,12 +68,12 @@ describe("scanLinkLine", () => {
 
   it("marks a pr-link record alone as touched", () => {
     const state = scanAll([JSON.stringify({ type: "pr-link", prNumber: 2384, prUrl: PR_URL })]);
-    expect(fallbackRole(find(summarizeCandidates(state), "pr", "acme/web-app/pull/2384")!)).toBe("touched");
+    expect(fallbackRole(find(summarizeAllCandidates(state), "pr", "acme/web-app/pull/2384")!)).toBe("touched");
   });
 
   it("resolves gh pr number plus --repo, and ranks a comment as touched", () => {
     const state = scanAll([toolUse("t1", "Bash", { command: "gh pr comment 77 -R acme/api --body-file /tmp/c.md" })]);
-    const pr = find(summarizeCandidates(state), "pr", "acme/api/pull/77");
+    const pr = find(summarizeAllCandidates(state), "pr", "acme/api/pull/77");
 
     expect(pr?.url).toBe(OTHER_PR_URL);
     expect(fallbackRole(pr!)).toBe("touched");
@@ -82,7 +81,7 @@ describe("scanLinkLine", () => {
 
   it("keeps a PR that is only mentioned in tool output as mentioned", () => {
     const state = scanAll([toolResult("unrelated", `see ${OTHER_PR_URL} for context`)]);
-    const pr = find(summarizeCandidates(state), "pr", "acme/api/pull/77");
+    const pr = find(summarizeAllCandidates(state), "pr", "acme/api/pull/77");
 
     expect(fallbackRole(pr!)).toBe("mentioned");
     expect(pr?.snippets[0]).toContain("for context");
@@ -95,7 +94,7 @@ describe("scanLinkLine", () => {
       toolUse("j3", "mcp__jira__jira_issues", { action: "transition", transitions: [["PROJ-5", "Done"]] }),
       toolUse("j4", "mcp__jira__jira_issues", { action: "search", jql: "key = PROJ-9" }),
     ]);
-    const candidates = summarizeCandidates(state);
+    const candidates = summarizeAllCandidates(state);
 
     expect(fallbackRole(find(candidates, "ticket", "PROJ-2668")!)).toBe("touched");
     expect(fallbackRole(find(candidates, "ticket", "PROJ-5")!)).toBe("touched");
@@ -109,12 +108,12 @@ describe("scanLinkLine", () => {
 
   it("adds the branch ticket as owned", () => {
     const state = scanAll([toolUse("t1", "Read", { file_path: "/x" })]);
-    expect(fallbackRole(find(summarizeCandidates(state), "ticket", "PROJ-1068")!)).toBe("owned");
+    expect(fallbackRole(find(summarizeAllCandidates(state), "ticket", "PROJ-1068")!)).toBe("owned");
   });
 
   it("takes ticket keys typed by the user but not from system reminders", () => {
     const state = scanAll([userPrompt("work on PROJ-42 please <system-reminder>PROJ-1615 example</system-reminder>")]);
-    const candidates = summarizeCandidates(state);
+    const candidates = summarizeAllCandidates(state);
 
     expect(find(candidates, "ticket", "PROJ-42")?.signals["user-mention"]).toBe(1);
     expect(find(candidates, "ticket", "PROJ-1615")).toBeUndefined();
@@ -131,7 +130,7 @@ describe("scanLinkLine", () => {
       isMeta: true,
       message: { role: "user", content: [{ type: "text", text: "/djt-test-plan PROJ-1615 # work from a ticket" }] },
     });
-    const candidates = summarizeCandidates(scanAll([summaryLine, skillBodyLine]));
+    const candidates = summarizeAllCandidates(scanAll([summaryLine, skillBodyLine]));
 
     expect(candidates).toEqual([]);
   });
@@ -141,7 +140,7 @@ describe("scanLinkLine", () => {
       toolUse("a1", "Artifact", { file_path: "/tmp/plan.html", icon: "checklist" }),
       toolResult("a1", `Published /tmp/plan.html at ${ARTIFACT_URL} (Version 1) see also https://claude.ai/artifact/Other123`),
     ]);
-    const candidates = summarizeCandidates(state);
+    const candidates = summarizeAllCandidates(state);
 
     expect(fallbackRole(find(candidates, "artifact", "G6QrRRBpv1HyNzN2Udxaub")!)).toBe("owned");
     expect(find(candidates, "artifact", "Other123")?.signals["artifact-published"]).toBeUndefined();
@@ -153,7 +152,7 @@ describe("scanLinkLine", () => {
       toolUse("t1", "Bash", { command: "gh pr view 2384 -R acme/web-app" }),
       JSON.stringify({ type: "pr-link", prUrl: PR_URL }),
     ]);
-    expect(summarizeCandidates(state).map((candidate) => candidate.id)).toEqual([
+    expect(summarizeAllCandidates(state).map((candidate) => candidate.id)).toEqual([
       "PROJ-1068",
       "acme/web-app/pull/2384",
       "acme/api/pull/77",
@@ -192,7 +191,7 @@ describe("scanTranscriptLinks", () => {
 
     fs.appendFileSync(transcriptFile, resultLine.slice(20) + "\n");
     const secondPass = await scanTranscriptLinks(transcriptFile, partialPass);
-    const pr = find(summarizeCandidates(secondPass!.state), "pr", "acme/web-app/pull/2384");
+    const pr = find(summarizeAllCandidates(secondPass!.state), "pr", "acme/web-app/pull/2384");
 
     expect(pr?.signals["pr-created"]).toBe(1);
     expect(secondPass?.offsetBytes).toBe(fs.statSync(transcriptFile).size);
@@ -252,12 +251,6 @@ describe("collector candidates", () => {
     expect(commit).toMatchObject({ title: "PROJ-1068: fix tile", branch: "feat/tile", directory: "/repo/web-app" });
     expect(commit?.signals["commit-created"]).toBe(1);
     expect(fallbackRole(commit!)).toBe("owned");
-  });
-
-  it("keeps commits out of the judge and sidebar list", () => {
-    const state = scanAll(collectorTranscript());
-
-    expect(summarizeCandidates(state).some((candidate) => candidate.kind === "commit")).toBe(false);
   });
 
   it("names the repo from git -C and keeps the full hash Claude Code recorded", () => {

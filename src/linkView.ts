@@ -1,51 +1,19 @@
-import { DeclaredTicket } from "./agentTickets";
-import { DeclaredArtifact, DeclaredPullRequest, normalizePullRequestUrl } from "./agentWork";
-import { artifactUrlParts, LinkKind } from "./linkCandidates";
-import { linkKey, ResolvedLink } from "./linkJudge";
-import type { LinkStatus } from "./linkStatus";
-import { LinkMark, LinkMarks } from "./registry";
-import { sortBySavedOrder } from "./reorder";
+import { LinkCandidate, LinkKind } from "./linkCandidates";
+import { LinkMark } from "./registry";
 
 export interface LinkViewSettings {
   enabledKinds: Set<LinkKind>;
-  showIrrelevant: boolean;
-  showRemoved: boolean;
   jiraBaseUrl: string;
 }
 
-export interface MarkedLink extends ResolvedLink {
+export interface MarkedLink extends LinkCandidate {
   mark: LinkMark | undefined;
-  isParentGroup?: boolean;
 }
 
-const MIN_GROUPED_TICKETS = 2;
-const MARK_SORT_RANK: Record<LinkMark | "none", number> = { pinned: 0, none: 1, removed: 2 };
+const SHORT_COMMIT_HASH_LENGTH = 7;
+const LINK_KINDS: ReadonlySet<string> = new Set<LinkKind>(["pr", "ticket", "artifact", "commit"]);
 
-export function markLinks(resolvedLinks: ResolvedLink[], linkMarks: LinkMarks): MarkedLink[] {
-  return resolvedLinks.map((link) => ({ ...link, mark: linkMarks[linkKey(link)] }));
-}
-
-// Pinned links show even when the judge called them irrelevant; removed links show only on request.
-// The user's saved order sorts links within each mark, so a dragged link never jumps above a pinned one.
-export function visibleLinks(markedLinks: MarkedLink[], settings: LinkViewSettings, savedOrder: string[] = []): MarkedLink[] {
-  const shownLinks = markedLinks.filter((link) => {
-    if (!settings.enabledKinds.has(link.kind)) {
-      return false;
-    }
-    if (link.mark === "pinned") {
-      return true;
-    }
-    if (link.mark === "removed") {
-      return settings.showRemoved;
-    }
-    return settings.showIrrelevant || link.role !== "irrelevant";
-  });
-  const markRank = (link: MarkedLink): number => MARK_SORT_RANK[link.mark ?? "none"];
-  const orderedLinks = sortBySavedOrder(shownLinks, savedOrder, linkKey);
-  return orderedLinks.sort((left, right) => markRank(left) - markRank(right));
-}
-
-export function linkUrl(link: ResolvedLink, jiraBaseUrl: string): string | undefined {
+export function linkUrl(link: LinkCandidate, jiraBaseUrl: string): string | undefined {
   if (link.url !== undefined) {
     return link.url;
   }
@@ -56,7 +24,10 @@ export function linkUrl(link: ResolvedLink, jiraBaseUrl: string): string | undef
   return undefined;
 }
 
-export function linkDisplayId(link: ResolvedLink): string {
+export function linkDisplayId(link: LinkCandidate): string {
+  if (link.kind === "commit") {
+    return link.id.slice(0, SHORT_COMMIT_HASH_LENGTH);
+  }
   if (link.kind !== "pr") {
     return link.id;
   }
@@ -64,166 +35,16 @@ export function linkDisplayId(link: ResolvedLink): string {
   return owner !== undefined && repo !== undefined && number !== undefined ? `${repo}#${number}` : link.id;
 }
 
-export function isDimmedLink(link: MarkedLink): boolean {
-  return link.mark === "removed" || (link.mark !== "pinned" && (link.role === "irrelevant" || !link.stillRelevant));
-}
-
-interface Declaration {
-  kind: LinkKind;
-  id: string;
-  url: string | undefined;
-  note: string | undefined;
-  parentLinkKey: string | undefined;
-}
-
-// The agent knows what it works on, so a declared ticket, PR, or artifact is owned even when the transcript never mentions it.
-export function withDeclarations(
-  resolvedLinks: ResolvedLink[],
-  declaredTickets: DeclaredTicket[],
-  declaredPullRequests: DeclaredPullRequest[] = [],
-  declaredArtifacts: DeclaredArtifact[] = [],
-): ResolvedLink[] {
-  const declarations: Declaration[] = [
-    ...declaredTickets.map((ticket): Declaration => ({
-      kind: "ticket",
-      id: ticket.key,
-      url: undefined,
-      note: ticket.note,
-      parentLinkKey: declaredParentLinkKey(ticket.parentKey),
-    })),
-    ...declaredPullRequests.map((pullRequest): Declaration => ({
-      kind: "pr",
-      id: pullRequestLinkId(pullRequest.url),
-      url: pullRequest.url,
-      note: pullRequest.note,
-      parentLinkKey: declaredParentLinkKey(pullRequest.parentKey),
-    })),
-    ...declaredArtifacts.flatMap((artifact): Declaration[] => {
-      const artifactParts = artifactUrlParts(artifact.url);
-      if (artifactParts === undefined) {
-        return [];
-      }
-      const parentLinkKey = declaredParentLinkKey(artifact.parentKey);
-      return [{ kind: "artifact", id: artifactParts.id, url: artifactParts.url, note: artifact.note, parentLinkKey }];
-    }),
-  ];
-  const declarationsByKey = new Map(declarations.map((declaration) => [`${declaration.kind}:${declaration.id}`, declaration]));
-  const linksWithDeclarations = resolvedLinks.map((link) => {
-    const declaration = declarationsByKey.get(linkKey(link));
-    if (declaration === undefined) {
-      return link;
-    }
-    declarationsByKey.delete(linkKey(link));
-    return { ...link, ...declaredFields(declaration) };
-  });
-  const unscannedLinks = [...declarationsByKey.values()].map((declaration) => ({
-    ...unscannedLink(declaration.kind, declaration.id, declaration.url),
-    ...declaredFields(declaration),
-  }));
-  return [...unscannedLinks, ...linksWithDeclarations];
-}
-
-// Scanned PR ids are "owner/repo/pull/12", lowercased.
-function pullRequestLinkId(pullRequestUrl: string): string {
-  return pullRequestUrl.replace(/^https:\/\/github\.com\//, "").toLowerCase();
-}
-
-// Declared parents are a ticket key or a PR URL; links name their parent by link key.
-function declaredParentLinkKey(parentKey: string | undefined): string | undefined {
-  if (parentKey === undefined) {
+// An item the analyzer placed that no scan knows any more still gets a row from its key alone.
+export function linkForItemKey(itemKey: string): LinkCandidate | undefined {
+  const separatorIndex = itemKey.indexOf(":");
+  const kind = itemKey.slice(0, separatorIndex);
+  const id = itemKey.slice(separatorIndex + 1);
+  if (separatorIndex <= 0 || id === "" || !LINK_KINDS.has(kind)) {
     return undefined;
   }
-  const pullRequestUrl = normalizePullRequestUrl(parentKey);
-  return pullRequestUrl === undefined ? `ticket:${parentKey}` : `pr:${pullRequestLinkId(pullRequestUrl)}`;
-}
-
-export interface SessionPanelLinks {
-  workingOn: MarkedLink[];
-  alsoSeen: MarkedLink[];
-}
-
-// Working on: what the agent declared or the user pinned, even a ticket pinned by key that no scan has seen.
-// A removal beats a declaration; removed links reach Also seen only when the Removed filter shows them.
-export function sessionPanelLinks(links: MarkedLink[], linkMarks: LinkMarks): SessionPanelLinks {
-  const shownKeys = new Set(links.map((link) => linkKey(link)));
-  const pinnedByKeyOnly = Object.entries(linkMarks)
-    .filter(([key, mark]) => mark === "pinned" && key.startsWith("ticket:") && !shownKeys.has(key))
-    .map(([key]): MarkedLink => ({ ...unscannedLink("ticket", key.slice("ticket:".length), undefined), mark: "pinned" }));
-  const isWorkingOn = (link: MarkedLink): boolean => link.mark === "pinned" || (link.mark !== "removed" && link.isAgentDeclared === true);
-  return {
-    workingOn: [...pinnedByKeyOnly, ...links.filter(isWorkingOn)],
-    alsoSeen: links.filter((link) => !isWorkingOn(link)),
-  };
-}
-
-// Two or more Working on tickets with the same unshown parent nest under that parent as a group row, which is not owned.
-// A parent seen only in the transcript moves up from Also seen; a parent the user removed never groups.
-export function withParentGroups(
-  sections: SessionPanelLinks,
-  statusFor: (link: MarkedLink) => LinkStatus | undefined,
-  linkMarks: LinkMarks,
-): SessionPanelLinks {
-  const workingOnKeys = new Set(sections.workingOn.map((link) => linkKey(link)));
-  const childCounts = new Map<string, number>();
-  for (const link of sections.workingOn) {
-    const parentKey = ticketParentKey(link, statusFor(link));
-    if (parentKey !== undefined && !workingOnKeys.has(parentKey) && linkMarks[parentKey] !== "removed") {
-      childCounts.set(parentKey, (childCounts.get(parentKey) ?? 0) + 1);
-    }
-  }
-  const groupKeys = [...childCounts].filter(([, count]) => count >= MIN_GROUPED_TICKETS).map(([parentKey]) => parentKey);
-  if (groupKeys.length === 0) {
-    return sections;
-  }
-  const groupLinks = groupKeys.map((groupKey): MarkedLink => {
-    const seenLink = sections.alsoSeen.find((link) => linkKey(link) === groupKey);
-    const groupLink = seenLink ?? { ...unscannedLink("ticket", groupKey.slice("ticket:".length), undefined), role: "touched", mark: undefined };
-    return { ...groupLink, isParentGroup: true };
-  });
-  return {
-    workingOn: [...groupLinks, ...sections.workingOn],
-    alsoSeen: sections.alsoSeen.filter((link) => !groupKeys.includes(linkKey(link))),
-  };
-}
-
-// Jira's parent wins over the declared one, as in the resource tree.
-function ticketParentKey(link: MarkedLink, status: LinkStatus | undefined): string | undefined {
-  if (link.kind !== "ticket") {
-    return undefined;
-  }
-  if (status?.parentKey !== undefined) {
-    return `ticket:${status.parentKey}`;
-  }
-  return link.declaredParentKey?.startsWith("ticket:") ? link.declaredParentKey : undefined;
-}
-
-function unscannedLink(kind: LinkKind, id: string, url: string | undefined): ResolvedLink {
-  return {
-    kind,
-    id,
-    url,
-    title: undefined,
-    signals: {},
-    snippets: [],
-    firstSeen: undefined,
-    lastSeen: undefined,
-    role: "owned",
-    stillRelevant: true,
-    label: undefined,
-    judged: false,
-  };
-}
-
-function declaredFields(
-  declaration: Declaration,
-): Pick<ResolvedLink, "role" | "stillRelevant" | "isAgentDeclared" | "agentNote" | "declaredParentKey"> {
-  return {
-    role: "owned",
-    stillRelevant: true,
-    isAgentDeclared: true,
-    agentNote: declaration.note,
-    ...(declaration.parentLinkKey !== undefined ? { declaredParentKey: declaration.parentLinkKey } : {}),
-  };
+  const url = kind === "pr" ? `https://github.com/${id}` : undefined;
+  return { kind: kind as LinkKind, id, url, title: undefined, signals: {}, snippets: [], firstSeen: undefined, lastSeen: undefined };
 }
 
 export class ConcurrencyLimiter {

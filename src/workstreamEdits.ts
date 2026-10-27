@@ -1,18 +1,22 @@
-import { SeedFacts, SessionAnalysis, TICKET_ITEM_PREFIX, ticketKeyOf, Workstream } from "./analysisState";
+import { clipLine, MAX_WORKSTREAM_TITLE_CHARS, SessionAnalysis, TICKET_ITEM_PREFIX, ticketKeyOf, Workstream } from "./analysisState";
+
+// Model workstream ids all start with "ws-", so this pin target never names one.
+export const UNSORTED_WORKSTREAM_ID = "unsorted";
 
 // What the user changed by hand. Every pass applies these last, so the user always wins over the model.
-// pinnedItems maps an item key to the workstream id it is locked to.
+// pinnedItems maps an item key to the workstream id it is locked to, or to UNSORTED_WORKSTREAM_ID.
 export interface WorkstreamEdits {
   workstreamTitles: Record<string, string>;
   pinnedItems: Record<string, string>;
   removedItems: string[];
   workstreamDone: Record<string, boolean>;
+  workstreamOrder: string[];
   sessionStatus?: string;
   sessionDone?: boolean;
 }
 
 export function emptyWorkstreamEdits(): WorkstreamEdits {
-  return { workstreamTitles: {}, pinnedItems: {}, removedItems: [], workstreamDone: {} };
+  return { workstreamTitles: {}, pinnedItems: {}, removedItems: [], workstreamDone: {}, workstreamOrder: [] };
 }
 
 export function hasWorkstreamEdits(edits: WorkstreamEdits): boolean {
@@ -21,6 +25,7 @@ export function hasWorkstreamEdits(edits: WorkstreamEdits): boolean {
     Object.keys(edits.pinnedItems).length > 0 ||
     edits.removedItems.length > 0 ||
     Object.keys(edits.workstreamDone).length > 0 ||
+    edits.workstreamOrder.length > 0 ||
     edits.sessionStatus !== undefined ||
     edits.sessionDone !== undefined
   );
@@ -35,9 +40,35 @@ export function isUserEditedWorkstream(edits: WorkstreamEdits, workstreamId: str
   );
 }
 
-// Old link-mark removals hide items the way user removals do, but they never enter the stored edits.
-export function withSeedRemovals(edits: WorkstreamEdits, seedFacts: SeedFacts): WorkstreamEdits {
-  return { ...edits, removedItems: [...new Set([...edits.removedItems, ...seedFacts.removedItemKeys])] };
+// Link marks are the one store of removals; the sidebar's Remove and Restore write them, and every reader folds them in here.
+export function withLinkMarkRemovals(edits: WorkstreamEdits, linkMarks: Record<string, string>): WorkstreamEdits {
+  const markedRemovals = Object.entries(linkMarks)
+    .filter(([, mark]) => mark === "removed")
+    .map(([itemKey]) => itemKey);
+  return { ...edits, removedItems: [...new Set([...edits.removedItems, ...markedRemovals])] };
+}
+
+// An empty title drops the rename, so the model's title shows again.
+export function withRenamedWorkstream(edits: WorkstreamEdits, workstreamId: string, rawTitle: string): WorkstreamEdits {
+  const { [workstreamId]: _previousTitle, ...otherTitles } = edits.workstreamTitles;
+  const title = clipLine(rawTitle, MAX_WORKSTREAM_TITLE_CHARS);
+  return { ...edits, workstreamTitles: title === "" ? otherTitles : { ...otherTitles, [workstreamId]: title } };
+}
+
+export function withPinnedItem(edits: WorkstreamEdits, itemKey: string, workstreamId: string): WorkstreamEdits {
+  return { ...edits, pinnedItems: { ...edits.pinnedItems, [itemKey]: workstreamId } };
+}
+
+export function withWorkstreamDone(edits: WorkstreamEdits, workstreamId: string, isDone: boolean): WorkstreamEdits {
+  return { ...edits, workstreamDone: { ...edits.workstreamDone, [workstreamId]: isDone } };
+}
+
+export function withWorkstreamOrder(edits: WorkstreamEdits, workstreamIds: string[]): WorkstreamEdits {
+  return { ...edits, workstreamOrder: [...new Set(workstreamIds)] };
+}
+
+export function withoutRemovedItem(edits: WorkstreamEdits, itemKey: string): WorkstreamEdits {
+  return { ...edits, removedItems: edits.removedItems.filter((removedKey) => removedKey !== itemKey) };
 }
 
 export function isLockedItem(edits: WorkstreamEdits, itemKey: string): boolean {
@@ -53,6 +84,9 @@ export function readWorkstreamEdits(entries: unknown): WorkstreamEdits {
       ? [...new Set(fields.removedItems.filter((itemKey): itemKey is string => typeof itemKey === "string" && itemKey !== ""))]
       : [],
     workstreamDone: readRecord(fields.workstreamDone, (value): value is boolean => typeof value === "boolean"),
+    workstreamOrder: Array.isArray(fields.workstreamOrder)
+      ? [...new Set(fields.workstreamOrder.filter((workstreamId): workstreamId is string => typeof workstreamId === "string" && workstreamId !== ""))]
+      : [],
   };
   if (typeof fields.sessionStatus === "string" && fields.sessionStatus !== "") {
     edits.sessionStatus = fields.sessionStatus;
@@ -66,7 +100,7 @@ export function readWorkstreamEdits(entries: unknown): WorkstreamEdits {
 // Removal beats a pin. Edits that name a workstream no longer in the state are skipped.
 export function applyUserEdits(analysis: SessionAnalysis, edits: WorkstreamEdits): SessionAnalysis {
   const removedItemKeys = new Set(edits.removedItems);
-  const removedTicketKeys = new Set(edits.removedItems.flatMap((itemKey) => removedTicketKey(itemKey) ?? []));
+  const removedTicketKeys = new Set(edits.removedItems.flatMap((itemKey) => ticketKeyOfItem(itemKey) ?? []));
   const workstreams: Workstream[] = analysis.workstreams.map((workstream) => ({
     ...workstream,
     title: edits.workstreamTitles[workstream.id] ?? workstream.title,
@@ -75,6 +109,10 @@ export function applyUserEdits(analysis: SessionAnalysis, edits: WorkstreamEdits
     ticketKeys: workstream.ticketKeys.filter((ticketKey) => !removedTicketKeys.has(ticketKey)),
   }));
   for (const [itemKey, pinnedWorkstreamId] of Object.entries(edits.pinnedItems)) {
+    if (pinnedWorkstreamId === UNSORTED_WORKSTREAM_ID) {
+      unsortItem(workstreams, itemKey);
+      continue;
+    }
     const pinnedWorkstream = workstreams.find((workstream) => workstream.id === pinnedWorkstreamId);
     if (pinnedWorkstream === undefined || removedItemKeys.has(itemKey)) {
       continue;
@@ -112,7 +150,15 @@ function pinItem(workstreams: Workstream[], pinnedWorkstream: Workstream, itemKe
   }
 }
 
-function removedTicketKey(itemKey: string): string | undefined {
+function unsortItem(workstreams: Workstream[], itemKey: string): void {
+  const unsortedTicketKey = ticketKeyOfItem(itemKey);
+  for (const workstream of workstreams) {
+    workstream.itemKeys = workstream.itemKeys.filter((otherKey) => otherKey !== itemKey);
+    workstream.ticketKeys = workstream.ticketKeys.filter((ticketKey) => ticketKey !== unsortedTicketKey);
+  }
+}
+
+function ticketKeyOfItem(itemKey: string): string | undefined {
   return itemKey.startsWith(TICKET_ITEM_PREFIX) ? ticketKeyOf(itemKey) : undefined;
 }
 

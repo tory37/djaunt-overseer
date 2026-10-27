@@ -230,12 +230,6 @@
         "category": "Overseer"
       },
       {
-        "command": "overseer.findResources",
-        "title": "Find Resources",
-        "category": "Overseer",
-        "icon": "$(search)"
-      },
-      {
         "command": "overseer.summarizeSession",
         "title": "Summarize with Haiku",
         "category": "Overseer",
@@ -296,11 +290,6 @@
         "title": "Open Commit on GitHub",
         "category": "Overseer",
         "icon": "$(github)"
-      },
-      {
-        "command": "overseer.toggleRemovedLinks",
-        "title": "Toggle Removed Links",
-        "category": "Overseer"
       },
       {
         "command": "overseer.moveTicketStatus",
@@ -711,10 +700,6 @@
           "when": "false"
         },
         {
-          "command": "overseer.findResources",
-          "when": "false"
-        },
-        {
           "command": "overseer.summarizeSession",
           "when": "false"
         },
@@ -1006,21 +991,6 @@
           "default": 10,
           "minimum": 0,
           "description": "Minutes after any pass on a session, in any window, before an auto pass can run on it again."
-        },
-        "overseer.links.judgeModel": {
-          "type": "string",
-          "default": "haiku",
-          "description": "Model that decides which links matter to a session. Runs headless through the claude CLI."
-        },
-        "overseer.links.showIrrelevant": {
-          "type": "boolean",
-          "default": false,
-          "description": "Also show links the judge marked irrelevant, dimmed."
-        },
-        "overseer.links.showRemoved": {
-          "type": "boolean",
-          "default": false,
-          "description": "Also show links you removed, dimmed, so you can restore them."
         },
         "overseer.links.liveStatus": {
           "type": "boolean",
