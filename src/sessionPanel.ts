@@ -1368,8 +1368,11 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     return footer;
   }
 
+  // Each render rebuilds the scroll container, so its offset is carried over while the same session stays shown.
   function render() {
     const root = document.getElementById("root");
+    const previousScrollTop = root.querySelector(".scroll")?.scrollTop ?? 0;
+    const previousSessionId = shownSessionId;
     root.replaceChildren();
     menuBuilders = new Map();
     if (panelState === undefined) {
@@ -1392,6 +1395,9 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     const work = panelState.work;
     scroll.append(...[sessionHeader(session), whereSection(work), nextStep(session), workSection(session, work)].filter(Boolean));
     root.append(toolbar(session));
+    if (session.sessionId === previousSessionId) {
+      scroll.scrollTop = previousScrollTop;
+    }
     drawOpenMenu(root);
     focusRenameInput(root);
   }
