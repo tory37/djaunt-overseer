@@ -2,7 +2,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { displayTitle, SessionMeta } from "./indexer";
 import { loadVersionedCache, saveVersionedCache } from "./linkCache";
-import { createClaudeRunner } from "./linkJudge";
+import { createClaudeRunner } from "./claudeRunner";
 import { ConcurrencyLimiter } from "./linkView";
 import { resolveClaudeBinary } from "./liveSessions";
 import { buildSummaryDigest, parseSummaryOutput, readTranscriptTail, SummaryCacheEntry, summaryArgs } from "./sessionSummary";

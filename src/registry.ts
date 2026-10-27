@@ -1,3 +1,4 @@
+import { hasWorkstreamEdits, readWorkstreamEdits, WorkstreamEdits } from "./workstreamEdits";
 import {
   assignWorkspace,
   DEFAULT_WORKSPACE_ID,
@@ -37,6 +38,8 @@ const GROUP_ORDER_KEY = "overseer.groupOrder";
 const SESSION_ORDER_KEY = "overseer.sessionOrder";
 const LINK_MARKS_KEY = "overseer.linkMarks";
 const LINK_ORDER_KEY = "overseer.linkOrder";
+// The first key held edits the old seed made up from link marks, so real user edits start fresh here.
+const WORKSTREAM_EDITS_KEY = "overseer.workstreamEdits.v2";
 const COLLAPSED_GROUPS_KEY = "overseer.collapsedGroupRefs";
 const RESOURCE_SESSIONS_KEY = "overseer.resourceSessionIds";
 const TERMINAL_SESSIONS_KEY = "overseer.terminalSessions";
@@ -255,6 +258,27 @@ export class Registry {
     await this.write(LINK_ORDER_KEY, { ...this.allLinkOrders(), [sessionId]: linkKeys });
   }
 
+  workstreamEdits(sessionId: string): WorkstreamEdits {
+    return readWorkstreamEdits(this.allWorkstreamEdits()[sessionId]);
+  }
+
+  hasStoredWorkstreamEdits(sessionId: string): boolean {
+    return this.allWorkstreamEdits()[sessionId] !== undefined;
+  }
+
+  async setWorkstreamEdits(sessionId: string, edits: WorkstreamEdits): Promise<void> {
+    const { [sessionId]: _previousEdits, ...otherSessionEdits } = this.allWorkstreamEdits();
+    await this.write(WORKSTREAM_EDITS_KEY, hasWorkstreamEdits(edits) ? { ...otherSessionEdits, [sessionId]: edits } : otherSessionEdits);
+  }
+
+  // The analysis file moves with /clear and fork, so the edits that name its workstreams move too.
+  async copyWorkstreamEdits(fromSessionId: string, toSessionId: string): Promise<void> {
+    const fromEdits = this.allWorkstreamEdits()[fromSessionId];
+    if (fromEdits !== undefined && !this.hasStoredWorkstreamEdits(toSessionId)) {
+      await this.write(WORKSTREAM_EDITS_KEY, { ...this.allWorkstreamEdits(), [toSessionId]: fromEdits });
+    }
+  }
+
   resourceSessionIds(): string[] {
     return this.store.get<string[]>(RESOURCE_SESSIONS_KEY) ?? [];
   }
@@ -400,6 +424,10 @@ export class Registry {
     return this.store.get<Record<string, LinkMarks>>(LINK_MARKS_KEY) ?? {};
   }
 
+  private allWorkstreamEdits(): Record<string, unknown> {
+    return this.store.get<Record<string, unknown>>(WORKSTREAM_EDITS_KEY) ?? {};
+  }
+
   private allLinkOrders(): Record<string, string[]> {
     return this.store.get<Record<string, string[]>>(LINK_ORDER_KEY) ?? {};
   }
@@ -442,6 +470,7 @@ export class Registry {
     await this.write(ASSIGNMENTS_KEY, withoutForgotten(this.assignments()));
     await this.write(LINK_MARKS_KEY, withoutForgotten(this.allLinkMarks()));
     await this.write(LINK_ORDER_KEY, withoutForgotten(this.allLinkOrders()));
+    await this.write(WORKSTREAM_EDITS_KEY, withoutForgotten(this.allWorkstreamEdits()));
     await this.write(SESSION_STATUS_KEY, withoutForgotten(this.sessionStatusIds()));
     await this.write(SESSION_STATUS_REASON_KEY, withoutForgotten(this.sessionStatusReasons()));
   }

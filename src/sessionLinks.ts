@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { DeclaredTicket } from "./agentTickets";
 import { SessionWork } from "./agentWork";
+import { createClaudeRunner } from "./claudeRunner";
 import { displayTitle, SessionMeta } from "./indexer";
 import {
   judgeCacheFilePath,
@@ -12,10 +13,16 @@ import {
   saveJudgeCache,
   saveLinkCache,
 } from "./linkCache";
-import { LinkCandidate, LinkKind, LinkScanCacheEntry, scanTranscriptLinks, summarizeCandidates } from "./linkCandidates";
+import {
+  LinkCandidate,
+  LinkKind,
+  LinkScanCacheEntry,
+  LinkScanState,
+  scanTranscriptLinks,
+  summarizeCandidates,
+} from "./linkCandidates";
 import {
   candidateFingerprint,
-  createClaudeRunner,
   JudgeSessionContext,
   judgeSessionLinks,
   needsJudging,
@@ -149,6 +156,12 @@ export class SessionLinkService implements vscode.Disposable {
       this.findingSessionIds.delete(meta.sessionId);
       this.changeEmitter.fire();
     }
+  }
+
+  // Brings the scan up to date first, so the caller sees every complete line written so far.
+  async scanStateFor(meta: SessionMeta): Promise<LinkScanState | undefined> {
+    await this.scan(meta);
+    return this.scanEntries[meta.transcriptFile]?.state;
   }
 
   private candidatesFor(scanEntry: LinkScanCacheEntry): LinkCandidate[] {

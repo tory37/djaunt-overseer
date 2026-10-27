@@ -1,12 +1,17 @@
 import * as vscode from "vscode";
 import { Registry } from "./registry";
 import { MarkedStatus, parseSessionStatuses, SessionStatus, statusColorId, statusOfSession } from "./sessionStatuses";
+import { StatusOption } from "./sessionStatusSync";
 
 const SESSION_STATUS_SCHEME = "overseer-session";
 const STATUSES_SETTING = "sessionStatuses";
 
 export function configuredStatuses(): SessionStatus[] {
   return parseSessionStatuses(vscode.workspace.getConfiguration("overseer").get<unknown>(STATUSES_SETTING));
+}
+
+export function configuredStatusOptions(): StatusOption[] {
+  return configuredStatuses().map(({ id, name, asksReason, done }) => ({ id, name, asksReason, done }));
 }
 
 export async function saveStatuses(statuses: SessionStatus[]): Promise<void> {

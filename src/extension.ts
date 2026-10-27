@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { AnalyzerTrigger } from "./analyzerTrigger";
 import { registerCommands } from "./commands";
 import { CompactMonitor, registerCompactHookCommands } from "./compactMonitor";
 import { DeclarationMonitor } from "./declarationMonitor";
@@ -10,6 +11,7 @@ import { Registry } from "./registry";
 import { SessionIndex } from "./sessionIndex";
 import { JiraService } from "./jiraService";
 import { LinkStatusService } from "./linkStatusService";
+import { SessionAnalyzer } from "./sessionAnalyzer";
 import { SessionLinkService } from "./sessionLinks";
 import { SessionSummaryService } from "./sessionSummaries";
 import { StoredStatusCache } from "./statusCache";
@@ -58,6 +60,16 @@ export function activate(context: vscode.ExtensionContext): void {
   const jiraService = new JiraService(log);
   const linkStatusService = new LinkStatusService(log, jiraService, statusConfig, new StoredStatusCache(context.globalState));
   const summaryService = new SessionSummaryService(context.globalStorageUri.fsPath, log);
+  const sessionAnalyzer = new SessionAnalyzer({
+    claudeHome,
+    registry,
+    linkService,
+    linkStatusService,
+    findSessionMeta: findIndexedSession,
+    sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
+    log,
+  });
+  const analyzerTrigger = new AnalyzerTrigger({ liveMonitor, analyzer: sessionAnalyzer, findSessionMeta: findIndexedSession, log });
   const compactMonitor = new CompactMonitor(claudeHome, log);
   const createSectionTree = (section: SessionSection, viewId: string) => {
     const provider = new SessionTreeProvider(section, sessionIndex, liveMonitor, registry, compactMonitor);
@@ -128,6 +140,7 @@ export function activate(context: vscode.ExtensionContext): void {
       log.appendLine(`Session ${fromSessionId} became ${toSessionId} in the same terminal; moving its row`);
       await registry.copyTicketMarks(fromSessionId, toSessionId);
       await declarationMonitor.copySession(fromSessionId, toSessionId);
+      await sessionAnalyzer.copySession(fromSessionId, toSessionId);
       const previousTitle = sessionTitle(fromSessionId, registry, findIndexedSession);
       const isNewSession = !registry.isPinned(toSessionId) && findIndexedSession(toSessionId) === undefined;
       await registry.moveSession(fromSessionId, toSessionId);
@@ -202,6 +215,8 @@ export function activate(context: vscode.ExtensionContext): void {
     jiraService,
     statusRelay,
     summaryService,
+    sessionAnalyzer,
+    analyzerTrigger,
     treeProvider,
     treeView,
     terminalTreeProvider,
@@ -284,6 +299,8 @@ export function activate(context: vscode.ExtensionContext): void {
       sessionPreview,
       pinnedSessions,
       statusRelay,
+      sessionAnalyzer,
+      sessionFocus,
       log,
     }),
     ...registerWorkspaceCommands({ registry, sessionIndex, liveMonitor, pinnedSessions, log }),

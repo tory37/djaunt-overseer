@@ -24,6 +24,9 @@ import {
 } from "./terminals";
 import { RepoTreeNode } from "./repoTree";
 import { fillPrompt, parseSessionCommands, promptParameters } from "./sessionCommands";
+import { AnalyzerMode } from "./analyzerDigest";
+import { AnalyzerPassOutcome, SessionAnalyzer } from "./sessionAnalyzer";
+import { SessionFocusTracker } from "./sessionFocus";
 import { SessionPreview } from "./sessionPreview";
 import { SessionStatusRelay } from "./sessionStatusRelay";
 import { askStatusReason, AUTO_STATUS_ID, configuredStatuses, pickSessionStatus } from "./sessionStatusView";
@@ -42,6 +45,8 @@ export interface CommandDependencies {
   sessionPreview: SessionPreview;
   pinnedSessions: () => PinnedSession[];
   statusRelay: SessionStatusRelay;
+  sessionAnalyzer: SessionAnalyzer;
+  sessionFocus: SessionFocusTracker;
   log: vscode.OutputChannel;
 }
 
@@ -74,6 +79,8 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     linkService,
     linkStatusService,
     statusRelay,
+    sessionAnalyzer,
+    sessionFocus,
     summaryService,
     sessionViews,
     sessionPreview,
@@ -105,6 +112,31 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     typeof clicked === "string"
       ? [findPinnedSession(clicked)].filter(isDefined)
       : selectedSessionNodes(clicked).map((node) => node.pinned);
+
+  // The palette has no clicked row, so it acts on the focused session. The sidebar's session ID may be an unpinned preview.
+  const analyzerTargetIds = (clicked?: TreeNode | string): string[] => {
+    if (typeof clicked === "string") {
+      return [clicked];
+    }
+    if (clicked !== undefined) {
+      return selectedSessionNodes(clicked).map((node) => node.pinned.sessionId);
+    }
+    const focusedSessionId = sessionFocus.focusedSessionId();
+    return focusedSessionId === undefined ? [] : [focusedSessionId];
+  };
+
+  const runAnalyzerCommand = async (clicked: TreeNode | string | undefined, mode: AnalyzerMode): Promise<void> => {
+    const sessionIds = analyzerTargetIds(clicked);
+    if (sessionIds.length === 0) {
+      void vscode.window.showInformationMessage("Overseer: focus a session first.");
+      return;
+    }
+    const progressTitle = mode === "recheck" ? "Rechecking session from scratch" : "Updating session analysis";
+    const outcomes = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: progressTitle }, () =>
+      Promise.all(sessionIds.map((sessionId) => sessionAnalyzer.analyze(sessionId, mode))),
+    );
+    showAnalyzerOutcomes(outcomes);
+  };
 
   // A clicked session offers only its own repos; the palette offers every repo in the tree.
   const pickRepo = async (clicked?: TreeNode | string): Promise<string | undefined> => {
@@ -169,6 +201,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       if (originalGroupRef !== undefined) {
         await registry.assign([forkSessionId], originalGroupRef);
       }
+      await sessionAnalyzer.copySession(meta.sessionId, forkSessionId);
       resumeSession(meta, log, forkSessionId);
     }
   };
@@ -599,6 +632,8 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         .filter(isDefined);
       await Promise.all(sessionMetas.map((meta) => summaryService.summarize(meta)));
     }),
+    vscode.commands.registerCommand("overseer.analyzeSession", (clicked?: TreeNode | string) => runAnalyzerCommand(clicked, "diff")),
+    vscode.commands.registerCommand("overseer.recheckSession", (clicked?: TreeNode | string) => runAnalyzerCommand(clicked, "recheck")),
     // The Repos view passes a repo row, the context menu the clicked session, and the Session sidebar a session ID.
     vscode.commands.registerCommand("overseer.openRepoInScm", async (clicked?: TreeNode | RepoTreeNode | string) => {
       if (typeof clicked === "object" && (clicked.kind === "repo" || clicked.kind === "commit")) {
@@ -651,6 +686,23 @@ export async function openRepoInSourceControl(repoRoot: string, log: vscode.Outp
   } catch (error) {
     log.appendLine(`Can't open ${repoRoot} in Source Control: ${String(error)}`);
     void vscode.window.showErrorMessage(`Overseer: can't open ${tildePath(repoRoot)} in Source Control. Is the Git extension on?`);
+  }
+}
+
+function showAnalyzerOutcomes(outcomes: AnalyzerPassOutcome[]): void {
+  const failedOutcomes = outcomes.filter((outcome) => outcome.kind === "failed");
+  const failedCount = failedOutcomes.length;
+  if (outcomes.length === 1 && failedCount === 1) {
+    void vscode.window.showWarningMessage(`Overseer: analysis failed, ${failedOutcomes[0].detail}. See the Overseer output.`);
+    return;
+  }
+  if (failedCount > 0) {
+    void vscode.window.showWarningMessage(`Overseer: ${failedCount} analysis pass${failedCount === 1 ? "" : "es"} failed. See the Overseer output.`);
+    return;
+  }
+  const skippedOutcomes = outcomes.filter((outcome) => outcome.kind === "skipped");
+  if (outcomes.length === 1 && skippedOutcomes.length === 1) {
+    void vscode.window.showInformationMessage(`Overseer: analysis skipped, ${skippedOutcomes[0].detail}.`);
   }
 }
 

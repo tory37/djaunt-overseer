@@ -122,6 +122,8 @@ const ACTION_COMMANDS: Record<string, string> = {
   command: "overseer.runSessionCommand",
   summarize: "overseer.summarizeSession",
   findLinks: "overseer.findResources",
+  analyze: "overseer.analyzeSession",
+  recheckAnalysis: "overseer.recheckSession",
   openRepo: "overseer.openRepoInScm",
   status: "overseer.setSessionStatus",
   rename: "overseer.renameSession",
@@ -571,6 +573,8 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   ];
   const SESSION_ACTIONS = [
     ["findLinks", "search", "Find links", "Find links"],
+    ["analyze", "refresh", "Update", "Update now"],
+    ["recheckAnalysis", "debug-restart", "Recheck", "Recheck from scratch"],
     ["openRepo", "source-control", "Repo", "Open repo"],
     ["status", "tag", "Status", "Set status"],
     ["rename", "edit", "Rename", "Rename"],

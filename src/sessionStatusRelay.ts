@@ -4,7 +4,7 @@ import { isSafeSessionId } from "./agentTickets";
 import { displayTitle, SessionMeta } from "./indexer";
 import { JiraService } from "./jiraService";
 import { loadVersionedCache, saveVersionedCache } from "./linkCache";
-import { createClaudeRunner } from "./linkJudge";
+import { createClaudeRunner } from "./claudeRunner";
 import { MarkedLink, sessionPanelLinks } from "./linkView";
 import { resolveClaudeBinary } from "./liveSessions";
 import { LinkStatusService } from "./linkStatusService";
@@ -22,7 +22,7 @@ import {
   StatusOption,
   TicketStatusFact,
 } from "./sessionStatusSync";
-import { configuredStatuses } from "./sessionStatusView";
+import { configuredStatusOptions } from "./sessionStatusView";
 
 // fs.watch can miss events on some file systems, so the folder is also polled.
 const REQUEST_POLL_INTERVAL_MS = 15_000;
@@ -105,7 +105,7 @@ export class SessionStatusRelay implements vscode.Disposable {
   }
 
   private statusOptions(): StatusOption[] {
-    return configuredStatuses().map(({ id, name, asksReason, done }) => ({ id, name, asksReason, done }));
+    return configuredStatusOptions();
   }
 
   private workingOnTickets(sessionId: string): MarkedLink[] {

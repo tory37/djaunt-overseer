@@ -1,5 +1,6 @@
 import * as crypto from "crypto";
 import * as vscode from "vscode";
+import { ANALYZER_GATE_CONFIG_KEYS, AnalyzerGateSettings } from "./analyzerGates";
 import { PR_STATUS_KEYS, PrStatusKey, statusGlyph, ticketStatus } from "./linkStatus";
 import {
   customSessionColor,
@@ -10,12 +11,13 @@ import {
   sessionIconSpec,
   withSessionColor,
 } from "./sessionIcons";
+import { readAnalyzerGateSettings } from "./sessionAnalyzer";
 import { configuredStatuses, saveStatuses } from "./sessionStatusView";
 import { DEFAULT_SESSION_STATUSES, parseSessionStatuses, SessionStatus, STATUS_COLORS, statusColorId } from "./sessionStatuses";
 import { StatusConfig } from "./statusConfig";
 import { statusGlyphMarkup } from "./statusIcons";
 
-export type SettingsSection = "sessions" | "statuses" | "jira" | "github" | "general";
+export type SettingsSection = "sessions" | "statuses" | "jira" | "github" | "analyzer" | "general";
 
 export interface SettingsPanelDependencies {
   extensionUri: vscode.Uri;
@@ -55,12 +57,14 @@ interface PanelState {
   statusColors: Array<{ name: string; colorVariable: string }>;
   projects: Array<{ key: string; isEnabled: boolean; statuses: StatusRow[] }>;
   prStatuses: StatusRow[];
+  analyzerSettings: AnalyzerGateSettings;
 }
 
 type PanelMessage =
   | { type: "ready" }
   | { type: "setLinkSetting"; settingKey: keyof LinkSettings; value: boolean }
   | { type: "setViewVisible"; view: OverseerView; isVisible: boolean }
+  | { type: "setAnalyzerSetting"; settingName: keyof AnalyzerGateSettings; value: unknown }
   | { type: "setSessionStatuses"; statuses: unknown }
   | { type: "resetSessionStatuses" }
   | { type: "setSessionIcon"; state: SessionIconState; iconName: string }
@@ -177,7 +181,16 @@ export class SettingsPanel {
       OVERSEER_VIEWS.map((view) => [view, viewsConfig.get<boolean>(view, true)]),
     ) as Record<OverseerView, boolean>;
     const statusColors = STATUS_COLORS.map((color) => ({ name: color, colorVariable: themeColorVariable(statusColorId(color)) }));
-    return { sessionIcons, linkSettings, visibleViews, sessionStatuses: configuredStatuses(), statusColors, projects, prStatuses };
+    return {
+      sessionIcons,
+      linkSettings,
+      visibleViews,
+      sessionStatuses: configuredStatuses(),
+      statusColors,
+      projects,
+      prStatuses,
+      analyzerSettings: readAnalyzerGateSettings(),
+    };
   }
 
   private async receive(message: PanelMessage): Promise<void> {
@@ -197,6 +210,9 @@ export class SettingsPanel {
             .getConfiguration("overseer.views")
             .update(message.view, message.isVisible, vscode.ConfigurationTarget.Global);
         }
+        return;
+      case "setAnalyzerSetting":
+        await updateAnalyzerSetting(message.settingName, message.value);
         return;
       case "setSessionStatuses":
         await saveStatuses(parseSessionStatuses(message.statuses));
@@ -254,6 +270,19 @@ function readColorCustomizations(): Record<string, unknown> | undefined {
 async function updateLinkSetting(settingKey: keyof LinkSettings, value: boolean): Promise<void> {
   if (LINK_SETTING_KEYS.includes(settingKey) && typeof value === "boolean") {
     await vscode.workspace.getConfiguration("overseer.links").update(settingKey, value, vscode.ConfigurationTarget.Global);
+  }
+}
+
+async function updateAnalyzerSetting(settingName: keyof AnalyzerGateSettings, value: unknown): Promise<void> {
+  if (!Object.hasOwn(ANALYZER_GATE_CONFIG_KEYS, settingName)) {
+    return;
+  }
+  const isValidValue =
+    settingName === "isAutoEnabled" ? typeof value === "boolean" : typeof value === "number" && Number.isFinite(value) && value >= 0;
+  if (isValidValue) {
+    await vscode.workspace
+      .getConfiguration("overseer.analyzer")
+      .update(ANALYZER_GATE_CONFIG_KEYS[settingName], value, vscode.ConfigurationTarget.Global);
   }
 }
 
@@ -367,7 +396,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   :focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   input[type="checkbox"] { margin: 0; accent-color: var(--vscode-focusBorder); }
   .switch { display: flex; align-items: center; gap: 8px; height: 28px; cursor: pointer; }
-  input[type="text"], select {
+  input[type="text"], input[type="number"], select {
     font: inherit;
     height: 24px;
     box-sizing: border-box;
@@ -378,6 +407,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   }
   select { color: var(--vscode-dropdown-foreground); background: var(--vscode-dropdown-background); border-color: var(--vscode-dropdown-border); }
   input[type="text"] { font-family: var(--vscode-editor-font-family); width: 100%; }
+  input[type="number"] { width: 72px; }
   input[type="text"].invalid { border-color: var(--vscode-inputValidation-warningBorder); }
   .session-grid { display: grid; grid-template-columns: 20px minmax(0, 1fr) 180px 20px 72px 88px; column-gap: 12px; align-items: center; }
   .session-grid > * { min-height: 32px; display: flex; align-items: center; }
@@ -429,6 +459,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     <a href="#statuses" data-section="statuses">Statuses</a>
     <a href="#jira" data-section="jira">Jira</a>
     <a href="#github" data-section="github">GitHub</a>
+    <a href="#analyzer" data-section="analyzer">Analyzer</a>
     <a href="#general" data-section="general">General</a>
   </nav>
   <main>
@@ -477,6 +508,18 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       <div class="section-body" id="github-body">
         <p class="note muted">Status comes from <code>gh</code>.</p>
         <div id="pr-statuses" class="grid"></div>
+      </div>
+    </section>
+
+    <section id="analyzer">
+      <div class="section-head"><h2>Analyzer</h2></div>
+      <label class="switch"><input type="checkbox" id="analyzer-auto"> Analyze a session on its own after it goes idle</label>
+      <div class="section-body" id="analyzer-body">
+        <p class="note muted">An auto pass needs all of these. Each gate decision goes to the Overseer output with an <code>[analyzer]</code> prefix.</p>
+        <label class="general-row"><input type="number" min="0" step="1" id="analyzer-idleSeconds"> Seconds idle after a busy turn</label>
+        <label class="general-row"><input type="number" min="0" step="1" id="analyzer-minNewPrompts"> New prompts since the last pass</label>
+        <label class="general-row"><input type="number" min="0" step="1" id="analyzer-minNewKb"> KB of new transcript, or a new link</label>
+        <label class="general-row"><input type="number" min="0" step="1" id="analyzer-cooldownMinutes"> Minutes since the last pass</label>
       </div>
     </section>
 
@@ -751,6 +794,29 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     }
   }
 
+  const ANALYZER_NUMBER_SETTINGS = ["idleSeconds", "minNewPrompts", "minNewKb", "cooldownMinutes"];
+  const analyzerAutoBox = document.getElementById("analyzer-auto");
+  analyzerAutoBox.addEventListener("change", () =>
+    vscodeApi.postMessage({ type: "setAnalyzerSetting", settingName: "isAutoEnabled", value: analyzerAutoBox.checked }),
+  );
+  for (const settingName of ANALYZER_NUMBER_SETTINGS) {
+    const numberField = document.getElementById("analyzer-" + settingName);
+    numberField.addEventListener("change", () => {
+      const value = Number(numberField.value);
+      if (numberField.value.trim() !== "" && Number.isFinite(value) && value >= 0) {
+        vscodeApi.postMessage({ type: "setAnalyzerSetting", settingName, value });
+      }
+    });
+  }
+
+  function renderAnalyzerSettings(analyzerSettings) {
+    analyzerAutoBox.checked = analyzerSettings.isAutoEnabled;
+    for (const settingName of ANALYZER_NUMBER_SETTINGS) {
+      document.getElementById("analyzer-" + settingName).value = String(analyzerSettings[settingName]);
+    }
+    setSectionEnabled("analyzer-body", analyzerSettings.isAutoEnabled);
+  }
+
   let shownStatuses = [];
   let statusColors = [];
 
@@ -943,6 +1009,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     renderSessionStatuses(state.sessionStatuses, state.statusColors);
     renderProjects(state.projects);
     renderPrStatuses(state.prStatuses);
+    renderAnalyzerSettings(state.analyzerSettings);
     markActiveSection();
   });
   vscodeApi.postMessage({ type: "ready" });

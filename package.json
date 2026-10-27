@@ -242,6 +242,18 @@
         "icon": "$(sparkle)"
       },
       {
+        "command": "overseer.analyzeSession",
+        "title": "Update Now",
+        "category": "Overseer",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "overseer.recheckSession",
+        "title": "Recheck from Scratch",
+        "category": "Overseer",
+        "icon": "$(debug-restart)"
+      },
+      {
         "command": "overseer.openRepoInScm",
         "title": "Open Repo in Source Control",
         "category": "Overseer",
@@ -468,6 +480,16 @@
           "command": "overseer.resumeSession",
           "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\.(suspended|elsewhere)$/",
           "group": "1_session@1"
+        },
+        {
+          "command": "overseer.analyzeSession",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./",
+          "group": "4_analyze@1"
+        },
+        {
+          "command": "overseer.recheckSession",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./",
+          "group": "4_analyze@2"
         },
         {
           "command": "overseer.moveToWorkspace",
@@ -945,6 +967,45 @@
           "type": "string",
           "default": "jira",
           "description": "Name of the stdio Jira MCP server in ~/.claude.json. Overseer starts it to read ticket status and move tickets."
+        },
+        "overseer.analyzer.model": {
+          "type": "string",
+          "default": "haiku",
+          "description": "Model that groups a session's work into workstreams on each diff pass. Runs headless through the claude CLI."
+        },
+        "overseer.analyzer.recheckModel": {
+          "type": "string",
+          "default": "sonnet",
+          "description": "Model for Recheck from scratch, and the retry when a diff pass returns a reply that fails the schema."
+        },
+        "overseer.analyzer.auto": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run an analysis pass on its own after a session goes idle. Off means only Update Now and Recheck from Scratch run passes."
+        },
+        "overseer.analyzer.idleSeconds": {
+          "type": "number",
+          "default": 30,
+          "minimum": 0,
+          "description": "Seconds a session must stay idle after a busy turn before an auto pass starts. Going busy again cancels the wait."
+        },
+        "overseer.analyzer.minNewKb": {
+          "type": "number",
+          "default": 10,
+          "minimum": 0,
+          "description": "KB of new transcript since the last pass that an auto pass needs. A new PR, ticket, or artifact link also counts."
+        },
+        "overseer.analyzer.minNewPrompts": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "description": "New user prompts since the last pass that an auto pass needs."
+        },
+        "overseer.analyzer.cooldownMinutes": {
+          "type": "number",
+          "default": 10,
+          "minimum": 0,
+          "description": "Minutes after any pass on a session, in any window, before an auto pass can run on it again."
         },
         "overseer.links.judgeModel": {
           "type": "string",

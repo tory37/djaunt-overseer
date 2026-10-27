@@ -4,7 +4,7 @@ import { AGENT_WORK_SCHEMA_VERSION, declaredWorkFile, readSessionWork } from "./
 import { DeclarationMonitor } from "./declarationMonitor";
 import { displayTitle, SessionMeta } from "./indexer";
 import { loadVersionedCache, saveVersionedCache } from "./linkCache";
-import { createClaudeRunner } from "./linkJudge";
+import { createClaudeRunner } from "./claudeRunner";
 import { ConcurrencyLimiter } from "./linkView";
 import { resolveClaudeBinary } from "./liveSessions";
 import { buildPopulateDigest, populateArgs, populateFailureReason, parsePopulateOutput, PopulateResult, RECHECK_DIGEST_BYTES } from "./populateDigest";

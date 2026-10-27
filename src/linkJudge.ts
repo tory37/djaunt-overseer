@@ -1,7 +1,9 @@
-import { execFile, ExecFileException } from "child_process";
 import { createHash } from "crypto";
-import * as os from "os";
-import { fallbackRole, isPassiveMention, LinkCandidate, LinkRole } from "./linkCandidates";
+import { ClaudeRunner, headlessClaudeArgs } from "./claudeRunner";
+import { fallbackRole, isPassiveMention, LinkCandidate, linkKey, LinkRole } from "./linkCandidates";
+
+export type { ClaudeRunner } from "./claudeRunner";
+export { linkKey } from "./linkCandidates";
 
 export type JudgedRole = "owned" | "touched" | "irrelevant";
 
@@ -38,15 +40,10 @@ export interface ResolvedLink extends LinkCandidate {
   agentNote?: string;
 }
 
-export type ClaudeRunner = (claudeArgs: string[], stdinText: string) => Promise<string>;
-
 const MAX_DIGEST_BYTES = 8 * 1024;
 const MAX_PROMPT_CHARS = 300;
 const OMITTED_NOTE_RESERVE_BYTES = 48;
 const MAX_LABEL_LENGTH = 60;
-const JUDGE_TIMEOUT_MS = 120_000;
-const JUDGE_MAX_BUFFER_BYTES = 4 * 1024 * 1024;
-const MAX_FAILURE_OUTPUT_CHARS = 300;
 const JUDGED_ROLES = new Set<string>(["owned", "touched", "irrelevant"]);
 
 const JUDGE_SYSTEM_PROMPT = `You decide which links matter to one Claude Code session.
@@ -97,10 +94,6 @@ const JUDGE_OUTPUT_SCHEMA = {
 
 const FALLBACK_ROLE_RANK: Record<LinkRole, number> = { owned: 0, touched: 1, mentioned: 2 };
 const JUDGED_ROLE_RANK: Record<JudgedRole, number> = { owned: 0, touched: 1, irrelevant: 2 };
-
-export function linkKey(candidate: LinkCandidate): string {
-  return `${candidate.kind}:${candidate.id}`;
-}
 
 // Signal counts grow on every turn, so only new links or new kinds of signal call for a fresh verdict.
 // Passive mentions never show, so the judge never sees them; quoted text in their snippets misled it.
@@ -168,19 +161,7 @@ export function buildJudgeDigest(context: JudgeSessionContext, candidates: LinkC
 }
 
 export function judgeArgs(model: string): string[] {
-  return [
-    "-p",
-    "--model", model,
-    "--effort", "low",
-    "--output-format", "json",
-    "--no-session-persistence",
-    "--tools", "",
-    "--strict-mcp-config",
-    "--setting-sources", "",
-    "--settings", JSON.stringify({ alwaysThinkingEnabled: false }),
-    "--system-prompt", JUDGE_SYSTEM_PROMPT,
-    "--json-schema", JSON.stringify(JUDGE_OUTPUT_SCHEMA),
-  ];
+  return headlessClaudeArgs(model, JUDGE_SYSTEM_PROMPT, JUDGE_OUTPUT_SCHEMA);
 }
 
 export function parseJudgeOutput(stdout: string, includedKeys: string[]): Record<string, JudgeVerdict> {
@@ -246,35 +227,6 @@ export function resolveLinks(candidates: LinkCandidate[], judgeEntry: JudgeCache
     };
   });
   return resolvedLinks.sort((left, right) => judgedRoleRank(left.role) - judgedRoleRank(right.role));
-}
-
-// Headless runs start in the temp dir so no project CLAUDE.md rides along with the digest.
-export function createClaudeRunner(claudeBinary: string): ClaudeRunner {
-  return (claudeArgs, stdinText) =>
-    new Promise((resolve, reject) => {
-      const judgeProcess = execFile(
-        claudeBinary,
-        claudeArgs,
-        { cwd: os.tmpdir(), timeout: JUDGE_TIMEOUT_MS, maxBuffer: JUDGE_MAX_BUFFER_BYTES },
-        (error, stdout, stderr) => {
-          if (error) {
-            reject(new Error(`headless claude run failed: ${describeJudgeFailure(error, stdout, stderr)}`));
-          } else {
-            resolve(stdout);
-          }
-        },
-      );
-      judgeProcess.stdin?.end(stdinText);
-    });
-}
-
-function describeJudgeFailure(error: ExecFileException, stdout: string, stderr: string): string {
-  if (error.killed) {
-    return `timed out after ${JUDGE_TIMEOUT_MS / 1000}s`;
-  }
-  const output = (stderr.trim() || stdout.trim()).slice(0, MAX_FAILURE_OUTPUT_CHARS);
-  const exitDescription = error.signal ? `signal ${error.signal}` : `exit code ${error.code}`;
-  return output ? `${exitDescription}: ${output}` : exitDescription;
 }
 
 function rankForDigest(candidates: LinkCandidate[]): LinkCandidate[] {
