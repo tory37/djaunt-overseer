@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   branchStatusLabel,
   commitHashesIn,
+  printedCommitsIn,
   commitSessionId,
   describeCommitsArgs,
   githubCommitUrl,
@@ -110,6 +111,13 @@ describe("commit log", () => {
   it("finds printed and recorded commit hashes, including root commits", () => {
     expect(commitHashesIn('"[main (root-commit) 1a2b3c4] first" "gitOperation":{"commit":{"sha":"5d6e7f8a"')).toEqual(["1a2b3c4", "5d6e7f8a"]);
     expect(commitHashesIn("see [link] here and [main notahash] x")).toEqual([]);
+  });
+
+  it("reads printed commits with branch and subject", () => {
+    expect(printedCommitsIn("Switched\n[feat/x 09912f0e8] PROJ-1: fix tile\n 2 files changed\n[main (root-commit) 1a2b3c4] first")).toEqual([
+      { shortHash: "09912f0e8", branch: "feat/x", subject: "PROJ-1: fix tile" },
+      { shortHash: "1a2b3c4", branch: "main", subject: "first" },
+    ]);
   });
 
   it("builds a GitHub commit URL from ssh and https remotes only", () => {

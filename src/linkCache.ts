@@ -4,7 +4,7 @@ import { LinkScanCacheEntry } from "./linkCandidates";
 import { JudgeCacheEntry } from "./linkJudge";
 
 // Bump the scan version when the scanner changes, so saved scans rerun from the start.
-const SCAN_CACHE_SCHEMA_VERSION = 3;
+const SCAN_CACHE_SCHEMA_VERSION = 4;
 const JUDGE_CACHE_SCHEMA_VERSION = 1;
 const CACHE_FILE_NAME = "session-links.json";
 const JUDGE_CACHE_FILE_NAME = "session-link-verdicts.json";

@@ -28,6 +28,7 @@ const KIND_GLYPHS: Record<MarkedLink["kind"], string> = {
   pr: "git-pull-request",
   ticket: "ticket",
   artifact: "sparkles",
+  commit: "git-commit",
 };
 
 // A status color only exists once the live status has loaded; until then the row draws the plain kind glyph.
@@ -38,9 +39,9 @@ export function resourceRow(
   jiraBaseUrl: string,
   depth = 0,
 ): ResourceRow {
-  const hasStatus = status !== undefined && link.kind !== "artifact";
+  const hasStatus = status !== undefined && (link.kind === "pr" || link.kind === "ticket");
   const glyphName =
-    status !== undefined && link.kind !== "artifact" ? statusGlyph(link.kind, status) : KIND_GLYPHS[link.kind];
+    status !== undefined && (link.kind === "pr" || link.kind === "ticket") ? statusGlyph(link.kind, status) : KIND_GLYPHS[link.kind];
   return {
     key: linkKey(link),
     kind: link.kind,

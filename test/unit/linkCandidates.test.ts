@@ -8,7 +8,9 @@ import {
   LinkCandidate,
   LinkScanState,
   scanLinkLine,
+  scanStatsSince,
   scanTranscriptLinks,
+  summarizeAllCandidates,
   summarizeCandidates,
 } from "../../src/linkCandidates";
 import { loadLinkCache, saveLinkCache } from "../../src/linkCache";
@@ -216,5 +218,221 @@ describe("scanTranscriptLinks", () => {
     await saveLinkCache(cacheFile, { [transcriptFile]: entry! });
 
     expect(await loadLinkCache(cacheFile)).toEqual({ [transcriptFile]: entry });
+  });
+});
+
+function commitResult(toolUseId: string, stdout: string, commitSha: string): string {
+  return JSON.stringify({
+    type: "user",
+    timestamp: "2026-10-05T14:31:00.000Z",
+    cwd: "/repo/web-app",
+    message: { content: [{ type: "tool_result", tool_use_id: toolUseId, content: stdout }] },
+    toolUseResult: { stdout, stderr: "", gitOperation: { commit: { sha: commitSha, kind: "committed" } } },
+  });
+}
+
+function collectorTranscript(): string[] {
+  return [
+    JSON.stringify({ type: "user", cwd: "/repo/web-app", message: { role: "user", content: "fix the option tile bug QA found" } }),
+    toolUse("c1", "Bash", { command: 'git add -A && git commit -m "PROJ-1068: fix tile"' }, { cwd: "/repo/web-app" }),
+    commitResult("c1", "[feat/tile 09912f0e8] PROJ-1068: fix tile\n 2 files changed", "09912f0e8"),
+    userPrompt("<local-command-stdout>Compacted</local-command-stdout>"),
+    userPrompt("now publish the test plan"),
+    toolUse("w1", "Write", { file_path: "/scratch/plan.html", content: "<html><head><title>SODA test plan</title></head></html>" }),
+    toolUse("a1", "Artifact", { file_path: "/scratch/plan.html", icon: "checklist", description: "Steps to test the tile fix." }),
+    toolResult("a1", `Published /scratch/plan.html at ${ARTIFACT_URL} (Version 1)`),
+  ];
+}
+
+describe("collector candidates", () => {
+  it("records a commit with its subject, branch, and directory, counted once", () => {
+    const state = scanAll(collectorTranscript());
+    const commit = find(summarizeAllCandidates(state), "commit", "09912f0e8");
+
+    expect(commit).toMatchObject({ title: "PROJ-1068: fix tile", branch: "feat/tile", directory: "/repo/web-app" });
+    expect(commit?.signals["commit-created"]).toBe(1);
+    expect(fallbackRole(commit!)).toBe("owned");
+  });
+
+  it("keeps commits out of the judge and sidebar list", () => {
+    const state = scanAll(collectorTranscript());
+
+    expect(summarizeCandidates(state).some((candidate) => candidate.kind === "commit")).toBe(false);
+  });
+
+  it("names the repo from git -C and keeps the full hash Claude Code recorded", () => {
+    const fullSha = "5c4cd8906" + "a".repeat(31);
+    const state = scanAll([
+      toolUse("c1", "Bash", { command: "git -C ../api commit -m x" }, { cwd: "/repo/web-app" }),
+      commitResult("c1", "[main 5c4cd8906] x", fullSha),
+    ]);
+    const commit = find(summarizeAllCandidates(state), "commit", "5c4cd8906");
+
+    expect(commit).toMatchObject({ directory: "/repo/api", fullHash: fullSha });
+    expect(summarizeAllCandidates(state).filter((candidate) => candidate.kind === "commit")).toHaveLength(1);
+  });
+
+  it("finds a quiet commit through the git log --oneline in the same call", () => {
+    const command = 'cd ~/src/api && git add -A && git commit -q -m "$(cat <<\'EOF\'\nPROJ-9: filter testlets\n\nBody.\nEOF\n)" && git log --oneline -2';
+    const state = scanAll([
+      toolUse("c1", "Bash", { command }, { cwd: "/repo/web-app" }),
+      toolResult("c1", "8e3be43 PROJ-9: filter testlets\n1111111 older commit"),
+    ]);
+    const commits = summarizeAllCandidates(state).filter((candidate) => candidate.kind === "commit");
+
+    expect(commits).toHaveLength(1);
+    expect(commits[0]).toMatchObject({ id: "8e3be43", title: "PROJ-9: filter testlets", directory: path.join(os.homedir(), "src/api") });
+  });
+
+  it("ignores commit-shaped text in results of non-git commands", () => {
+    const state = scanAll([toolUse("c1", "Bash", { command: "cat notes.txt" }), commitResult("c1", "[main 1a2b3c4] x", "1a2b3c4")]);
+
+    expect(summarizeAllCandidates(state).filter((candidate) => candidate.kind === "commit")).toEqual([]);
+  });
+
+  it("titles a published artifact from the written file and keeps its description", () => {
+    const state = scanAll(collectorTranscript());
+    const artifact = find(summarizeAllCandidates(state), "artifact", "G6QrRRBpv1HyNzN2Udxaub");
+
+    expect(artifact).toMatchObject({
+      title: "SODA test plan",
+      description: "Steps to test the tile fix.",
+      filePath: "/scratch/plan.html",
+    });
+  });
+
+  it("prefers the title field of a typed artifact create", () => {
+    const state = scanAll([
+      toolUse("a1", "Artifact", { action: "publish", type_url: "https://claude.ai/artifact/type1", title: "Release notes" }),
+      toolResult("a1", `Created ${ARTIFACT_URL}`),
+    ]);
+
+    expect(find(summarizeAllCandidates(state), "artifact", "G6QrRRBpv1HyNzN2Udxaub")?.title).toBe("Release notes");
+  });
+
+  it("titles a read artifact from the page HTML in the result", () => {
+    const state = scanAll([
+      toolUse("r1", "Artifact", { action: "read", url: `${ARTIFACT_URL}?sk=abc`, prompt: "list tickets" }),
+      toolResult("r1", [{ type: "text", text: "raw HTML follows\n<html><title>Backend work</title></html>" }]),
+    ]);
+
+    expect(find(summarizeAllCandidates(state), "artifact", "G6QrRRBpv1HyNzN2Udxaub")?.title).toBe("Backend work");
+    expect(state.pendingToolCalls).toEqual({});
+  });
+
+  it("survives malformed Artifact input", () => {
+    const state = scanAll([
+      toolUse("a1", "Artifact", { file_path: 42, description: ["x"], title: null }),
+      toolResult("a1", `Published at ${ARTIFACT_URL}`),
+      "{not json",
+    ]);
+
+    expect(find(summarizeAllCandidates(state), "artifact", "G6QrRRBpv1HyNzN2Udxaub")?.title).toBeUndefined();
+  });
+
+  it("records the nearest real user prompt and the byte offsets on each candidate", () => {
+    const lines = collectorTranscript();
+    const state = scanAll(lines);
+    const candidates = summarizeAllCandidates(state);
+    const commit = find(candidates, "commit", "09912f0e8")!;
+    const artifact = find(candidates, "artifact", "G6QrRRBpv1HyNzN2Udxaub")!;
+    const lineEndOffsets = lines.map((_, index) => lines.slice(0, index + 1).join("\n").length + 1);
+
+    expect(commit.promptBeforeFirstSeen).toBe("fix the option tile bug QA found");
+    expect(artifact.promptBeforeLastSeen).toBe("now publish the test plan");
+    expect(commit.lastSeenOffsetBytes).toBe(lineEndOffsets[2]);
+    expect(artifact.firstSeenOffsetBytes).toBe(lineEndOffsets[7]);
+  });
+
+  it("treats a user prompt's own ticket mention as preceded by that prompt", () => {
+    const state = scanAll([userPrompt("start on PROJ-77 please")]);
+
+    expect(find(summarizeAllCandidates(state), "ticket", "PROJ-77")?.promptBeforeFirstSeen).toBe("start on PROJ-77 please");
+  });
+
+  it("counts only typed prompts and slash commands with arguments", () => {
+    const state = scanAll([
+      userPrompt("first"),
+      userPrompt("<command-name>/clear</command-name>\n<command-message>clear</command-message>\n<command-args></command-args>"),
+      userPrompt("<command-name>/djt-work</command-name>\n<command-args>bug PROJ-9</command-args>"),
+      userPrompt("<task-notification>agent done</task-notification>"),
+      userPrompt("[Request interrupted by user]"),
+      userPrompt("<system-reminder>only a reminder</system-reminder>"),
+      JSON.stringify({ type: "user", isMeta: true, message: { content: "skill body" } }),
+      toolResult("t1", "a tool result"),
+    ]);
+
+    expect(state.userPromptEndOffsets).toHaveLength(2);
+    expect(state.latestPrompt?.text).toBe("/djt-work bug PROJ-9");
+  });
+
+  it("clips long prompts", () => {
+    const state = scanAll([userPrompt("x".repeat(1000))]);
+
+    expect(state.latestPrompt?.text.length).toBe(300);
+  });
+
+  it("counts new prompts and bytes after an offset", () => {
+    const lines = [userPrompt("one"), userPrompt("two"), toolResult("t1", "ok"), userPrompt("three")];
+    const state = scanAll(lines);
+    const afterFirstLine = Buffer.byteLength(lines[0]) + 1;
+
+    expect(scanStatsSince(state, afterFirstLine)).toEqual({
+      scannedBytes: state.scannedBytes,
+      userPromptCount: 3,
+      newBytes: state.scannedBytes - afterFirstLine,
+      newUserPromptCount: 2,
+    });
+    expect(scanStatsSince(state, state.scannedBytes).newUserPromptCount).toBe(0);
+    expect(scanStatsSince(state, 0).newUserPromptCount).toBe(3);
+  });
+});
+
+describe("scanTranscriptLinks collector", () => {
+  let workDir: string;
+
+  beforeEach(() => {
+    workDir = fs.mkdtempSync(path.join(os.tmpdir(), "overseer-collector-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  });
+
+  it("gives the same candidates and stats when resumed from an offset as a full scan", async () => {
+    const lines = collectorTranscript();
+    const transcriptFile = path.join(workDir, "session.jsonl");
+    fs.writeFileSync(transcriptFile, lines.slice(0, 3).join("\n") + "\n");
+    const firstPass = await scanTranscriptLinks(transcriptFile, undefined);
+    fs.appendFileSync(transcriptFile, lines.slice(3).join("\n") + "\n");
+    const resumedPass = await scanTranscriptLinks(transcriptFile, firstPass);
+
+    const fullFile = path.join(workDir, "full.jsonl");
+    fs.writeFileSync(fullFile, lines.join("\n") + "\n");
+    const fullPass = await scanTranscriptLinks(fullFile, undefined);
+
+    expect(resumedPass!.offsetBytes).toBe(fullPass!.offsetBytes);
+    expect(summarizeAllCandidates(resumedPass!.state)).toEqual(summarizeAllCandidates(fullPass!.state));
+    expect(scanStatsSince(resumedPass!.state, firstPass!.offsetBytes)).toEqual(scanStatsSince(fullPass!.state, firstPass!.offsetBytes));
+    expect(scanStatsSince(resumedPass!.state, firstPass!.offsetBytes).newUserPromptCount).toBe(1);
+  });
+
+  it("reads the title from the published file when the transcript has none, and skips a missing file", async () => {
+    const pageFile = path.join(workDir, "page.html");
+    fs.writeFileSync(pageFile, "<!doctype html><title>Ship order</title>");
+    const transcriptFile = path.join(workDir, "session.jsonl");
+    const lines = [
+      toolUse("a1", "Artifact", { file_path: pageFile }),
+      toolResult("a1", `Published at ${ARTIFACT_URL}`),
+      toolUse("a2", "Artifact", { file_path: path.join(workDir, "gone.html") }),
+      toolResult("a2", "Published at https://claude.ai/artifact/Other123"),
+    ];
+    fs.writeFileSync(transcriptFile, lines.join("\n") + "\n");
+
+    const entry = await scanTranscriptLinks(transcriptFile, undefined);
+    const candidates = summarizeAllCandidates(entry!.state);
+
+    expect(find(candidates, "artifact", "G6QrRRBpv1HyNzN2Udxaub")?.title).toBe("Ship order");
+    expect(find(candidates, "artifact", "Other123")?.title).toBeUndefined();
   });
 });

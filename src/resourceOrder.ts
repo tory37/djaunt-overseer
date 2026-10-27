@@ -10,7 +10,7 @@ export interface OrderedResource {
 const TICKET_KEY_PATTERN = /\b[A-Z][A-Z0-9]+-\d+\b/g;
 const MARK_RANK: Record<string, number> = { pinned: 0, none: 1, removed: 2 };
 const PARENT_TICKET_RANK = 0;
-const KIND_RANK: Record<MarkedLink["kind"], number> = { ticket: 1, pr: 2, artifact: 3 };
+const KIND_RANK: Record<MarkedLink["kind"], number> = { ticket: 1, pr: 2, artifact: 3, commit: 4 };
 
 // Builds the tree: parent ticket → sub-tickets → PRs for each ticket, then leftovers, then artifacts.
 // Jira parent data and ticket keys in a PR's branch or title win over the agent's declared parent, which wins over the judge's guess.

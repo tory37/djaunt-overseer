@@ -59,7 +59,7 @@ export class LinkStatusService implements vscode.Disposable {
         return undefined;
       }
     }
-    if (link.kind === "artifact" || (link.kind === "pr" && this.isGhMissing)) {
+    if (link.kind === "artifact" || link.kind === "commit" || (link.kind === "pr" && this.isGhMissing)) {
       return undefined;
     }
     const cacheKey = `${link.kind}:${link.id}`;
@@ -74,6 +74,18 @@ export class LinkStatusService implements vscode.Disposable {
       }
     }
     return cachedEntry?.status;
+  }
+
+  // Reads the cache only, so the analyzer can enrich candidates without starting a fetch.
+  cachedStatuses(kind: "pr" | "ticket"): Map<string, LinkStatus> {
+    const statusesById = new Map<string, LinkStatus>();
+    const keyPrefix = `${kind}:`;
+    for (const [cacheKey, cachedEntry] of this.statusCache) {
+      if (cacheKey.startsWith(keyPrefix) && cachedEntry.status !== undefined) {
+        statusesById.set(cacheKey.slice(keyPrefix.length), cachedEntry.status);
+      }
+    }
+    return statusesById;
   }
 
   clear(): void {
