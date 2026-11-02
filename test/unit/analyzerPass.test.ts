@@ -4,7 +4,7 @@ import * as path from "path";
 import { describe, expect, it } from "vitest";
 import { seedAnalysis } from "../../src/analysisSeed";
 import { emptyAnalysis } from "../../src/analysisState";
-import { AnalyzerPassInput, AnalyzerPassPlan, planAnalyzerPass, runAnalyzerPass } from "../../src/analyzerPass";
+import { AnalyzerPassError, AnalyzerPassInput, AnalyzerPassPlan, planAnalyzerPass, runAnalyzerPass } from "../../src/analyzerPass";
 import { digestEventsOf } from "../../src/analyzerDigest";
 import { EnrichedCandidate } from "../../src/candidateEnrichment";
 import { ClaudeRunner } from "../../src/claudeRunner";
@@ -236,6 +236,72 @@ describe("recheck drop guard in runAnalyzerPass", () => {
     const unsortOps = [OLD_PR, OLD_COMMIT, OLD_ARTIFACT].map((item) => ({ op: "assign_item", item, workstream: "" }));
     const passResult = await runAnalyzerPass(passInput({ plan: DIFF_PLAN, analysis: sortedAnalysis }), async () => envelope({ ops: unsortOps }));
     expect(passResult.analysis.workstreams.flatMap((workstream) => workstream.itemKeys)).toEqual([API_PR, WEB_PR]);
+  });
+});
+
+describe("call records from runAnalyzerPass", () => {
+  const USAGE_FIELDS = {
+    total_cost_usd: 0.0042,
+    usage: { input_tokens: 1200, output_tokens: 80, cache_read_input_tokens: 300, cache_creation_input_tokens: 40 },
+  };
+
+  async function passErrorOf(passing: Promise<unknown>): Promise<AnalyzerPassError> {
+    const error = await passing.then(
+      () => undefined,
+      (rejection: unknown) => rejection,
+    );
+    expect(error).toBeInstanceOf(AnalyzerPassError);
+    return error as AnalyzerPassError;
+  }
+
+  it("records one call with its digest size and usage on a diff that applies", async () => {
+    const runClaude: ClaudeRunner = async () => JSON.stringify({ ...JSON.parse(envelope(SODA_OPS)), ...USAGE_FIELDS });
+    const passResult = await runAnalyzerPass(passInput(), runClaude);
+    expect(passResult.calls).toHaveLength(1);
+    const [call] = passResult.calls;
+    expect(call.model).toBe("haiku");
+    expect(call.digestMode).toBe("diff");
+    expect(call.digestBytes).toBeGreaterThan(0);
+    expect(call.usage).toEqual({ costUsd: 0.0042, inputTokens: 1200, outputTokens: 80, cacheReadTokens: 300, cacheWriteTokens: 40 });
+  });
+
+  it("records both models in order when the diff reply fails the schema and the retry applies", async () => {
+    const runClaude: ClaudeRunner = async (claudeArgs) => (modelOf(claudeArgs) === "haiku" ? envelope({ ops: [{ op: "bogus" }] }) : envelope(SODA_OPS));
+    const passResult = await runAnalyzerPass(passInput(), runClaude);
+    expect(passResult.calls.map((call) => call.model)).toEqual(["haiku", "sonnet"]);
+  });
+
+  it("carries both calls on the error when the retry fails the schema too", async () => {
+    const error = await passErrorOf(runAnalyzerPass(passInput(), async () => "garbage"));
+    expect(error.message).toBe("analyzer reply from sonnet failed the schema");
+    expect(error.calls.map((call) => call.model)).toEqual(["haiku", "sonnet"]);
+  });
+
+  it("carries the call on the error when a recheck drops too many items", async () => {
+    const sortedAnalysis = {
+      ...emptyAnalysis(),
+      workstreams: [
+        { id: "ws-1", title: "Fix SODA retry bug from QA", ticketKeys: ["SOA-310"], itemKeys: [API_PR, WEB_PR], done: false },
+        { id: "ws-2", title: "Old SODA scoring", ticketKeys: [], itemKeys: ["pr:amira/soda-api/pull/30", "commit:abc1234", "artifact:soda-notes"], done: false },
+      ],
+      lastPassAt: 1,
+      watermarkBytes: 5000,
+      nextWorkstreamNumber: 3,
+    };
+    const error = await passErrorOf(runAnalyzerPass(passInput({ plan: RECHECK_PLAN, analysis: sortedAnalysis }), async () => envelope(SODA_OPS)));
+    expect(error.message).toBe("recheck dropped 3 of 6 items; kept the previous grouping");
+    expect(error.calls.map((call) => [call.model, call.digestMode])).toEqual([["sonnet", "recheck"]]);
+  });
+
+  it("records a call with no usage when the runner rejects, and keeps the runner's message", async () => {
+    const runClaude: ClaudeRunner = async () => {
+      throw new Error("claude timed out after 120000 ms");
+    };
+    const error = await passErrorOf(runAnalyzerPass(passInput(), runClaude));
+    expect(error.message).toContain("claude timed out after 120000 ms");
+    expect(error.calls).toHaveLength(1);
+    expect(error.calls[0].model).toBe("haiku");
+    expect(error.calls[0].usage).toBeUndefined();
   });
 });
 

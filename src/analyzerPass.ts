@@ -1,6 +1,6 @@
 import { SessionAnalysis } from "./analysisState";
 import { AnalyzerDigestInput, AnalyzerMode, buildAnalyzerDigest } from "./analyzerDigest";
-import { analyzerArgs, applyOps, isRecheckDropTooLarge, parseAnalyzerOutput, RecheckDrop, recheckDropOf } from "./analyzerOps";
+import { analyzerArgs, applyOps, isRecheckDropTooLarge, parseAnalyzerOutput, parseRunUsage, RecheckDrop, recheckDropOf, RunUsage } from "./analyzerOps";
 import { ClaudeRunner } from "./claudeRunner";
 
 export interface AnalyzerModels {
@@ -20,9 +20,29 @@ export interface AnalyzerPassInput extends Omit<AnalyzerDigestInput, "mode"> {
   now: number;
 }
 
+// One runner call. usage is undefined when the runner rejected or the reply carried no usage.
+export interface AnalyzerCall {
+  model: string;
+  digestMode: AnalyzerMode;
+  digestBytes: number;
+  usage: RunUsage | undefined;
+}
+
 export interface AnalyzerPassResult {
   analysis: SessionAnalysis;
   model: string;
+  calls: AnalyzerCall[];
+}
+
+// A failed pass still made calls that cost money, so the error carries them.
+export class AnalyzerPassError extends Error {
+  readonly calls: AnalyzerCall[];
+
+  constructor(message: string, calls: AnalyzerCall[]) {
+    super(message);
+    this.name = "AnalyzerPassError";
+    this.calls = calls;
+  }
 }
 
 // A first pass reads the whole transcript like a recheck, since a diff of a long session keeps only its tail, but stays on the cheaper diff model.
@@ -53,8 +73,18 @@ export async function runAnalyzerPass(input: AnalyzerPassInput, runClaude: Claud
   const { digestMode, retryModel } = input.plan;
   const digest = buildAnalyzerDigest({ ...input, mode: digestMode });
   const statusIds = input.statusOptions.map((option) => option.id);
+  const digestBytes = Buffer.byteLength(digest.text, "utf8");
+  const calls: AnalyzerCall[] = [];
   const attemptOn = async (model: string): Promise<AnalyzerAttempt> => {
-    const ops = parseAnalyzerOutput(await runClaude(analyzerArgs(model, statusIds), digest.text), statusIds);
+    let stdout: string;
+    try {
+      stdout = await runClaude(analyzerArgs(model, statusIds), digest.text);
+    } catch (error) {
+      calls.push({ model, digestMode, digestBytes, usage: undefined });
+      throw new AnalyzerPassError(error instanceof Error ? error.message : String(error), calls);
+    }
+    calls.push({ model, digestMode, digestBytes, usage: parseRunUsage(stdout) });
+    const ops = parseAnalyzerOutput(stdout, statusIds);
     if (ops === undefined) {
       return { kind: "schema-failed" };
     }
@@ -79,13 +109,14 @@ export async function runAnalyzerPass(input: AnalyzerPassInput, runClaude: Claud
     attempt = await attemptOn(model);
   }
   if (attempt.kind === "schema-failed") {
-    throw new Error(`analyzer reply from ${model} failed the schema`);
+    throw new AnalyzerPassError(`analyzer reply from ${model} failed the schema`, calls);
   }
   if (attempt.kind === "dropped-items") {
-    throw new Error(`recheck dropped ${attempt.drop.droppedCount} of ${attempt.drop.previouslyAssignedCount} items; kept the previous grouping`);
+    throw new AnalyzerPassError(`recheck dropped ${attempt.drop.droppedCount} of ${attempt.drop.previouslyAssignedCount} items; kept the previous grouping`, calls);
   }
   return {
     analysis: { ...attempt.analysis, watermarkBytes: digest.watermarkBytes, lastPassAt: input.now, lastModel: model },
     model,
+    calls,
   };
 }
