@@ -1,4 +1,5 @@
 import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 import { analysisLockFile, tryAcquireAnalysisLock } from "./analysisLock";
 import { seedAnalysis } from "./analysisSeed";
@@ -6,7 +7,8 @@ import { SessionAnalysis } from "./analysisState";
 import { analysisFile, isSafeSessionId, loadAnalysis, loadLegacySessionData, saveAnalysis } from "./analysisStore";
 import { AnalyzerMode, DigestEventCollector } from "./analyzerDigest";
 import { AnalyzerGateDecision, AnalyzerGateSettings, analyzerGateSettingsFrom, hasCandidateSince, shouldAutoAnalyze } from "./analyzerGates";
-import { AnalyzerModels, planAnalyzerPass, runAnalyzerPass } from "./analyzerPass";
+import { AnalyzerCall, AnalyzerModels, AnalyzerPassError, planAnalyzerPass, runAnalyzerPass } from "./analyzerPass";
+import { analyzerUsageFile, AnalyzerUsageOutcome, usageJsonLines, usageLogLine, usageRecordsOf } from "./analyzerUsage";
 import { enrichCandidates } from "./candidateEnrichment";
 import { createClaudeRunner } from "./claudeRunner";
 import { SessionMeta } from "./indexer";
@@ -238,11 +240,34 @@ export class SessionAnalyzer implements vscode.Disposable {
         },
         runClaude,
       );
+      await this.recordUsage(sessionId, mode, "updated", passResult.calls);
       await saveAnalysis(analysisFile(claudeHome, sessionId), passResult.analysis);
       return { kind: "updated", detail: `${passResult.model} on a ${plan.digestMode} digest in ${Date.now() - startedAtMs}ms` };
     } catch (error) {
       this.claudeBinary = undefined;
+      if (error instanceof AnalyzerPassError) {
+        await this.recordUsage(sessionId, mode, "failed", error.calls);
+      }
       return { kind: "failed", detail: errorDetail(error) };
+    }
+  }
+
+  // Usage is optional data: a write error is logged and never changes the pass outcome.
+  private async recordUsage(sessionId: string, requestedMode: AnalyzerMode, passOutcome: AnalyzerUsageOutcome, calls: AnalyzerCall[]): Promise<void> {
+    const { claudeHome, sessionTitle, log } = this.dependencies;
+    const records = usageRecordsOf({ at: Date.now(), sessionId, requestedMode, passOutcome, calls });
+    if (records.length === 0) {
+      return;
+    }
+    for (const record of records) {
+      log.appendLine(`${LOG_PREFIX} usage "${sessionTitle(sessionId)}": ${usageLogLine(record)}`);
+    }
+    try {
+      const usageFile = analyzerUsageFile(claudeHome);
+      await fs.promises.mkdir(path.dirname(usageFile), { recursive: true });
+      await fs.promises.appendFile(usageFile, usageJsonLines(records));
+    } catch (error) {
+      log.appendLine(`${LOG_PREFIX} usage log write failed: ${errorDetail(error)}`);
     }
   }
 
