@@ -39,6 +39,14 @@ const ARTIFACT_ITEM_PREFIX = "artifact:";
 const RECHECK_DROP_ALLOWANCE_MIN_ITEMS = 2;
 const RECHECK_DROP_ALLOWANCE_SHARE = 0.25;
 
+export type RunUsage = {
+  costUsd?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+};
+
 export interface RecheckDrop {
   droppedCount: number;
   previouslyAssignedCount: number;
@@ -102,6 +110,30 @@ export function analyzerOutputSchema(statusIds: string[]): object {
 
 export function analyzerArgs(model: string, statusIds: string[]): string[] {
   return headlessClaudeArgs(model, ANALYZER_SYSTEM_PROMPT, analyzerOutputSchema(statusIds));
+}
+
+// Reads usage even from an error envelope, since a failed call still costs. Never throws.
+export function parseRunUsage(stdout: string): RunUsage | undefined {
+  const envelope = parseJson(stdout);
+  if (typeof envelope !== "object" || envelope === null) {
+    return undefined;
+  }
+  const { total_cost_usd: costUsd, usage } = envelope as Record<string, unknown>;
+  const tokens = typeof usage === "object" && usage !== null ? (usage as Record<string, unknown>) : {};
+  const fields: [keyof RunUsage, unknown][] = [
+    ["costUsd", costUsd],
+    ["inputTokens", tokens.input_tokens],
+    ["outputTokens", tokens.output_tokens],
+    ["cacheReadTokens", tokens.cache_read_input_tokens],
+    ["cacheWriteTokens", tokens.cache_creation_input_tokens],
+  ];
+  const runUsage: RunUsage = {};
+  for (const [name, value] of fields) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      runUsage[name] = value;
+    }
+  }
+  return Object.keys(runUsage).length > 0 ? runUsage : undefined;
 }
 
 // Any malformed op fails the whole reply, so a half-understood answer never lands. Never throws.

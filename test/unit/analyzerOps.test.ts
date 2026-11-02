@@ -9,6 +9,7 @@ import {
   applyOps,
   isRecheckDropTooLarge,
   parseAnalyzerOutput,
+  parseRunUsage,
   recheckDropOf,
 } from "../../src/analyzerOps";
 import { StatusOption } from "../../src/sessionStatuses";
@@ -397,5 +398,57 @@ describe("recheck drop guard", () => {
 
   it("never rejects a first pass with nothing sorted before", () => {
     expect(isRecheckDropTooLarge(recheckDropOf(emptyAnalysis(), emptyAnalysis(), edits()))).toBe(false);
+  });
+});
+
+describe("parseRunUsage", () => {
+  const schemaEnvelope = {
+    is_error: false,
+    num_turns: 2,
+    total_cost_usd: 0.001448,
+    usage: { input_tokens: 1123, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 65 },
+    structured_output: { color: "blue" },
+  };
+
+  it("reads cost and every token count from a real envelope", () => {
+    expect(parseRunUsage(JSON.stringify(schemaEnvelope))).toEqual({
+      costUsd: 0.001448,
+      inputTokens: 1123,
+      outputTokens: 65,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+  });
+
+  it("returns undefined for stdout that is not JSON", () => {
+    expect(parseRunUsage("Error: not logged in")).toBeUndefined();
+  });
+
+  it("returns undefined for JSON that is not an object", () => {
+    expect(parseRunUsage("42")).toBeUndefined();
+    expect(parseRunUsage("null")).toBeUndefined();
+  });
+
+  it("returns undefined when the envelope has no cost and no usage", () => {
+    expect(parseRunUsage(JSON.stringify({ is_error: false, num_turns: 1 }))).toBeUndefined();
+  });
+
+  it("keeps the cost when usage is missing", () => {
+    expect(parseRunUsage(JSON.stringify({ total_cost_usd: 0.002 }))).toEqual({ costUsd: 0.002 });
+  });
+
+  it("drops fields that are not finite numbers and keeps the rest", () => {
+    const stdout = '{"total_cost_usd":"0.001","usage":{"input_tokens":1123,"output_tokens":"65","cache_read_input_tokens":1e999,"cache_creation_input_tokens":null}}';
+    expect(parseRunUsage(stdout)).toEqual({ inputTokens: 1123 });
+  });
+
+  it("still returns usage from an error envelope, since a failed call still costs", () => {
+    expect(parseRunUsage(JSON.stringify({ ...schemaEnvelope, is_error: true }))).toEqual({
+      costUsd: 0.001448,
+      inputTokens: 1123,
+      outputTokens: 65,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
   });
 });
