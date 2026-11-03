@@ -48,6 +48,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `analyzerPass.ts` | One analyzer pass with an injected runner; a diff reply that fails the schema retries on the recheck model. `planAnalyzerPass` gives a first pass a recheck digest on the diff model. |
 | `sessionAnalyzer.ts` | Runs analyzer passes (2 at once, 1 per session) under a cross-window lock, seeds on first read, copies state on `/clear` and fork. `autoAnalyze` checks the gates, then again under the lock. Logs with `[analyzer]`. |
 | `analyzerUsage.ts` | Pure: one usage record per analyzer call, its `[analyzer] usage` log line, and the JSON Lines text appended to `~/.claude/overseer/analyzer-usage.jsonl`. |
+| `analyzerEval.ts` | Pure: scores an analyzer grouping against a saved label: pair F1, coverage, workstream count delta. |
 | `analyzerGates.ts` | Pure: the `overseer.analyzer.*` gate settings and `shouldAutoAnalyze`: auto on, not in flight, new prompts, new KB or a new link, cooldown. |
 | `analysisLock.ts` | `<sid>.lock` beside the analysis file: exclusive create with pid and time. Stale after 5 minutes or a dead pid. |
 | `liveTransitions.ts` | Pure: busy-to-idle and left-idle sessions between two live status maps. |
@@ -74,7 +75,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 - Send slash commands only when the session is idle. Typed input is lost while Claude is busy.
 - Never resume a session that is live elsewhere. Two processes on one transcript corrupt it. Offer a fork.
 - Session names reach the shell. Quote with `quoteForShell` and strip newlines.
-- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `claudeLaunch`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`) and test it there. `vscode` can't be imported in unit tests.
+- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `claudeLaunch`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerEval`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`) and test it there. `vscode` can't be imported in unit tests.
 - The agent is not told about Overseer. Sessions launch as plain `claude`. The extension derives tracking from transcripts.
 - New commands need an entry in `contributes.commands`, a menu `when` clause, and `"when": "false"` under `commandPalette` if they need a tree node.
 
