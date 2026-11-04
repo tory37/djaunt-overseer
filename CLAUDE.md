@@ -51,7 +51,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `analyzerUsage.ts` | Pure: one usage record per analyzer call, its `[analyzer] usage` log line, and the JSON Lines text appended to `~/.claude/overseer/analyzer-usage.jsonl`. |
 | `analyzerEval.ts` | Pure: scores an analyzer grouping against a saved label: pair F1, coverage, workstream count delta. |
 | `analyzerFlags.ts` | Pure: the decision ring, and one "this didn't update" snapshot (shown title and its source, Now lines, analysis, gate, settings, decisions, recent usage) as a JSON line for `~/.claude/overseer/analyzer-flags.jsonl`. |
-| `analyzerGates.ts` | Pure: the `overseer.analyzer.*` gate settings and `shouldAutoAnalyze`: auto on, not in flight, new prompts, new KB or a new link, cooldown. |
+| `analyzerGates.ts` | Pure: the `overseer.analyzer.*` gate settings and `shouldAutoAnalyze`: auto on, not in flight, new prompts (none needed by default), new KB or a new link, cooldown. |
 | `analysisLock.ts` | `<sid>.lock` beside the analysis file: exclusive create with pid and time. Stale after 5 minutes or a dead pid. |
 | `liveTransitions.ts` | Pure: busy-to-idle and left-idle sessions between two live status maps. |
 | `analyzerTrigger.ts` | Starts an `idleSeconds` timer on busy to idle, cancels it on busy or end, then calls `autoAnalyze`. |

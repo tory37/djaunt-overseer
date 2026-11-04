@@ -1050,9 +1050,9 @@
         },
         "overseer.analyzer.minNewPrompts": {
           "type": "number",
-          "default": 1,
+          "default": 0,
           "minimum": 0,
-          "description": "New user prompts since the last pass that an auto pass needs."
+          "description": "New user prompts since the last pass that an auto pass needs. 0 lets a session that works without new prompts (task notifications, wakeups, /loop) still update."
         },
         "overseer.analyzer.cooldownMinutes": {
           "type": "number",

@@ -41,13 +41,20 @@ describe("shouldAutoAnalyze", () => {
     expect(shouldAutoAnalyze(gateInput({ inFlight: true }))).toEqual({ run: false, reason: "a pass is already running" });
   });
 
-  it("skips with fewer new prompts than the minimum", () => {
-    const decision = shouldAutoAnalyze(gateInput({ stats: { newBytes: 50 * 1024, newUserPromptCount: 0 } }));
+  it("runs with no new prompts by default, so a session working on its own still updates", () => {
+    const decision = shouldAutoAnalyze(gateInput({ stats: { newBytes: 20 * 1024, newUserPromptCount: 0 } }));
+    expect(decision).toEqual({ run: true, reason: "0 new prompts and 20.0 KB new" });
+  });
+
+  it("skips with fewer new prompts than a minimum the user set", () => {
+    const settings = { ...DEFAULT_ANALYZER_GATE_SETTINGS, minNewPrompts: 1 };
+    const decision = shouldAutoAnalyze(gateInput({ settings, stats: { newBytes: 50 * 1024, newUserPromptCount: 0 } }));
     expect(decision).toEqual({ run: false, reason: "0 new prompts, needs 1" });
   });
 
   it("runs with exactly the minimum of new prompts and bytes", () => {
-    const decision = shouldAutoAnalyze(gateInput({ stats: { newBytes: 10 * 1024, newUserPromptCount: 1 } }));
+    const settings = { ...DEFAULT_ANALYZER_GATE_SETTINGS, minNewPrompts: 1 };
+    const decision = shouldAutoAnalyze(gateInput({ settings, stats: { newBytes: 10 * 1024, newUserPromptCount: 1 } }));
     expect(decision.run).toBe(true);
   });
 

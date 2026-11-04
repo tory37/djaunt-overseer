@@ -15,7 +15,7 @@ export const DEFAULT_ANALYZER_GATE_SETTINGS: AnalyzerGateSettings = {
   isAutoEnabled: true,
   idleSeconds: 30,
   minNewKb: 10,
-  minNewPrompts: 1,
+  minNewPrompts: 0,
   cooldownMinutes: 10,
 };
 
