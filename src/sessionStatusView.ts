@@ -22,6 +22,16 @@ export function sessionStatusFor(registry: Registry, sessionId: string): MarkedS
   return status && { ...status, reason: registry.sessionStatusReasons()[sessionId] };
 }
 
+// A status the user set wins; otherwise the analyzer's derived status shows, tagged as automatic.
+export function shownSessionStatus(registry: Registry, sessionId: string, derivedStatusId: string | undefined): { status: MarkedStatus; isDerived: boolean } | undefined {
+  const userStatus = sessionStatusFor(registry, sessionId);
+  if (userStatus !== undefined) {
+    return { status: userStatus, isDerived: false };
+  }
+  const derivedStatus = derivedStatusId === undefined ? undefined : configuredStatuses().find((status) => status.id === derivedStatusId);
+  return derivedStatus === undefined ? undefined : { status: derivedStatus, isDerived: true };
+}
+
 // Tree rows carry this URI so the decoration below can tint the label and add the badge.
 export function sessionStatusUri(sessionId: string): vscode.Uri {
   return vscode.Uri.from({ scheme: SESSION_STATUS_SCHEME, path: `/${sessionId}` });

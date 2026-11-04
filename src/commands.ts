@@ -23,15 +23,19 @@ import {
 import { RepoTreeNode } from "./repoTree";
 import { fillPrompt, parseSessionCommands, promptParameters } from "./sessionCommands";
 import { AnalyzerMode } from "./analyzerDigest";
-import { AnalyzerPassOutcome, SessionAnalyzer } from "./sessionAnalyzer";
+import { analyzerFlagRecordOf, analyzerFlagsFile, flagJsonLine, recentUsageOf } from "./analyzerFlags";
+import { analyzerUsageFile, AnalyzerUsageRecord } from "./analyzerUsage";
+import { AnalyzerPassOutcome, readAnalyzerGateSettings, readAnalyzerModels, SessionAnalyzer } from "./sessionAnalyzer";
 import { SessionFocusTracker } from "./sessionFocus";
 import { SessionPreview } from "./sessionPreview";
-import { askStatusReason, configuredStatuses, pickSessionStatus } from "./sessionStatusView";
+import { askStatusReason, configuredStatuses, pickSessionStatus, shownSessionStatus } from "./sessionStatusView";
+import { pickHoverSummary } from "./sessionSummary";
 import { busySessions, confirmStopBusySessions, runningClaudeSessions, suspendSessions } from "./suspend";
 import { TreeNode } from "./tree";
 import { pickTargetWorkspace } from "./workspaceCommands";
 
 export interface CommandDependencies {
+  claudeHome: string;
   sessionIndex: SessionIndex;
   liveMonitor: LiveSessionMonitor;
   registry: Registry;
@@ -41,6 +45,7 @@ export interface CommandDependencies {
   pinnedSessions: () => PinnedSession[];
   sessionAnalyzer: SessionAnalyzer;
   sessionFocus: SessionFocusTracker;
+  sessionTitle: (sessionId: string) => string;
   log: vscode.OutputChannel;
 }
 
@@ -52,6 +57,7 @@ const ATTACH_CHOICE = "Attach Here";
 const SUSPEND_ANYWAY_CHOICE = "Suspend Anyway";
 const DOUBLE_CLICK_WINDOW_MS = 400;
 const RECENT_DIRECTORY_LIMIT = 12;
+const USAGE_TAIL_BYTES = 64 * 1024;
 
 // Claude resolves each alias to the latest model in that family.
 const MODEL_ALIASES: vscode.QuickPickItem[] = [
@@ -67,6 +73,7 @@ interface DirectoryPickItem extends vscode.QuickPickItem {
 
 export function registerCommands(dependencies: CommandDependencies): vscode.Disposable[] {
   const {
+    claudeHome,
     sessionIndex,
     liveMonitor,
     registry,
@@ -76,6 +83,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     sessionViews,
     sessionPreview,
     pinnedSessions,
+    sessionTitle,
     log,
   } = dependencies;
 
@@ -127,6 +135,54 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       Promise.all(sessionIds.map((sessionId) => sessionAnalyzer.analyze(sessionId, mode))),
     );
     showAnalyzerOutcomes(outcomes);
+  };
+
+  // Every read is optional: a flag records what it can, since the missing data may be the bug.
+  const flagMissedUpdate = async (clicked?: TreeNode | string): Promise<void> => {
+    const [sessionId] = analyzerTargetIds(clicked);
+    if (sessionId === undefined) {
+      void vscode.window.showInformationMessage("Overseer: focus a session first.");
+      return;
+    }
+    const note = await vscode.window.showInputBox({ title: "Flag: This Didn't Update", prompt: "What did you expect to change? (optional)" });
+    if (note === undefined) {
+      return;
+    }
+    const title = sessionTitle(sessionId);
+    const meta = await findSessionMeta(sessionId).catch(() => undefined);
+    const [analysis, gate, transcriptBytes, recentUsage] = await Promise.all([
+      sessionAnalyzer.analysisFor(sessionId).catch(() => undefined),
+      sessionAnalyzer.currentGateDecision(sessionId).catch(() => undefined),
+      meta === undefined ? undefined : fs.promises.stat(meta.transcriptFile).then((stats) => stats.size, () => undefined),
+      readRecentUsage(claudeHome, sessionId),
+    ]);
+    const shownStatus = shownSessionStatus(registry, sessionId, analysis?.sessionStatus);
+    const record = analyzerFlagRecordOf({
+      at: Date.now(),
+      sessionId,
+      title,
+      note,
+      liveStatus: liveMonitor.get(sessionId)?.status,
+      summary: meta && pickHoverSummary(meta.recap, summaryService.summaryFor(sessionId), meta.sizeBytes),
+      status: shownStatus && { name: shownStatus.status.name, reason: shownStatus.status.reason, isDerived: shownStatus.isDerived },
+      analysis,
+      transcriptBytes,
+      gate,
+      settings: readAnalyzerGateSettings(),
+      models: readAnalyzerModels(),
+      recentDecisions: sessionAnalyzer.recentDecisions(sessionId),
+      recentUsage,
+    });
+    const flagsFile = analyzerFlagsFile(claudeHome);
+    try {
+      await fs.promises.mkdir(path.dirname(flagsFile), { recursive: true });
+      await fs.promises.appendFile(flagsFile, flagJsonLine(record));
+    } catch (error) {
+      log.appendLine(`Can't write the flag to ${flagsFile}: ${String(error)}`);
+      void vscode.window.showErrorMessage(`Overseer: can't write the flag to ${tildePath(flagsFile)}. See the Overseer output.`);
+      return;
+    }
+    void vscode.window.showInformationMessage(`Overseer: flagged "${title}". Logged to ${tildePath(flagsFile)}.`);
   };
 
   // A clicked session offers only its own repos; the palette offers every repo in the tree.
@@ -602,6 +658,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     }),
     vscode.commands.registerCommand("overseer.analyzeSession", (clicked?: TreeNode | string) => runAnalyzerCommand(clicked, "diff")),
     vscode.commands.registerCommand("overseer.recheckSession", (clicked?: TreeNode | string) => runAnalyzerCommand(clicked, "recheck")),
+    vscode.commands.registerCommand("overseer.flagMissedUpdate", (clicked?: TreeNode | string) => flagMissedUpdate(clicked)),
     // The Repos view passes a repo row, the context menu the clicked session, and the Session sidebar a session ID.
     vscode.commands.registerCommand("overseer.openRepoInScm", async (clicked?: TreeNode | RepoTreeNode | string) => {
       if (typeof clicked === "object" && (clicked.kind === "repo" || clicked.kind === "commit")) {
@@ -667,6 +724,24 @@ function showAnalyzerOutcomes(outcomes: AnalyzerPassOutcome[]): void {
   const skippedOutcomes = outcomes.filter((outcome) => outcome.kind === "skipped");
   if (outcomes.length === 1 && skippedOutcomes.length === 1) {
     void vscode.window.showInformationMessage(`Overseer: analysis skipped, ${skippedOutcomes[0].detail}.`);
+  }
+}
+
+// Only the file's tail is read, so a long usage log costs the same as a short one.
+async function readRecentUsage(claudeHome: string, sessionId: string): Promise<AnalyzerUsageRecord[] | undefined> {
+  try {
+    const usageFile = await fs.promises.open(analyzerUsageFile(claudeHome), "r");
+    try {
+      const { size } = await usageFile.stat();
+      const startOffset = Math.max(0, size - USAGE_TAIL_BYTES);
+      const tail = Buffer.alloc(size - startOffset);
+      await usageFile.read(tail, 0, tail.length, startOffset);
+      return recentUsageOf(tail.toString("utf8"), sessionId);
+    } finally {
+      await usageFile.close();
+    }
+  } catch {
+    return undefined;
   }
 }
 

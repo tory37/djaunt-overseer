@@ -20,7 +20,7 @@ import { linkRowTitle, metaLine, metaTitle, shortLinkStatus, stateSentence, Summ
 import { SessionPreview } from "./sessionPreview";
 import { previewRunState, SidebarRunKind, sidebarRunKind } from "./sessionPreviewModel";
 import { statusColorId } from "./sessionStatuses";
-import { configuredStatuses, sessionStatusFor } from "./sessionStatusView";
+import { shownSessionStatus } from "./sessionStatusView";
 import { SessionSummaryService } from "./sessionSummaries";
 import { pickHoverSummary, SUMMARY_SOURCE_LABELS } from "./sessionSummary";
 import { StatusConfig } from "./statusConfig";
@@ -133,6 +133,7 @@ const ACTION_COMMANDS: Record<string, string> = {
   summarize: "overseer.summarizeSession",
   analyze: "overseer.analyzeSession",
   recheckAnalysis: "overseer.recheckSession",
+  flag: "overseer.flagMissedUpdate",
   openRepo: "overseer.openRepoInScm",
   status: "overseer.setSessionStatus",
   rename: "overseer.renameSession",
@@ -354,22 +355,16 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
     };
   }
 
-  // A status the user set wins; otherwise the analyzer's derived status shows, tagged as automatic.
   private headerStatus(sessionId: string, analysis: SessionAnalysis | undefined): HeaderStatus | undefined {
-    const userStatus = sessionStatusFor(this.dependencies.registry, sessionId);
-    const derivedStatus =
-      userStatus === undefined && analysis?.sessionStatus !== undefined
-        ? configuredStatuses().find((status) => status.id === analysis.sessionStatus)
-        : undefined;
-    const shownStatus = userStatus ?? derivedStatus;
-    if (shownStatus === undefined) {
+    const shown = shownSessionStatus(this.dependencies.registry, sessionId, analysis?.sessionStatus);
+    if (shown === undefined) {
       return undefined;
     }
     return {
-      name: shownStatus.name,
-      color: `--vscode-${statusColorId(shownStatus.color).replace(/\./g, "-")}`,
-      reason: userStatus?.reason,
-      isDerived: userStatus === undefined,
+      name: shown.status.name,
+      color: `--vscode-${statusColorId(shown.status.color).replace(/\./g, "-")}`,
+      reason: shown.isDerived ? undefined : shown.status.reason,
+      isDerived: shown.isDerived,
     };
   }
 
@@ -691,8 +686,9 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     ["openRepo", "source-control", "Repo", "Open repo"],
     ["status", "tag", "Status", "Set status"],
     ["rename", "edit", "Rename", "Rename"],
+    ["flag", "flag", "Flag", "Flag: this didn't update"],
   ];
-  const ACTIONS_WITHOUT_TRANSCRIPT = new Set(["rename", "status"]);
+  const ACTIONS_WITHOUT_TRANSCRIPT = new Set(["rename", "status", "flag"]);
   const MISSING_LABELS = { ticket: "Summary loads from Jira", pr: "Title loads from GitHub", artifact: "", commit: "" };
   let panelState = undefined;
   let openMenuId = undefined;

@@ -256,6 +256,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     ...registerCommands({
+      claudeHome,
       sessionIndex,
       liveMonitor,
       registry,
@@ -265,6 +266,7 @@ export function activate(context: vscode.ExtensionContext): void {
       pinnedSessions,
       sessionAnalyzer,
       sessionFocus,
+      sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
       log,
     }),
     ...registerWorkspaceCommands({ registry, sessionIndex, liveMonitor, pinnedSessions, log }),

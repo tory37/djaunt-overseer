@@ -248,6 +248,12 @@
         "icon": "$(debug-restart)"
       },
       {
+        "command": "overseer.flagMissedUpdate",
+        "title": "Flag: This Didn't Update",
+        "category": "Overseer",
+        "icon": "$(flag)"
+      },
+      {
         "command": "overseer.openRepoInScm",
         "title": "Open Repo in Source Control",
         "category": "Overseer",
@@ -499,6 +505,11 @@
           "command": "overseer.recheckSession",
           "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./",
           "group": "4_analyze@2"
+        },
+        {
+          "command": "overseer.flagMissedUpdate",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./",
+          "group": "4_analyze@3"
         },
         {
           "command": "overseer.moveToWorkspace",

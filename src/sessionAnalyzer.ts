@@ -6,7 +6,8 @@ import { seedAnalysis } from "./analysisSeed";
 import { SessionAnalysis } from "./analysisState";
 import { analysisFile, isSafeSessionId, loadAnalysis, loadLegacySessionData, saveAnalysis } from "./analysisStore";
 import { AnalyzerMode, DigestEventCollector } from "./analyzerDigest";
-import { AnalyzerGateDecision, AnalyzerGateSettings, analyzerGateSettingsFrom, hasCandidateSince, shouldAutoAnalyze } from "./analyzerGates";
+import { AnalyzerDecision, AnalyzerGateSnapshot, AnalyzerDecisionTrigger, AnalyzerVerdict, withDecision } from "./analyzerFlags";
+import { AnalyzerGateSettings, analyzerGateSettingsFrom, hasCandidateSince, shouldAutoAnalyze } from "./analyzerGates";
 import { AnalyzerCall, AnalyzerModels, AnalyzerPassError, planAnalyzerPass, runAnalyzerPass } from "./analyzerPass";
 import { analyzerUsageFile, AnalyzerUsageOutcome, usageJsonLines, usageLogLine, usageRecordsOf } from "./analyzerUsage";
 import { enrichCandidates } from "./candidateEnrichment";
@@ -61,6 +62,7 @@ export function readAnalyzerModels(): AnalyzerModels {
 export class SessionAnalyzer implements vscode.Disposable {
   private readonly passesInFlight = new Map<string, Promise<AnalyzerPassOutcome>>();
   private readonly limiter = new ConcurrencyLimiter(MAX_CONCURRENT_PASSES);
+  private readonly decisionsBySession = new Map<string, AnalyzerDecision[]>();
   private claudeBinary: Promise<string> | undefined;
   private readonly changeEmitter = new vscode.EventEmitter<string>();
   readonly onDidChange = this.changeEmitter.event;
@@ -87,6 +89,15 @@ export class SessionAnalyzer implements vscode.Disposable {
     return withLinkMarkRemovals(registry.workstreamEdits(sessionId), registry.linkMarks(sessionId));
   }
 
+  recentDecisions(sessionId: string): AnalyzerDecision[] {
+    return this.decisionsBySession.get(sessionId) ?? [];
+  }
+
+  // What the auto gate would decide now, without running a pass.
+  currentGateDecision(sessionId: string): Promise<AnalyzerGateSnapshot> {
+    return this.gateDecision(sessionId, this.isAnalyzing(sessionId));
+  }
+
   // A second request for a session joins the pass already running for it.
   analyze(sessionId: string, mode: AnalyzerMode): Promise<AnalyzerPassOutcome> {
     return this.startPass(sessionId, mode, () => this.runPass(sessionId, mode));
@@ -106,7 +117,7 @@ export class SessionAnalyzer implements vscode.Disposable {
     });
   }
 
-  private startPass(sessionId: string, passLabel: string, passBody: () => Promise<AnalyzerPassOutcome>): Promise<AnalyzerPassOutcome> {
+  private startPass(sessionId: string, trigger: AnalyzerDecisionTrigger, passBody: () => Promise<AnalyzerPassOutcome>): Promise<AnalyzerPassOutcome> {
     const passInFlight = this.passesInFlight.get(sessionId);
     if (passInFlight !== undefined) {
       return passInFlight;
@@ -115,7 +126,8 @@ export class SessionAnalyzer implements vscode.Disposable {
       .run(() => this.underLock(sessionId, passBody))
       .catch((error: unknown): AnalyzerPassOutcome => ({ kind: "failed", detail: errorDetail(error) }))
       .then((outcome) => {
-        this.dependencies.log.appendLine(`${LOG_PREFIX} ${passLabel} "${this.dependencies.sessionTitle(sessionId)}": ${outcome.kind}, ${outcome.detail}`);
+        this.dependencies.log.appendLine(`${LOG_PREFIX} ${trigger} "${this.dependencies.sessionTitle(sessionId)}": ${outcome.kind}, ${outcome.detail}`);
+        this.recordDecision(sessionId, trigger, outcome.kind, outcome.detail);
         return outcome;
       })
       .finally(() => {
@@ -143,7 +155,7 @@ export class SessionAnalyzer implements vscode.Disposable {
     }
   }
 
-  private async gateDecision(sessionId: string, inFlight: boolean): Promise<AnalyzerGateDecision> {
+  private async gateDecision(sessionId: string, inFlight: boolean): Promise<AnalyzerGateSnapshot> {
     const meta = this.dependencies.findSessionMeta(sessionId);
     if (meta === undefined) {
       return { run: false, reason: "no transcript in the index" };
@@ -154,19 +166,28 @@ export class SessionAnalyzer implements vscode.Disposable {
       return { run: false, reason: "transcript can't be read" };
     }
     const watermarkBytes = await currentWatermarkBytes(meta.transcriptFile, storedAnalysis);
-    return shouldAutoAnalyze({
+    const { newBytes, newUserPromptCount } = scanStatsSince(scanState, watermarkBytes);
+    const hasNewCandidate = hasCandidateSince(Object.values(scanState.candidates), watermarkBytes);
+    const decision = shouldAutoAnalyze({
       settings: readAnalyzerGateSettings(),
-      stats: scanStatsSince(scanState, watermarkBytes),
-      hasNewCandidate: hasCandidateSince(Object.values(scanState.candidates), watermarkBytes),
+      stats: { newBytes, newUserPromptCount },
+      hasNewCandidate,
       lastPassAt: storedAnalysis.lastPassAt,
       now: Date.now(),
       inFlight,
     });
+    return { ...decision, newBytes, newUserPromptCount, hasNewCandidate };
   }
 
-  private logGateDecision(sessionId: string, decision: AnalyzerGateDecision): void {
+  private logGateDecision(sessionId: string, decision: AnalyzerGateSnapshot): void {
     const verdict = decision.run ? "run" : "skip";
     this.dependencies.log.appendLine(`${LOG_PREFIX} gate "${this.dependencies.sessionTitle(sessionId)}": ${verdict}, ${decision.reason}`);
+    this.recordDecision(sessionId, "auto", verdict, decision.reason);
+  }
+
+  private recordDecision(sessionId: string, trigger: AnalyzerDecisionTrigger, verdict: AnalyzerVerdict, reason: string): void {
+    const decision: AnalyzerDecision = { at: new Date().toISOString(), trigger, verdict, reason };
+    this.decisionsBySession.set(sessionId, withDecision(this.recentDecisions(sessionId), decision));
   }
 
   // The new session has its own transcript, so the copy starts reading it from the top.
