@@ -137,8 +137,8 @@ Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:
 ## Install
 
 ```bash
-curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.22.vsix
-code --install-extension djaunt-overseer-0.0.22.vsix
+curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.23.vsix
+code --install-extension djaunt-overseer-0.0.23.vsix
 ```
 
 If `code` isn't on your PATH, use `"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"`.
@@ -182,7 +182,7 @@ The analyzer and Summarize with Haiku run through your `claude` CLI, so they cou
 npm install
 npm test
 npm run package
-code --install-extension djaunt-overseer-0.0.22.vsix --force
+code --install-extension djaunt-overseer-0.0.23.vsix --force
 ```
 
 Not affiliated with Anthropic.
