@@ -55,7 +55,8 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - Clicking a terminal tab selects that session's row in the sidebar. A row that is already selected stays, so a multi-select survives.
 - **Suspend** (pause) sends `/exit`, so the process and its memory go away. It warns first when Claude is mid-task.
 - **Resume** (play) brings the session back with its history.
-- **Rename** (F2 or double-click) renames the row and its tab. When the session is idle in this window, it also sends `/rename`. A tab that comes back from a reload without its name gets it again when you focus it.
+- The analyzer names each session in 2 to 5 words, by what it is about. A ticket key from the launch name keeps the session under its ticket, and shows in the row's description when the title drops it.
+- **Rename** (F2 or double-click) renames the row and its tab, and locks the title so the analyzer leaves it alone. **Unlock Title** hands it back. When the session is idle in this window, it also sends `/rename`. A tab that comes back from a reload without its name gets it again when you focus it.
 - **Kill and Remove** (right-click) closes the terminal, ends the process, and unpins it. The transcript stays, so All Sessions can still resume it.
 - **Remove from Sidebar** only unpins.
 - Hovering over a session shows its name, state, and status. Everything else is in the Session sidebar.
@@ -89,8 +90,9 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 
 ### Session sidebar
 - The **Session** view in the Secondary Side Bar (Cmd+Option+B) follows the focused session: a Claude terminal or the preview tab. It opens once on its own, the first time a Claude terminal gets focus.
-- The header shows the session's name, state, folder, and branch. Under it is the summary: Claude Code's own recap, or a Haiku summary if that one is newer. **Summarize with Haiku** writes a new one from the end of the transcript. It runs only when you click it.
-- **Suspend** or **Resume** sits under the summary. A session running in another window offers a fork instead.
+- The header shows the session's name, state, folder, and branch.
+- **Suspend** or **Resume** sits under the header. A session running in another window offers a fork instead.
+- **Now** shows the analyzer's lines on where the work stands, and when it last updated them. **Work** comes next.
 - **Actions** holds the rest:
   - **Claude**: Compact, Clear, Model, Cost, and Run command. They send `/compact`, `/clear`, `/model`, `/cost`, or one of your saved prompts. They show only for a session running in this window, and they wait until it is idle.
   - **Session**: Update, Recheck, Open repo, Set status, and Rename.
@@ -106,6 +108,8 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - The Session sidebar groups a session's PRs, tickets, artifacts, and commits into workstreams, with a few lines on where the work stands.
 - A headless Haiku pass builds them from the transcript. It runs on its own after a session goes idle, when the gates in **Settings…** → **Analyzer** pass: idle seconds, new prompts, new KB or a new link, and a cooldown. `overseer.analyzer.auto` turns it off.
 - **Update** runs a pass on what is new now. **Recheck** rebuilds the workstreams from the whole transcript.
+- **Flag: This Didn't Update** logs a diagnostic snapshot to `~/.claude/overseer/analyzer-flags.jsonl` when a pass didn't come when you expected.
+- Each analyzer call logs its cost and tokens to `~/.claude/overseer/analyzer-usage.jsonl` and an `[analyzer] usage` line in the Overseer output.
 - Your edits win over every pass: rename a workstream, drag an item to another one, reorder workstreams, mark one done, or remove an item.
 - Items the model has not placed show under **Unsorted**. Removed items show under **Removed**, where **Restore** brings them back.
 - Each row has **Open in Browser** and a **More Actions** menu: **Open in VS Code**, **Copy Link**, **Move to Status…** (tickets), and **Remove from This Session**.
@@ -133,8 +137,8 @@ Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:
 ## Install
 
 ```bash
-curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.20.vsix
-code --install-extension djaunt-overseer-0.0.20.vsix
+curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.21.vsix
+code --install-extension djaunt-overseer-0.0.21.vsix
 ```
 
 If `code` isn't on your PATH, use `"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"`.
@@ -178,7 +182,7 @@ The analyzer and Summarize with Haiku run through your `claude` CLI, so they cou
 npm install
 npm test
 npm run package
-code --install-extension djaunt-overseer-0.0.20.vsix --force
+code --install-extension djaunt-overseer-0.0.21.vsix --force
 ```
 
 Not affiliated with Anthropic.
