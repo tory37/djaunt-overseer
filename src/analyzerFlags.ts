@@ -5,7 +5,7 @@ import type { AnalyzerGateDecision, AnalyzerGateSettings } from "./analyzerGates
 import type { AnalyzerModels } from "./analyzerPass";
 import type { AnalyzerUsageRecord } from "./analyzerUsage";
 import type { LiveStatus } from "./liveParse";
-import type { HoverSummary } from "./sessionSummary";
+import type { ShownSessionTitle } from "./sessionTitle";
 
 const OVERSEER_DIR_NAME = "overseer";
 const FLAGS_FILE_NAME = "analyzer-flags.jsonl";
@@ -42,7 +42,8 @@ export interface AnalyzerFlagInput {
   title: string;
   note?: string;
   liveStatus?: LiveStatus;
-  summary?: HoverSummary;
+  shownTitle?: ShownSessionTitle;
+  isTitleLocked?: boolean;
   status?: ShownStatus;
   analysis?: SessionAnalysis;
   transcriptBytes?: number;
@@ -61,9 +62,9 @@ export interface AnalyzerFlagRecord {
   note?: string;
   liveStatus: LiveStatus | "none";
   shown: {
-    summary?: { text: string; source: HoverSummary["source"]; writtenAt: string; isStale: boolean };
+    title?: ShownSessionTitle & { isLocked: boolean };
     status?: ShownStatus;
-    where: string[];
+    now: string[];
     workstreams: { id: string; title: string; done: boolean; itemKeys: string[]; ticketKeys: string[] }[];
   };
   analysis?: { lastPassAt?: string; lastModel?: string; watermarkBytes: number; transcriptBytes?: number };
@@ -90,7 +91,7 @@ export function recentUsageOf(usageJsonLinesText: string, sessionId: string): An
 }
 
 export function analyzerFlagRecordOf(input: AnalyzerFlagInput): AnalyzerFlagRecord {
-  const { analysis, summary } = input;
+  const { analysis, shownTitle } = input;
   const note = input.note?.trim();
   const record: AnalyzerFlagRecord = {
     at: new Date(input.at).toISOString(),
@@ -99,11 +100,9 @@ export function analyzerFlagRecordOf(input: AnalyzerFlagInput): AnalyzerFlagReco
     ...(note ? { note } : {}),
     liveStatus: input.liveStatus ?? "none",
     shown: {
-      ...(summary === undefined
-        ? {}
-        : { summary: { text: summary.text, source: summary.source, writtenAt: new Date(summary.writtenAtMs).toISOString(), isStale: summary.isStale } }),
+      ...(shownTitle === undefined ? {} : { title: { ...shownTitle, isLocked: input.isTitleLocked === true } }),
       ...(input.status === undefined ? {} : { status: input.status }),
-      where: analysis?.where ?? [],
+      now: analysis?.where ?? [],
       workstreams: (analysis?.workstreams ?? []).map(({ id, title, done, itemKeys, ticketKeys }) => ({ id, title, done, itemKeys, ticketKeys })),
     },
     settings: { ...input.settings, ...input.models },

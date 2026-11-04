@@ -33,6 +33,7 @@ const PINNED_KEY = "overseer.pinnedSessionIds";
 const GROUPS_KEY = "overseer.userGroups";
 const ASSIGNMENTS_KEY = "overseer.groupAssignments";
 const LABELS_KEY = "overseer.sessionLabels";
+const TITLE_LOCKS_KEY = "overseer.titleLocks";
 const PENDING_KEY = "overseer.pendingSessions";
 const GROUP_ORDER_KEY = "overseer.groupOrder";
 const SESSION_ORDER_KEY = "overseer.sessionOrder";
@@ -191,6 +192,20 @@ export class Registry {
 
   async setLabel(sessionId: string, label: string): Promise<void> {
     await this.write(LABELS_KEY, { ...this.labels(), [sessionId]: label });
+  }
+
+  // A locked title is the user's label; an unlocked one gives way to the analyzer's title.
+  titleLocks(): string[] {
+    return this.store.get<string[]>(TITLE_LOCKS_KEY) ?? [];
+  }
+
+  isTitleLocked(sessionId: string): boolean {
+    return this.titleLocks().includes(sessionId);
+  }
+
+  async setTitleLocked(sessionId: string, isLocked: boolean): Promise<void> {
+    const otherLockedIds = this.titleLocks().filter((lockedId) => lockedId !== sessionId);
+    await this.write(TITLE_LOCKS_KEY, isLocked ? [...otherLockedIds, sessionId] : otherLockedIds);
   }
 
   // A brand-new session has no transcript until Claude writes one, so the registry remembers where it started.
@@ -414,6 +429,8 @@ export class Registry {
       await this.write(PINNED_KEY, this.pinnedSessionIds().map(swapId));
       await this.write(SESSION_ORDER_KEY, this.sessionOrder().map(swapId));
       await this.write(LABELS_KEY, moveEntry(this.labels(), fromSessionId, toSessionId));
+      await this.setTitleLocked(toSessionId, this.isTitleLocked(fromSessionId));
+      await this.setTitleLocked(fromSessionId, false);
       await this.write(ASSIGNMENTS_KEY, moveEntry(this.assignments(), fromSessionId, toSessionId));
       await this.write(SESSION_STATUS_KEY, moveEntry(this.sessionStatusIds(), fromSessionId, toSessionId));
       await this.write(SESSION_STATUS_REASON_KEY, moveEntry(this.sessionStatusReasons(), fromSessionId, toSessionId));
@@ -438,6 +455,7 @@ export class Registry {
       await this.unpin(sessionId);
     }
     await this.write(LABELS_KEY, withoutForgotten(this.labels()));
+    await this.write(TITLE_LOCKS_KEY, this.titleLocks().filter((sessionId) => !forgottenIds.has(sessionId)));
     await this.write(ASSIGNMENTS_KEY, withoutForgotten(this.assignments()));
     await this.write(LINK_MARKS_KEY, withoutForgotten(this.allLinkMarks()));
     await this.write(WORKSTREAM_EDITS_KEY, withoutForgotten(this.allWorkstreamEdits()));

@@ -12,7 +12,7 @@ import { AnalyzerCall, AnalyzerModels, AnalyzerPassError, planAnalyzerPass, runA
 import { analyzerUsageFile, AnalyzerUsageOutcome, usageJsonLines, usageLogLine, usageRecordsOf } from "./analyzerUsage";
 import { enrichCandidates } from "./candidateEnrichment";
 import { createClaudeRunner } from "./claudeRunner";
-import { SessionMeta } from "./indexer";
+import { displayTitle, SessionMeta } from "./indexer";
 import { LinkScanState, scanStatsSince, summarizeAllCandidates, userPromptTextOf } from "./linkCandidates";
 import { LinkStatusService } from "./linkStatusService";
 import { ConcurrencyLimiter } from "./linkView";
@@ -63,11 +63,38 @@ export class SessionAnalyzer implements vscode.Disposable {
   private readonly passesInFlight = new Map<string, Promise<AnalyzerPassOutcome>>();
   private readonly limiter = new ConcurrencyLimiter(MAX_CONCURRENT_PASSES);
   private readonly decisionsBySession = new Map<string, AnalyzerDecision[]>();
+  private readonly titlesBySession = new Map<string, string | undefined>();
   private claudeBinary: Promise<string> | undefined;
   private readonly changeEmitter = new vscode.EventEmitter<string>();
   readonly onDidChange = this.changeEmitter.event;
+  private readonly titleChangeEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeTitles = this.titleChangeEmitter.event;
 
   constructor(private readonly dependencies: AnalyzerDependencies) {}
+
+  // Tree rows and tab names need the title synchronously, so the last title read or saved is kept here.
+  analyzerTitle(sessionId: string): string | undefined {
+    return this.titlesBySession.get(sessionId);
+  }
+
+  analyzerTitles(): Record<string, string> {
+    return Object.fromEntries([...this.titlesBySession].filter((entry): entry is [string, string] => entry[1] !== undefined));
+  }
+
+  async loadMissingTitles(sessionIds: string[]): Promise<void> {
+    await this.reloadTitles(sessionIds.filter((sessionId) => !this.titlesBySession.has(sessionId)));
+  }
+
+  // Reads the saved files only: a session with no analysis yet is not seeded just to show its row.
+  async reloadTitles(sessionIds: string[]): Promise<void> {
+    const { claudeHome } = this.dependencies;
+    const safeSessionIds = sessionIds.filter(isSafeSessionId);
+    const analyses = await Promise.all(safeSessionIds.map((sessionId) => loadAnalysis(analysisFile(claudeHome, sessionId)).catch(() => undefined)));
+    const changedTitleCount = safeSessionIds.filter((sessionId, index) => this.rememberTitle(sessionId, analyses[index])).length;
+    if (changedTitleCount > 0) {
+      this.titleChangeEmitter.fire();
+    }
+  }
 
   isAnalyzing(sessionId: string): boolean {
     return this.passesInFlight.has(sessionId);
@@ -202,6 +229,7 @@ export class SessionAnalyzer implements vscode.Disposable {
       return;
     }
     await saveAnalysis(toFile, { ...fromAnalysis, watermarkBytes: 0 });
+    this.updateTitle(toSessionId, fromAnalysis);
     await registry.copyWorkstreamEdits(fromSessionId, toSessionId);
     // The copied workstreams still hold the old transcript's items, so its removals must come along.
     const removedItemKeys = Object.entries(registry.linkMarks(fromSessionId))
@@ -214,7 +242,7 @@ export class SessionAnalyzer implements vscode.Disposable {
   }
 
   private async runPass(sessionId: string, mode: AnalyzerMode): Promise<AnalyzerPassOutcome> {
-    const { claudeHome, linkService, linkStatusService, findSessionMeta, sessionTitle } = this.dependencies;
+    const { claudeHome, registry, linkService, linkStatusService, findSessionMeta } = this.dependencies;
     const meta = findSessionMeta(sessionId);
     if (meta === undefined) {
       return { kind: "skipped", detail: "no transcript in the index" };
@@ -249,7 +277,7 @@ export class SessionAnalyzer implements vscode.Disposable {
       const passResult = await runAnalyzerPass(
         {
           plan,
-          session: { title: sessionTitle(sessionId), gitBranch: meta.gitBranch, cwd: meta.resumeCwd ?? meta.startCwd },
+          session: { title: registry.labels()[sessionId] ?? displayTitle(meta), gitBranch: meta.gitBranch, cwd: meta.resumeCwd ?? meta.startCwd },
           analysis: currentAnalysis,
           edits: this.currentEdits(sessionId),
           candidates,
@@ -257,12 +285,14 @@ export class SessionAnalyzer implements vscode.Disposable {
           overlapPrompt: plan.digestMode === "diff" ? await this.overlapPrompt(meta.transcriptFile, scanState, startOffsetBytes) : undefined,
           statusOptions: configuredStatusOptions(),
           transcriptEndBytes,
+          isTitleLocked: registry.isTitleLocked(sessionId),
           now: Date.now(),
         },
         runClaude,
       );
       await this.recordUsage(sessionId, mode, "updated", passResult.calls);
       await saveAnalysis(analysisFile(claudeHome, sessionId), passResult.analysis);
+      this.updateTitle(sessionId, passResult.analysis);
       return { kind: "updated", detail: `${passResult.model} on a ${plan.digestMode} digest in ${Date.now() - startedAtMs}ms` };
     } catch (error) {
       this.claudeBinary = undefined;
@@ -311,15 +341,31 @@ export class SessionAnalyzer implements vscode.Disposable {
     const file = analysisFile(claudeHome, sessionId);
     const savedAnalysis = await loadAnalysis(file);
     if (savedAnalysis !== undefined) {
+      this.updateTitle(sessionId, savedAnalysis);
       return savedAnalysis;
     }
     const seededAnalysis = seedAnalysis(await loadLegacySessionData(claudeHome, sessionId, registry.linkMarks(sessionId)));
     await saveAnalysis(file, seededAnalysis);
+    this.updateTitle(sessionId, seededAnalysis);
     return seededAnalysis;
+  }
+
+  private updateTitle(sessionId: string, analysis: SessionAnalysis | undefined): void {
+    if (this.rememberTitle(sessionId, analysis)) {
+      this.titleChangeEmitter.fire();
+    }
+  }
+
+  // Returns whether the title changed, so a batch of reads fires one event.
+  private rememberTitle(sessionId: string, analysis: SessionAnalysis | undefined): boolean {
+    const isChanged = this.titlesBySession.get(sessionId) !== analysis?.title;
+    this.titlesBySession.set(sessionId, analysis?.title);
+    return isChanged;
   }
 
   dispose(): void {
     this.changeEmitter.dispose();
+    this.titleChangeEmitter.dispose();
   }
 }
 

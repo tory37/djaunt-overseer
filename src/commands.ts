@@ -29,7 +29,7 @@ import { AnalyzerPassOutcome, readAnalyzerGateSettings, readAnalyzerModels, Sess
 import { SessionFocusTracker } from "./sessionFocus";
 import { SessionPreview } from "./sessionPreview";
 import { askStatusReason, configuredStatuses, pickSessionStatus, shownSessionStatus } from "./sessionStatusView";
-import { pickHoverSummary } from "./sessionSummary";
+import { ShownSessionTitle } from "./sessionTitle";
 import { busySessions, confirmStopBusySessions, runningClaudeSessions, suspendSessions } from "./suspend";
 import { TreeNode } from "./tree";
 import { pickTargetWorkspace } from "./workspaceCommands";
@@ -45,7 +45,7 @@ export interface CommandDependencies {
   pinnedSessions: () => PinnedSession[];
   sessionAnalyzer: SessionAnalyzer;
   sessionFocus: SessionFocusTracker;
-  sessionTitle: (sessionId: string) => string;
+  shownTitle: (sessionId: string) => ShownSessionTitle;
   log: vscode.OutputChannel;
 }
 
@@ -83,7 +83,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     sessionViews,
     sessionPreview,
     pinnedSessions,
-    sessionTitle,
+    shownTitle,
     log,
   } = dependencies;
 
@@ -148,7 +148,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     if (note === undefined) {
       return;
     }
-    const title = sessionTitle(sessionId);
+    const title = shownTitle(sessionId);
     const meta = await findSessionMeta(sessionId).catch(() => undefined);
     const [analysis, gate, transcriptBytes, recentUsage] = await Promise.all([
       sessionAnalyzer.analysisFor(sessionId).catch(() => undefined),
@@ -160,10 +160,11 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     const record = analyzerFlagRecordOf({
       at: Date.now(),
       sessionId,
-      title,
+      title: title.text,
       note,
       liveStatus: liveMonitor.get(sessionId)?.status,
-      summary: meta && pickHoverSummary(meta.recap, summaryService.summaryFor(sessionId), meta.sizeBytes),
+      shownTitle: title,
+      isTitleLocked: registry.isTitleLocked(sessionId),
       status: shownStatus && { name: shownStatus.status.name, reason: shownStatus.status.reason, isDerived: shownStatus.isDerived },
       analysis,
       transcriptBytes,
@@ -182,7 +183,7 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       void vscode.window.showErrorMessage(`Overseer: can't write the flag to ${tildePath(flagsFile)}. See the Overseer output.`);
       return;
     }
-    void vscode.window.showInformationMessage(`Overseer: flagged "${title}". Logged to ${tildePath(flagsFile)}.`);
+    void vscode.window.showInformationMessage(`Overseer: flagged "${title.text}". Logged to ${tildePath(flagsFile)}.`);
   };
 
   // A clicked session offers only its own repos; the palette offers every repo in the tree.
@@ -301,8 +302,10 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     await applyName(pinned, newName);
   };
 
+  // A name the user types locks the title, so the analyzer never replaces it.
   const applyName = async (pinned: PinnedSession, newName: string): Promise<void> => {
     await registry.setLabel(pinned.sessionId, newName);
+    await registry.setTitleLocked(pinned.sessionId, true);
     const terminal = findSessionTerminal(pinned.sessionId);
     if (terminal === undefined) {
       return;
@@ -520,13 +523,20 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
         await renameSession(pinned);
       }
     }),
-    // /clear forks a new session. The row keeps the old name unless the user types another one.
+    // /clear forks a new session. The row keeps the old name unless the user types another one; a moved label stays for grouping.
     vscode.commands.registerCommand("overseer.nameClearedSession", async (sessionId: string, previousTitle: string) => {
       const enteredName = (await vscode.window.showInputBox({ prompt: "Change session name?", value: previousTitle }))?.trim();
-      await registry.setLabel(sessionId, previousTitle);
+      if (registry.labels()[sessionId] === undefined) {
+        await registry.setLabel(sessionId, previousTitle);
+      }
       const pinned = findPinnedSession(sessionId);
       if (pinned && enteredName && enteredName !== previousTitle) {
         await applyName(pinned, enteredName);
+      }
+    }),
+    vscode.commands.registerCommand("overseer.unlockTitle", async (clicked?: TreeNode | string) => {
+      for (const sessionId of analyzerTargetIds(clicked)) {
+        await registry.setTitleLocked(sessionId, false);
       }
     }),
     vscode.commands.registerCommand("overseer.renameTerminal", async (clickedNode?: TreeNode) => {

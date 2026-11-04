@@ -45,6 +45,7 @@ function digestInput(overrides: Partial<AnalyzerDigestInput> = {}): AnalyzerDige
     overlapPrompt: undefined,
     statusOptions: [{ id: "done", name: "Done", asksReason: false, done: true }],
     transcriptEndBytes: 5000,
+    isTitleLocked: false,
     ...overrides,
   };
 }
@@ -194,5 +195,23 @@ describe("buildAnalyzerDigest", () => {
   it("includes the overlap prompt on a diff", () => {
     const digest = buildAnalyzerDigest(digestInput({ overlapPrompt: "should we fix both repos?" }));
     expect(digest.text).toContain("The last user prompt before this diff, for context:\nUser: should we fix both repos?");
+  });
+});
+
+describe("session title in the digest", () => {
+  it("shows the session's name and the current title so the model can keep it", () => {
+    const digest = buildAnalyzerDigest(digestInput({ analysis: { ...emptyAnalysis(), title: "SODA retry bug" } }));
+    expect(digest.text).toContain("Session name: SODA E2E");
+    expect(digest.text).toContain('Session title: "SODA retry bug"');
+    expect(digest.text).not.toContain("fixed by user, do not set_title");
+  });
+
+  it("says none when no title is set yet", () => {
+    expect(buildAnalyzerDigest(digestInput()).text).toContain("Session title: (none)");
+  });
+
+  it("says the title is fixed when the user locked it", () => {
+    const digest = buildAnalyzerDigest(digestInput({ analysis: { ...emptyAnalysis(), title: "SODA retry bug" }, isTitleLocked: true }));
+    expect(digest.text).toContain('Session title: "SODA retry bug" [fixed by user, do not set_title]');
   });
 });

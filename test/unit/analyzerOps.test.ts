@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emptyAnalysis, MAX_ARTIFACT_TITLE_CHARS, readSessionAnalysis, SessionAnalysis, trimToWholeWords } from "../../src/analysisState";
+import { emptyAnalysis, MAX_ARTIFACT_TITLE_CHARS, MAX_SESSION_TITLE_CHARS, readSessionAnalysis, SessionAnalysis, trimToWholeWords } from "../../src/analysisState";
 import {
   ANALYZER_SYSTEM_PROMPT,
   analyzerArgs,
@@ -28,8 +28,8 @@ function envelope(output: unknown): string {
   return JSON.stringify({ type: "result", is_error: false, structured_output: output });
 }
 
-function context(mode: ApplyContext["mode"] = "diff", knownItemKeys = [PR_A, PR_B, ARTIFACT]): ApplyContext {
-  return { mode, knownItemKeys: new Set(knownItemKeys), statusOptions: STATUS_OPTIONS };
+function context(mode: ApplyContext["mode"] = "diff", knownItemKeys = [PR_A, PR_B, ARTIFACT], isTitleLocked = false): ApplyContext {
+  return { mode, knownItemKeys: new Set(knownItemKeys), statusOptions: STATUS_OPTIONS, isTitleLocked };
 }
 
 function edits(overrides: Partial<WorkstreamEdits> = {}): WorkstreamEdits {
@@ -450,5 +450,52 @@ describe("parseRunUsage", () => {
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
     });
+  });
+});
+
+describe("session title", () => {
+  it("reads a set_title op and fails a blank one", () => {
+    expect(parseAnalyzerOutput(envelope({ ops: [{ op: "set_title", title: " Analyzer session titles " }] }), STATUS_IDS)).toEqual([
+      { op: "set_title", title: "Analyzer session titles" },
+    ]);
+    expect(parseAnalyzerOutput(envelope({ ops: [{ op: "set_title", title: "  " }] }), STATUS_IDS)).toBeUndefined();
+    expect(parseAnalyzerOutput(envelope({ ops: [{ op: "set_title" }] }), STATUS_IDS)).toBeUndefined();
+  });
+
+  it("puts set_title in the schema", () => {
+    expect(JSON.stringify(analyzerOutputSchema(STATUS_IDS))).toContain('"enum":["set_title"]');
+  });
+
+  it("tells the model to name the subject, keep the title, and always set it on a first pass or recheck", () => {
+    expect(ANALYZER_SYSTEM_PROMPT).toContain("set_title names what the session is about in 2 to 5 words");
+    expect(ANALYZER_SYSTEM_PROMPT).toContain("Keep the current title unless the session's subject has clearly changed.");
+    expect(ANALYZER_SYSTEM_PROMPT).toMatch(/On a recheck pass[^\n]*set the title/);
+  });
+
+  it("sets the title and clips a long one", () => {
+    const analysis = applyOps(emptyAnalysis(), [{ op: "set_title", title: "SODA retry bug" }], edits(), context());
+    expect(analysis.title).toBe("SODA retry bug");
+    const longTitle = "word ".repeat(30);
+    const clipped = applyOps(emptyAnalysis(), [{ op: "set_title", title: longTitle }], edits(), context());
+    expect(clipped.title?.length).toBe(MAX_SESSION_TITLE_CHARS);
+  });
+
+  it("ignores set_title when the user locked the title", () => {
+    const current: SessionAnalysis = { ...emptyAnalysis(), title: "SODA retry bug" };
+    const analysis = applyOps(current, [{ op: "set_title", title: "Something else" }], edits(), context("diff", [PR_A, PR_B, ARTIFACT], true));
+    expect(analysis.title).toBe("SODA retry bug");
+  });
+
+  it("keeps the current title when a pass sends no set_title, even on a recheck", () => {
+    const current: SessionAnalysis = { ...emptyAnalysis(), title: "SODA retry bug" };
+    expect(applyOps(current, [], edits(), context("recheck")).title).toBe("SODA retry bug");
+  });
+
+  it("reads a saved title only when it is a non-empty string, clipped", () => {
+    expect(readSessionAnalysis({ ...emptyAnalysis(), title: "SODA retry bug" }).title).toBe("SODA retry bug");
+    expect(readSessionAnalysis({ ...emptyAnalysis(), title: "  " }).title).toBeUndefined();
+    expect(readSessionAnalysis({ ...emptyAnalysis(), title: 42 }).title).toBeUndefined();
+    expect(readSessionAnalysis(emptyAnalysis())).not.toHaveProperty("title");
+    expect(readSessionAnalysis({ ...emptyAnalysis(), title: "x".repeat(100) }).title?.length).toBe(MAX_SESSION_TITLE_CHARS);
   });
 });

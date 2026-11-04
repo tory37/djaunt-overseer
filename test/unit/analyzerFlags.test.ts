@@ -16,7 +16,6 @@ import { AnalyzerUsageRecord } from "../../src/analyzerUsage";
 
 const AT_MS = Date.parse("2026-11-03T10:00:00.000Z");
 const LAST_PASS_MS = Date.parse("2026-11-03T09:40:00.000Z");
-const SUMMARY_MS = Date.parse("2026-11-03T09:55:00.000Z");
 
 function decision(reason: string): AnalyzerDecision {
   return { at: "2026-11-03T09:00:00.000Z", trigger: "auto", verdict: "skip", reason };
@@ -53,7 +52,8 @@ const FULL_INPUT: AnalyzerFlagInput = {
   title: "Login retry",
   note: "PR 7 merged but the work still shows open",
   liveStatus: "idle",
-  summary: { source: "recap", text: "Fixed the retry loop.", writtenAtMs: SUMMARY_MS, isStale: false },
+  shownTitle: { text: "Login retry", source: "analyzer" },
+  isTitleLocked: false,
   status: { name: "In review", isDerived: true },
   analysis: ANALYSIS,
   transcriptBytes: 61_440,
@@ -110,9 +110,9 @@ describe("analyzerFlagRecordOf", () => {
       note: "PR 7 merged but the work still shows open",
       liveStatus: "idle",
       shown: {
-        summary: { text: "Fixed the retry loop.", source: "recap", writtenAt: "2026-11-03T09:55:00.000Z", isStale: false },
+        title: { text: "Login retry", source: "analyzer", isLocked: false },
         status: { name: "In review", isDerived: true },
-        where: ["PR 7 waits on review"],
+        now: ["PR 7 waits on review"],
         workstreams: [
           { id: "ws-1", title: "Fix login retry", done: false, itemKeys: ["pr:acme/app/pull/7", "commit:abc1234"], ticketKeys: ["ABC-12"] },
           { id: "ws-2", title: "Release 0.0.20", done: true, itemKeys: [], ticketKeys: [] },
@@ -140,10 +140,15 @@ describe("analyzerFlagRecordOf", () => {
       sessionId: "s2",
       title: "New session",
       liveStatus: "none",
-      shown: { where: [], workstreams: [] },
+      shown: { now: [], workstreams: [] },
       settings: { ...DEFAULT_ANALYZER_GATE_SETTINGS, model: "haiku", recheckModel: "sonnet" },
       recentDecisions: [],
     });
+  });
+
+  it("records a locked title as locked", () => {
+    const record = analyzerFlagRecordOf({ ...FULL_INPUT, shownTitle: { text: "PROJ-7", source: "locked" }, isTitleLocked: true });
+    expect(record.shown.title).toEqual({ text: "PROJ-7", source: "locked", isLocked: true });
   });
 
   it("drops an empty note", () => {

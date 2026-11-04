@@ -77,6 +77,7 @@ function passInput(overrides: Partial<AnalyzerPassInput> = {}): AnalyzerPassInpu
     overlapPrompt: undefined,
     statusOptions: STATUS_OPTIONS,
     transcriptEndBytes: 9000,
+    isTitleLocked: false,
     now: 1_700_000_000_000,
     ...overrides,
   };
@@ -365,5 +366,25 @@ describe("transcript lines", () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("session title in a pass", () => {
+  const titleReply = envelope({ ops: [{ op: "set_title", title: "SODA retry bug" }] });
+
+  it("saves the title the model sets", async () => {
+    const result = await runAnalyzerPass(passInput(), async () => titleReply);
+    expect(result.analysis.title).toBe("SODA retry bug");
+  });
+
+  it("tells the model the title is locked and keeps the current one", async () => {
+    const digests: string[] = [];
+    const lockedInput = passInput({ analysis: { ...emptyAnalysis(), title: "Session titles" }, isTitleLocked: true });
+    const result = await runAnalyzerPass(lockedInput, async (_claudeArgs, stdinText) => {
+      digests.push(stdinText);
+      return titleReply;
+    });
+    expect(digests[0]).toContain('Session title: "Session titles" [fixed by user, do not set_title]');
+    expect(result.analysis.title).toBe("Session titles");
   });
 });

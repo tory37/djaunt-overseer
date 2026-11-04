@@ -12,6 +12,7 @@ import { CompactMonitor } from "./compactMonitor";
 import { SessionIndex } from "./sessionIndex";
 import { sessionStatusFor, sessionStatusUri } from "./sessionStatusView";
 import { MarkedStatus } from "./sessionStatuses";
+import { hiddenLabelTicketKeys } from "./sessionTitle";
 import { findSessionTerminal } from "./terminals";
 
 export type TreeNode =
@@ -47,6 +48,7 @@ export class SessionTreeProvider
     private readonly liveMonitor: LiveSessionMonitor,
     private readonly registry: Registry,
     private readonly compactMonitor: CompactMonitor,
+    private readonly analyzerTitles: () => Record<string, string>,
   ) {}
 
   refresh(): void {
@@ -185,6 +187,8 @@ export class SessionTreeProvider
         userGroups: this.registry.userGroupsInActiveWorkspace(),
         assignments: this.registry.assignments(),
         labels: this.registry.labels(),
+        analyzerTitles: this.analyzerTitles(),
+        titleLocks: this.registry.titleLocks(),
         pendingSessions: this.registry.pendingSessions(),
         terminalSessions: this.registry.terminalSessions(),
         groupOrder: this.registry.groupOrder(),
@@ -249,7 +253,7 @@ function sessionTreeItem(
   treeItem.description = sessionDescription(pinned);
   treeItem.tooltip = sessionTooltip(pinned, sessionIconSpec(iconState).label, status);
   treeItem.iconPath = sessionStateIcon(iconState);
-  treeItem.contextValue = `session.${state}`;
+  treeItem.contextValue = pinned.isTitleLocked === true ? `session.${state}.titleLocked` : `session.${state}`;
   const copyCount = liveSession?.processCount ?? 0;
   if (copyCount > 1) {
     treeItem.iconPath = sessionStateIcon("duplicate");
@@ -274,11 +278,14 @@ function terminalTreeItem(pinned: PinnedSession, terminalSession: TerminalSessio
   return treeItem;
 }
 
+// A ticket key typed into the name stays visible after the analyzer renames the row.
 function sessionDescription(pinned: PinnedSession): string {
+  const hiddenTicketText = hiddenLabelTicketKeys(pinned.label, pinnedSessionTitle(pinned)).join(", ");
   if (pinned.meta !== undefined) {
-    return "";
+    return hiddenTicketText;
   }
-  return pinned.pending ? `${path.basename(pinned.pending.cwd)} · new` : "not found in index";
+  const placeText = pinned.pending ? `${path.basename(pinned.pending.cwd)} · new` : "not found in index";
+  return [hiddenTicketText, placeText].filter(Boolean).join(" · ");
 }
 
 function sessionPlace(pinned: PinnedSession): string {

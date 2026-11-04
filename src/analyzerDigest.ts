@@ -38,6 +38,7 @@ export interface AnalyzerDigestInput {
   overlapPrompt: string | undefined;
   statusOptions: StatusOption[];
   transcriptEndBytes: number;
+  isTitleLocked: boolean;
 }
 
 // itemKeys are the items the model saw, so only those may be placed.
@@ -305,7 +306,7 @@ function digestItems(input: AnalyzerDigestInput): EnrichedCandidate[] {
 function sessionSection(input: AnalyzerDigestInput): string {
   return [
     `Pass: ${input.mode}`,
-    `Session title: ${input.session.title}`,
+    `Session name: ${input.session.title}`,
     `Branch: ${input.session.gitBranch ?? "(none)"}`,
     `Cwd: ${input.session.cwd ?? "(unknown)"}`,
   ].join("\n");
@@ -314,7 +315,9 @@ function sessionSection(input: AnalyzerDigestInput): string {
 function stateSection(input: AnalyzerDigestInput): string {
   const { analysis, edits, candidates } = input;
   const labelsByKey = new Map(candidates.map((candidate) => [linkKey(candidate), candidate.title]));
-  const lines = ["Current workstreams:"];
+  const titleText = analysis.title === undefined ? "(none)" : `"${analysis.title}"`;
+  const lockedTitleText = input.isTitleLocked ? " [fixed by user, do not set_title]" : "";
+  const lines = [`Session title: ${titleText}${lockedTitleText}`, "Current workstreams:"];
   if (analysis.workstreams.length === 0) {
     lines.push("(none)");
   }

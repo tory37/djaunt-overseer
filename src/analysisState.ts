@@ -6,6 +6,7 @@ export const MAX_WHERE_LINE_CHARS = 100;
 export const MAX_WORKSTREAM_TITLE_CHARS = 80;
 export const MAX_ARTIFACT_TITLE_CHARS = 40;
 export const MAX_SEED_NOTE_CHARS = 160;
+export const MAX_SESSION_TITLE_CHARS = 48;
 export const TICKET_ITEM_PREFIX = "ticket:";
 const WORKSTREAM_ID_PREFIX = "ws-";
 const TRAILING_PUNCTUATION_PATTERN = /[\s:;,.(\-–—]+$/;
@@ -34,6 +35,7 @@ export interface SeedFacts {
 
 // sessionStatus holds a configured session status id.
 export interface SessionAnalysis {
+  title?: string;
   workstreams: Workstream[];
   seedFacts: SeedFacts;
   artifactTitles: Record<string, string>;
@@ -117,6 +119,9 @@ export function readSessionAnalysis(entries: unknown): SessionAnalysis {
     watermarkBytes: isNonNegativeNumber(fields.watermarkBytes) ? fields.watermarkBytes : 0,
     nextWorkstreamNumber: Math.max(savedNextNumber, highestWorkstreamNumber + 1),
   };
+  if (typeof fields.title === "string" && fields.title.trim() !== "") {
+    analysis.title = clipLine(fields.title, MAX_SESSION_TITLE_CHARS);
+  }
   if (typeof fields.sessionStatus === "string" && fields.sessionStatus !== "") {
     analysis.sessionStatus = fields.sessionStatus;
   }

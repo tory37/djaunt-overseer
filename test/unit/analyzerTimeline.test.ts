@@ -56,6 +56,7 @@ function sodaDigest() {
     overlapPrompt: undefined,
     statusOptions: [],
     transcriptEndBytes: scanState.scannedBytes,
+    isTitleLocked: false,
   });
 }
 
@@ -110,6 +111,7 @@ describe("analyzer timeline on a QA fix after shipped work", () => {
       mode: "recheck",
       knownItemKeys: new Set(digest.itemKeys),
       statusOptions: [],
+      isTitleLocked: false,
     });
     expect(analysis.workstreams.map((workstream) => [workstream.title, workstream.itemKeys])).toEqual([
       ["Spanish SODA blueprints and AOS", [FEATURE_AOS_PR, FEATURE_DATA_PR]],

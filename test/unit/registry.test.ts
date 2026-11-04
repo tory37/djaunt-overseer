@@ -13,6 +13,18 @@ function memoryStore(): KeyValueStore {
 }
 
 describe("Registry", () => {
+  it("locks and unlocks a session title once each", async () => {
+    const registry = new Registry(memoryStore());
+    await registry.setTitleLocked("a", true);
+    await registry.setTitleLocked("a", true);
+    await registry.setTitleLocked("b", true);
+    expect(registry.titleLocks()).toEqual(["a", "b"]);
+    expect(registry.isTitleLocked("a")).toBe(true);
+    await registry.setTitleLocked("a", false);
+    expect(registry.isTitleLocked("a")).toBe(false);
+    expect(registry.titleLocks()).toEqual(["b"]);
+  });
+
   it("copies only ticket marks to a new session and keeps the target's own marks", async () => {
     const registry = new Registry(memoryStore());
     await registry.setLinkMark("old", ["ticket:PROJ-1", "pr:9"], "pinned");
@@ -90,6 +102,7 @@ describe("Registry", () => {
     for (const sessionId of ["a", "b"]) {
       await registry.pin(sessionId);
       await registry.setLabel(sessionId, `label ${sessionId}`);
+      await registry.setTitleLocked(sessionId, true);
       await registry.assign([sessionId], userGroupRef("g1"));
       await registry.setLinkMark(sessionId, ["ticket:PROJ-5"], "pinned");
       await registry.setSessionStatus([sessionId], "blocked", "why");
@@ -99,6 +112,7 @@ describe("Registry", () => {
 
     expect(registry.pinnedSessionIds()).toEqual(["b"]);
     expect(registry.labels()).toEqual({ b: "label b" });
+    expect(registry.titleLocks()).toEqual(["b"]);
     expect(registry.assignments()).toEqual({ b: userGroupRef("g1") });
     expect(registry.linkMarks("a")).toEqual({});
     expect(registry.sessionStatusIds()).toEqual({ b: "blocked" });
@@ -280,6 +294,7 @@ describe("Registry", () => {
     await registry.pin("after");
     await registry.setSessionOrder(["before", "old", "after"]);
     await registry.setLabel("old", "My task");
+    await registry.setTitleLocked("old", true);
     await registry.assign(["old"], userGroupRef("g1"));
     await registry.setSessionStatus(["old"], "blocked", "waiting on review");
     await registry.setLinkMark("old", ["pr:1"], "pinned");
@@ -290,6 +305,7 @@ describe("Registry", () => {
     expect(registry.pinnedSessionIds()).toEqual(["before", "new", "after"]);
     expect(registry.sessionOrder()).toEqual(["before", "new", "after"]);
     expect(registry.labels()).toEqual({ new: "My task" });
+    expect(registry.titleLocks()).toEqual(["new"]);
     expect(registry.assignments()).toEqual({ new: userGroupRef("g1") });
     expect(registry.sessionStatusIds()).toEqual({ new: "blocked" });
     expect(registry.sessionStatusReasons()).toEqual({ new: "waiting on review" });

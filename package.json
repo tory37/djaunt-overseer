@@ -200,6 +200,12 @@
         "category": "Overseer"
       },
       {
+        "command": "overseer.unlockTitle",
+        "title": "Unlock Title (Let Haiku Name It)",
+        "category": "Overseer",
+        "icon": "$(unlock)"
+      },
+      {
         "command": "overseer.clickSession",
         "title": "Open Session",
         "category": "Overseer"
@@ -538,18 +544,23 @@
         },
         {
           "command": "overseer.suspendSession",
-          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\.(running|working)$/",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\.(running|working)(\\.|$)/",
           "group": "inline@1"
         },
         {
           "command": "overseer.suspendSession",
-          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\.(running|working)$/",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\.(running|working)(\\.|$)/",
           "group": "1_session@2"
         },
         {
           "command": "overseer.renameSession",
           "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./",
           "group": "1_session@3"
+        },
+        {
+          "command": "overseer.unlockTitle",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\..*\\.titleLocked$/",
+          "group": "1_session@4"
         },
         {
           "command": "overseer.newSession",

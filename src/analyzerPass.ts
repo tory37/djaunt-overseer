@@ -92,6 +92,7 @@ export async function runAnalyzerPass(input: AnalyzerPassInput, runClaude: Claud
       mode: digestMode,
       knownItemKeys: new Set(digest.itemKeys),
       statusOptions: input.statusOptions,
+      isTitleLocked: input.isTitleLocked,
     });
     if (digestMode === "recheck") {
       const drop = recheckDropOf(input.analysis, appliedAnalysis, input.edits);

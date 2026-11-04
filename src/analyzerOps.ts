@@ -2,6 +2,7 @@ import {
   cleanWhereLines,
   clipLine,
   MAX_ARTIFACT_TITLE_CHARS,
+  MAX_SESSION_TITLE_CHARS,
   MAX_WHERE_LINES,
   MAX_WORKSTREAM_TITLE_CHARS,
   SessionAnalysis,
@@ -19,6 +20,7 @@ import { applyUserEdits, isUserEditedWorkstream, WorkstreamEdits } from "./works
 
 // workstream names an existing id or a ref from create_workstream in the same reply. An empty workstream on assign_item means Unsorted.
 export type AnalyzerOp =
+  | { op: "set_title"; title: string }
   | { op: "create_workstream"; ref: string; title: string }
   | { op: "retitle_workstream"; workstream: string; title: string }
   | { op: "assign_item"; item: string; workstream: string }
@@ -33,6 +35,7 @@ export interface ApplyContext {
   // Only items the model was shown, or that already sit in a workstream, may be placed.
   knownItemKeys: ReadonlySet<string>;
   statusOptions: StatusOption[];
+  isTitleLocked: boolean;
 }
 
 const ARTIFACT_ITEM_PREFIX = "artifact:";
@@ -55,6 +58,8 @@ export interface RecheckDrop {
 export const ANALYZER_SYSTEM_PROMPT = `You organize the work of one Claude Code session into workstreams for a sidebar.
 The input shows the current workstreams, background facts from earlier notes, items found in the transcript (PRs, commits, artifacts, tickets), the allowed session statuses, and a digest of the transcript.
 Reply with operations that change the current state. Return an empty ops list when nothing should change.
+- set_title names what the session is about in 2 to 5 words, like "SODA retry bug" or "Analyzer session titles". Name the subject: a feature, bug, system, or ticket topic. Never the current activity: no words like triage, implementing, fixing, investigating, debugging, reviewing, or WIP. No ticket key.
+- Keep the current title unless the session's subject has clearly changed. When the session title is (none), always set it. Never send set_title when the title is fixed by user.
 - A workstream is a unit of work as it happened in the session, such as "QA fix: SODA score retry" that spans PRs in two repos. Never make one workstream per ticket.
 - Group by when and why the work happened, not only by repo or ticket. Items and user prompts carry times; read the timeline.
 - A new problem raised after earlier work shipped or went to review or QA, such as a QA finding, a bug report, a regression, or a reviewer-found defect, gets its own workstream titled like "QA fix: <what broke>". This holds even when the fix touches the same repos or its PR title carries the same ticket key.
@@ -72,7 +77,7 @@ Reply with operations that change the current state. Return an empty ops list wh
 - set_session_status picks one allowed status id. done is true when the session's work is finished.
 - mark_workstream_done marks a workstream finished or not.
 Anything marked fixed by user stays as it is: do not move, retitle, re-add, or re-tag it.
-On a recheck pass, the current workstreams are dropped unless the user edited them. Build the workstreams fresh from the whole transcript: create each one again with create_workstream, assign every item again even when it does not move, and set the where lines and the status again.`;
+On a recheck pass, the current workstreams are dropped unless the user edited them. Build the workstreams fresh from the whole transcript: create each one again with create_workstream, assign every item again even when it does not move, and set the title, the where lines, and the status again.`;
 
 export function analyzerOutputSchema(statusIds: string[]): object {
   const stringField = { type: "string" };
@@ -91,6 +96,7 @@ export function analyzerOutputSchema(statusIds: string[]): object {
         type: "array",
         items: {
           anyOf: [
+            opObject("set_title", { title: stringField }),
             opObject("create_workstream", { ref: stringField, title: stringField }),
             opObject("retitle_workstream", { workstream: stringField, title: stringField }),
             opObject("assign_item", { item: stringField, workstream: stringField }),
@@ -173,6 +179,10 @@ function readOp(rawOp: unknown, statusIds: ReadonlySet<string>): AnalyzerOp | un
   };
   const workstream = text("workstream");
   switch (fields.op) {
+    case "set_title": {
+      const title = text("title");
+      return title === undefined ? undefined : { op: "set_title", title };
+    }
     case "create_workstream": {
       const ref = text("ref");
       const title = text("title");
@@ -229,6 +239,11 @@ export function applyOps(analysis: SessionAnalysis, ops: AnalyzerOp[], edits: Wo
 
   for (const op of ops) {
     switch (op.op) {
+      case "set_title":
+        if (!context.isTitleLocked) {
+          nextAnalysis.title = clipLine(op.title, MAX_SESSION_TITLE_CHARS);
+        }
+        break;
       case "retitle_workstream": {
         const workstream = findWorkstream(op.workstream);
         if (workstream !== undefined) {

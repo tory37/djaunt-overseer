@@ -204,3 +204,21 @@ describe("buildSectionGroups", () => {
     ]);
   });
 });
+
+describe("pinnedSessionTitle with an analyzer title", () => {
+  it("shows the analyzer title over an unlocked label and the locked label over the analyzer title", () => {
+    const meta = sessionMeta("s1", { aiTitle: "fix the login timeout" });
+    const pinned = (isTitleLocked: boolean) =>
+      buildGroups(
+        groupingInput([meta], { labels: { s1: "PROJ-2567" }, analyzerTitles: { s1: "Login timeout bug" }, titleLocks: isTitleLocked ? ["s1"] : [] }),
+      )[0].sessions[0];
+    expect(pinnedSessionTitle(pinned(false))).toBe("Login timeout bug");
+    expect(pinnedSessionTitle(pinned(true))).toBe("PROJ-2567");
+  });
+
+  it("keeps the label on the row for grouping even when the analyzer title shows", () => {
+    const meta = sessionMeta("s1", {});
+    const [group] = buildGroups(groupingInput([meta], { labels: { s1: "PROJ-2567" }, analyzerTitles: { s1: "Login timeout bug" } }));
+    expect(group.sessions[0].label).toBe("PROJ-2567");
+  });
+});

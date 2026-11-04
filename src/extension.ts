@@ -30,6 +30,7 @@ import { SessionFocusTracker } from "./sessionFocus";
 import { SessionPreview } from "./sessionPreview";
 import { SESSION_PANEL_VIEW_ID, SessionPanelProvider } from "./sessionPanel";
 import { SessionTreeProvider } from "./tree";
+import { ShownSessionTitle, shownSessionTitle } from "./sessionTitle";
 import { SessionStatusDecorations } from "./sessionStatusView";
 import { registerWorkspaceCommands } from "./workspaceCommands";
 
@@ -49,19 +50,21 @@ export function activate(context: vscode.ExtensionContext): void {
   const jiraService = new JiraService(log);
   const linkStatusService = new LinkStatusService(log, jiraService, statusConfig, new StoredStatusCache(context.globalState));
   const summaryService = new SessionSummaryService(context.globalStorageUri.fsPath, log);
-  const sessionAnalyzer = new SessionAnalyzer({
+  const titleOf = (titledSessionId: string): ShownSessionTitle => shownTitleOf(titledSessionId, registry, sessionAnalyzer, findIndexedSession);
+  const sessionTitle = (titledSessionId: string): string => titleOf(titledSessionId).text;
+  const sessionAnalyzer: SessionAnalyzer = new SessionAnalyzer({
     claudeHome,
     registry,
     linkService,
     linkStatusService,
     findSessionMeta: findIndexedSession,
-    sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
+    sessionTitle,
     log,
   });
   const analyzerTrigger = new AnalyzerTrigger({ liveMonitor, analyzer: sessionAnalyzer, findSessionMeta: findIndexedSession, log });
   const compactMonitor = new CompactMonitor(claudeHome, log);
   const createSectionTree = (section: SessionSection, viewId: string) => {
-    const provider = new SessionTreeProvider(section, sessionIndex, liveMonitor, registry, compactMonitor);
+    const provider = new SessionTreeProvider(section, sessionIndex, liveMonitor, registry, compactMonitor, () => sessionAnalyzer.analyzerTitles());
     const view = vscode.window.createTreeView(viewId, {
       treeDataProvider: provider,
       dragAndDropController: provider,
@@ -105,7 +108,7 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   const repoTreeProvider = new RepoTreeProvider({
     repoService,
-    sessionTitle: (sessionId) => sessionTitle(sessionId, registry, findIndexedSession),
+    sessionTitle,
     commitAuthorship,
   });
   const repoTreeView = vscode.window.createTreeView("overseer.repos", { treeDataProvider: repoTreeProvider });
@@ -129,7 +132,7 @@ export function activate(context: vscode.ExtensionContext): void {
       log.appendLine(`Session ${fromSessionId} became ${toSessionId} in the same terminal; moving its row`);
       await registry.copyTicketMarks(fromSessionId, toSessionId);
       await sessionAnalyzer.copySession(fromSessionId, toSessionId);
-      const previousTitle = sessionTitle(fromSessionId, registry, findIndexedSession);
+      const previousTitle = sessionTitle(fromSessionId);
       const isNewSession = !registry.isPinned(toSessionId) && findIndexedSession(toSessionId) === undefined;
       await registry.moveSession(fromSessionId, toSessionId);
       if (isNewSession) {
@@ -137,7 +140,10 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }
   };
-  registry.onDidChange(refreshTree);
+  registry.onDidChange(() => {
+    refreshTree();
+    void sessionAnalyzer.loadMissingTitles(registry.pinnedSessionIds());
+  });
   const sessionPreview = new SessionPreview({
     extensionUri: context.extensionUri,
     registry,
@@ -147,7 +153,7 @@ export function activate(context: vscode.ExtensionContext): void {
     linkService,
     linkStatusService,
     findSessionMeta: findIndexedSession,
-    sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
+    sessionTitle,
   });
   const sessionFocus = new SessionFocusTracker(sessionPreview);
   sessionFocus.onDidChange(() => {
@@ -164,10 +170,9 @@ export function activate(context: vscode.ExtensionContext): void {
     liveMonitor,
     sessionFocus,
     sessionPreview,
-    summaryService,
     sessionAnalyzer,
     findSessionMeta: findIndexedSession,
-    sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
+    sessionTitle,
     globalState: context.globalState,
   });
   statusConfig.onDidChange(() => {
@@ -218,6 +223,11 @@ export function activate(context: vscode.ExtensionContext): void {
     sessionPanelProvider,
     vscode.window.registerWebviewViewProvider(SESSION_PANEL_VIEW_ID, sessionPanelProvider),
     compactMonitor.onDidChange(refreshTree),
+    sessionAnalyzer.onDidChangeTitles(() => {
+      treeProvider.refresh();
+      terminalTreeProvider.refresh();
+      repoTreeProvider.refresh();
+    }),
     ...registerCompactHookCommands(context, claudeHome, log),
     liveMonitor.onDidChange(() => {
       refreshTree();
@@ -234,9 +244,8 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       selectSessionRow(sessionId);
-      const meta = findIndexedSession(sessionId);
-      const expectedName = registry.labels()[sessionId] ?? (meta === undefined ? undefined : displayTitle(meta));
-      if (expectedName !== undefined && activeTerminal.name !== expectedName) {
+      const expectedName = sessionTitle(sessionId);
+      if (expectedName !== sessionId && activeTerminal.name !== expectedName) {
         void vscode.commands.executeCommand("workbench.action.terminal.renameWithArg", { name: expectedName });
       }
     }),
@@ -250,6 +259,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (windowState.focused) {
         registry.notifyExternalChange();
         statusConfig.notifyExternalChange();
+        void sessionAnalyzer.reloadTitles(registry.pinnedSessionIds());
         repoService.refreshAll();
         void sessionIndex.refresh();
         void liveMonitor.refresh();
@@ -266,7 +276,7 @@ export function activate(context: vscode.ExtensionContext): void {
       pinnedSessions,
       sessionAnalyzer,
       sessionFocus,
-      sessionTitle: (titledSessionId) => sessionTitle(titledSessionId, registry, findIndexedSession),
+      shownTitle: titleOf,
       log,
     }),
     ...registerWorkspaceCommands({ registry, sessionIndex, liveMonitor, pinnedSessions, log }),
@@ -286,19 +296,28 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
   void adoptRevivedTerminals();
+  void sessionAnalyzer.loadMissingTitles(registry.pinnedSessionIds());
 
   void sessionIndex.refresh();
 }
 
 export function deactivate(): void {}
 
-function sessionTitle(
+// A session nothing names yet shows its id, which counts as the index having no title.
+function shownTitleOf(
   sessionId: string,
   registry: Registry,
+  sessionAnalyzer: SessionAnalyzer,
   findIndexedSession: (sessionId: string) => SessionMeta | undefined,
-): string {
+): ShownSessionTitle {
   const meta = findIndexedSession(sessionId);
-  return registry.labels()[sessionId] ?? (meta === undefined ? sessionId : displayTitle(meta));
+  const shownTitle = shownSessionTitle({
+    label: registry.labels()[sessionId],
+    isLocked: registry.isTitleLocked(sessionId),
+    analyzerTitle: sessionAnalyzer.analyzerTitle(sessionId),
+    indexedTitle: meta === undefined ? undefined : displayTitle(meta),
+  });
+  return shownTitle ?? { text: sessionId, source: "index" };
 }
 
 function shellPidsBySessionId(registry: Registry): Record<string, number | undefined> {

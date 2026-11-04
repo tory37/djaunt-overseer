@@ -8,6 +8,7 @@ import {
   userGroupRef,
 } from "./registry";
 import { sortBySavedOrder } from "./reorder";
+import { shownSessionTitle } from "./sessionTitle";
 
 export type GroupKind = "user" | "ungrouped";
 
@@ -17,6 +18,8 @@ export interface PinnedSession {
   sessionId: string;
   meta: SessionMeta | undefined;
   label: string | undefined;
+  analyzerTitle?: string;
+  isTitleLocked?: boolean;
   pending: PendingSession | undefined;
   terminal?: TerminalSession;
 }
@@ -24,11 +27,14 @@ export interface PinnedSession {
 const SHORT_ID_LENGTH = 8;
 
 export function pinnedSessionTitle(pinned: PinnedSession): string {
-  if (pinned.label !== undefined) {
-    return pinned.label;
-  }
-  if (pinned.meta !== undefined) {
-    return displayTitle(pinned.meta);
+  const shownTitle = shownSessionTitle({
+    label: pinned.label,
+    isLocked: pinned.isTitleLocked === true,
+    analyzerTitle: pinned.analyzerTitle,
+    indexedTitle: pinned.meta === undefined ? undefined : displayTitle(pinned.meta),
+  });
+  if (shownTitle !== undefined) {
+    return shownTitle.text;
   }
   if (pinned.terminal !== undefined) {
     return "Terminal";
@@ -49,6 +55,8 @@ export interface GroupingInput {
   userGroups: UserGroup[];
   assignments: Record<string, GroupRef>;
   labels: Record<string, string>;
+  analyzerTitles?: Record<string, string>;
+  titleLocks?: string[];
   pendingSessions: Record<string, PendingSession>;
   terminalSessions?: Record<string, TerminalSession>;
   groupOrder: GroupRef[];
@@ -57,6 +65,7 @@ export interface GroupingInput {
 
 export function buildGroups(input: GroupingInput): SessionGroup[] {
   const userGroupRefs = new Set(input.userGroups.map((group) => userGroupRef(group.id)));
+  const titleLockedIds = new Set(input.titleLocks ?? []);
   const sessionsByRef = new Map<GroupRef, PinnedSession[]>();
 
   for (const sessionId of input.pinnedSessionIds) {
@@ -65,6 +74,8 @@ export function buildGroups(input: GroupingInput): SessionGroup[] {
       sessionId,
       meta,
       label: input.labels[sessionId],
+      analyzerTitle: input.analyzerTitles?.[sessionId],
+      isTitleLocked: titleLockedIds.has(sessionId),
       // The registry keeps a pending entry after the transcript appears, so a transcript ends pending.
       pending: meta === undefined ? input.pendingSessions[sessionId] : undefined,
       terminal: input.terminalSessions?.[sessionId],

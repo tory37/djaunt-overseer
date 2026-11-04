@@ -16,13 +16,11 @@ import { acceptedOrder, linkStatusColor, ResourceRow, resourceRow } from "./reso
 import { readLinkSettings, SessionLinkService } from "./sessionLinks";
 import { SessionAnalyzer } from "./sessionAnalyzer";
 import { SessionFocusTracker } from "./sessionFocus";
-import { linkRowTitle, metaLine, metaTitle, shortLinkStatus, stateSentence, SummaryPrompt, summaryPrompt } from "./sessionSidebarText";
+import { linkRowTitle, metaLine, metaTitle, shortLinkStatus, stateSentence } from "./sessionSidebarText";
 import { SessionPreview } from "./sessionPreview";
 import { previewRunState, SidebarRunKind, sidebarRunKind } from "./sessionPreviewModel";
 import { statusColorId } from "./sessionStatuses";
 import { shownSessionStatus } from "./sessionStatusView";
-import { SessionSummaryService } from "./sessionSummaries";
-import { pickHoverSummary, SUMMARY_SOURCE_LABELS } from "./sessionSummary";
 import { StatusConfig } from "./statusConfig";
 import { sessionIdOfTerminal } from "./terminals";
 import { buildWorkstreamDisplay, DisplayGroup, resolveItemDrop } from "./workstreamDisplay";
@@ -49,7 +47,6 @@ export interface SessionPanelDependencies {
   liveMonitor: LiveSessionMonitor;
   sessionFocus: SessionFocusTracker;
   sessionPreview: SessionPreview;
-  summaryService: SessionSummaryService;
   sessionAnalyzer: SessionAnalyzer;
   findSessionMeta: (sessionId: string) => SessionMeta | undefined;
   sessionTitle: (sessionId: string) => string;
@@ -66,6 +63,7 @@ interface HeaderStatus {
 interface SessionDetails {
   sessionId: string;
   title: string;
+  isTitleLocked: boolean;
   runKind: SidebarRunKind;
   stateLabel: string;
   resumeLabel: string;
@@ -77,9 +75,6 @@ interface SessionDetails {
   metaTitle: string;
   stateSentence: string;
   status: HeaderStatus | undefined;
-  summary: { text: string; caption: string } | undefined;
-  summaryPrompt: SummaryPrompt | undefined;
-  isSummarizing: boolean;
   hasTranscript: boolean;
 }
 
@@ -130,7 +125,6 @@ const ACTION_COMMANDS: Record<string, string> = {
   model: "overseer.switchModel",
   cost: "overseer.costSession",
   command: "overseer.runSessionCommand",
-  summarize: "overseer.summarizeSession",
   analyze: "overseer.analyzeSession",
   recheckAnalysis: "overseer.recheckSession",
   flag: "overseer.flagMissedUpdate",
@@ -170,7 +164,6 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
       dependencies.statusConfig.onDidChange(postState),
       dependencies.linkStatusService.onDidChange(postState),
       dependencies.liveMonitor.onDidChange(postState),
-      dependencies.summaryService.onDidChange(postState),
       dependencies.sessionAnalyzer.onDidChange((sessionId) => {
         if (sessionId === dependencies.sessionFocus.focusedSessionId()) {
           this.reloadWork(sessionId);
@@ -320,12 +313,11 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
   }
 
   private sessionDetails(sessionId: string, meta: SessionMeta | undefined, analysis: SessionAnalysis | undefined): SessionDetails {
-    const { liveMonitor, sessionFocus, summaryService, sessionTitle } = this.dependencies;
+    const { registry, liveMonitor, sessionFocus, sessionTitle } = this.dependencies;
     const liveSession = liveMonitor.get(sessionId);
     const runKind = sidebarRunKind(sessionFocus.focusSource() === "terminal", liveSession);
     const isLive = runKind === "idle" || runKind === "busy";
     const { stateLabel, resumeLabel } = previewRunState(isLive ? undefined : liveSession);
-    const summary = meta && pickHoverSummary(meta.recap, summaryService.summaryFor(sessionId), meta.sizeBytes);
     const lastActive = meta === undefined ? undefined : formatAge(meta.lastActivityMs);
     const cwd = meta === undefined ? undefined : tildePath(meta.resumeCwd ?? meta.startCwd);
     const branch = meta?.gitBranch || undefined;
@@ -334,6 +326,7 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
     return {
       sessionId,
       title: sessionTitle(sessionId),
+      isTitleLocked: registry.isTitleLocked(sessionId),
       runKind,
       stateLabel: isLive ? (runKind === "busy" ? "Working" : "Idle") : stateLabel,
       resumeLabel,
@@ -345,12 +338,6 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
       metaTitle: metaTitle(cwd, branch),
       stateSentence: stateSentence({ runKind, lastActive, isBackgroundAgent }),
       status: this.headerStatus(sessionId, analysis),
-      summary:
-        summary === undefined
-          ? undefined
-          : { text: summary.text, caption: `${SUMMARY_SOURCE_LABELS[summary.source]} · ${formatAge(summary.writtenAtMs)}` },
-      summaryPrompt: summaryPrompt(summary, meta !== undefined),
-      isSummarizing: summaryService.isSummarizing(sessionId),
       hasTranscript: meta !== undefined,
     };
   }
@@ -538,18 +525,13 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .idle { color: var(--vscode-charts-green); }
   .paused { color: var(--vscode-icon-foreground); }
   .elsewhere { color: var(--vscode-charts-orange); }
-  .where { margin: var(--s3) var(--s4) 0; padding-top: var(--s2); border-top: 1px solid var(--hairline); }
-  .where-line { margin: 0; font-family: var(--mono); font-size: 12px; line-height: 18px; text-wrap: pretty; }
-  .where-caption { display: flex; align-items: center; gap: var(--s1); margin: var(--s1) 0 0; font-size: 11px; color: var(--muted); }
+  .where { margin-top: var(--s3); padding-top: var(--s1); border-top: 1px solid var(--hairline); }
+  .where-line { margin: 0 var(--s4); font-family: var(--mono); font-size: 12px; line-height: 18px; text-wrap: pretty; }
+  .where-caption { display: flex; align-items: center; gap: var(--s1); margin: var(--s1) var(--s4) 0; font-size: 11px; color: var(--muted); }
   .where-caption .codicon { font-size: 12px; }
   .next { margin: var(--s4) var(--s4) 0; }
   .state-sentence { margin: 0 0 var(--s2); font-size: 11px; color: var(--muted); }
   .state-sentence.elsewhere { color: var(--vscode-charts-orange); }
-  .recap-text { display: block; width: 100%; text-align: left; font-size: 14px; line-height: 22px; text-wrap: pretty; }
-  .recap-text.clamped { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-  .caption { margin: var(--s1) 0 0; font-size: 11px; color: var(--vscode-disabledForeground); }
-  .summary-prompt.stale { margin-top: var(--s1); }
-  .summary-prompt .codicon { font-size: var(--icon-size); color: var(--vscode-editorWarning-foreground); }
   .muted { display: flex; align-items: center; gap: var(--s2); margin: 0; font-size: 12px; color: var(--muted); }
   .main-actions { display: flex; gap: var(--s2); margin-top: var(--s3); }
   .button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: var(--s2); height: 32px; padding: 0 var(--s3); border-radius: 2px; font-size: 13px; font-weight: 500; transition: background-color 80ms linear; }
@@ -558,7 +540,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .button.primary:hover { background: var(--vscode-button-hoverBackground); }
   .button.outline { border: 1px solid var(--outline); color: var(--vscode-foreground); }
   .button.outline:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground); }
-  .button.square { flex: none; width: 32px; padding: 0; }
   .button.compact { flex: none; height: var(--row-height); }
   .button:disabled { opacity: 0.5; cursor: default; }
   .work { margin-top: var(--s4); padding-top: var(--s3); border-top: 1px solid var(--hairline); }
@@ -569,8 +550,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .icon-button:disabled { opacity: 0.4; cursor: default; }
   .icon-button .codicon { font-size: var(--icon-size); }
   .loading-work { padding: 0 var(--s4); }
-  .link-button { flex-shrink: 0; color: var(--vscode-textLink-foreground); }
-  .link-button:hover { text-decoration: underline; }
   .empty-work { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); margin: var(--s1) var(--s4) 0; font-size: 12px; line-height: 18px; color: var(--muted); }
   .empty-work p { margin: 0; }
   .ws-group { margin-top: var(--s2); }
@@ -666,7 +645,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   const savedViewState = readSavedViewState();
-  let isRecapExpanded = false;
   let shownSessionId = undefined;
   const RUN_ICONS = { idle: "circle-filled", busy: "loading", paused: "debug-pause", elsewhere: "broadcast" };
   const UNSORTED_GROUP_ID = "unsorted";
@@ -1185,6 +1163,9 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     const title = element("h1", "ellipsis", session.title);
     title.title = session.title;
     titleLine.append(runIcon, title);
+    if (session.isTitleLocked) {
+      titleLine.append(codicon("lock", "Title locked. Unlock to let Haiku name it."));
+    }
     if (session.status) {
       titleLine.append(headerStatus(session.status));
     }
@@ -1215,7 +1196,9 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       return undefined;
     }
     const block = element("section", "where");
-    block.append(...work.where.map((line) => element("p", "where-line", line)));
+    const heading = element("div", "section-heading");
+    heading.append(element("h2", "", "Now"));
+    block.append(heading, ...work.where.map((line) => element("p", "where-line", line)));
     const caption = element("p", "where-caption");
     if (work.isAnalyzing) {
       caption.append(spinner(), element("span", "", "Updating…"));
@@ -1228,40 +1211,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     return block;
   }
 
-  function recapNodes(session) {
-    if (session.isSummarizing) {
-      const line = element("p", "muted");
-      line.append(spinner(), document.createTextNode("Summarizing with Haiku…"));
-      return [line];
-    }
-    const prompt = summaryPromptLine(session.summaryPrompt);
-    if (session.summary === undefined) {
-      return [prompt];
-    }
-    const text = textButton(isRecapExpanded ? "recap-text" : "recap-text clamped", undefined, session.summary.text, () => {
-      isRecapExpanded = !isRecapExpanded;
-      render();
-    });
-    text.title = isRecapExpanded ? "Show less" : "Show all";
-    const nodes = [text, element("p", "caption", session.summary.caption)];
-    return prompt === undefined ? nodes : [...nodes, prompt];
-  }
-
-  function summaryPromptLine(prompt) {
-    if (prompt === undefined) {
-      return undefined;
-    }
-    const line = element("p", prompt.kind === "stale" ? "muted summary-prompt stale" : "muted summary-prompt");
-    if (prompt.kind === "stale") {
-      line.append(codicon("warning"));
-    }
-    line.append(element("span", "", prompt.text));
-    if (prompt.canRunHaiku) {
-      line.append(textButton("link-button", undefined, "Run Haiku", () => runAction("summarize")));
-    }
-    return line;
-  }
-
   function mainActions(session) {
     const row = element("div", "main-actions");
     if (session.runKind === "paused" || session.runKind === "elsewhere") {
@@ -1270,14 +1219,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     } else {
       row.append(textButton("button outline", "debug-pause", "Suspend", () => runAction("suspend")));
     }
-    const summarize = element("button", "button outline square");
-    summarize.type = "button";
-    summarize.title = session.hasTranscript ? "Summarize with Haiku" : "No transcript yet";
-    summarize.setAttribute("aria-label", "Summarize with Haiku");
-    summarize.disabled = session.isSummarizing || !session.hasTranscript;
-    summarize.append(codicon("sparkle"));
-    summarize.addEventListener("click", () => runAction("summarize"));
-    row.append(summarize);
     return row;
   }
 
@@ -1287,7 +1228,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     if (session.runKind === "elsewhere") {
       sentence.title = session.stateLabel;
     }
-    block.append(sentence, ...recapNodes(session).filter(Boolean), mainActions(session));
+    block.append(sentence, mainActions(session));
     return block;
   }
 
@@ -1384,7 +1325,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     }
     if (session.sessionId !== shownSessionId) {
       shownSessionId = session.sessionId;
-      isRecapExpanded = false;
       renaming = undefined;
       openMenuId = undefined;
     }
