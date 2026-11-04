@@ -624,13 +624,14 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   }
   .group-label { margin: 0; padding: 2px var(--s2) var(--s1); font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
   .group-hint { margin-left: var(--s1); font-family: var(--vscode-font-family); font-size: 11px; letter-spacing: normal; text-transform: none; color: var(--vscode-disabledForeground); }
-  .tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(56px, 1fr)); gap: 2px; margin-bottom: var(--s2); }
+  .tile-grid { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; margin-bottom: var(--s2); }
   .tile-grid:last-child { margin-bottom: 0; }
-  .tile { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: var(--s1) 0; border-radius: 4px; color: var(--vscode-icon-foreground); transition: background-color 80ms linear, color 80ms linear; }
+  .tile { container-type: inline-size; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: var(--s1) 0; border-radius: 4px; color: var(--vscode-icon-foreground); transition: background-color 80ms linear, color 80ms linear; }
   .tile:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); color: var(--vscode-textLink-activeForeground); }
   .tile:disabled { opacity: 0.5; cursor: default; }
   .tile .codicon { font-size: var(--s4); }
   .tile span:last-child { max-width: 100%; padding: 0 2px; box-sizing: border-box; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @container (max-width: 43px) { .tile span:last-child { display: none; } }
   .empty { padding: var(--s4); font-size: 13px; line-height: 20px; text-align: center; color: var(--muted); }
   .empty p { margin: var(--s1) 0 0; }
   .empty .lead { margin-top: var(--s2); color: var(--vscode-foreground); }
