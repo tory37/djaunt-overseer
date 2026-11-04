@@ -58,8 +58,8 @@ export interface RecheckDrop {
 export const ANALYZER_SYSTEM_PROMPT = `You organize the work of one Claude Code session into workstreams for a sidebar.
 The input shows the current workstreams, background facts from earlier notes, items found in the transcript (PRs, commits, artifacts, tickets), the allowed session statuses, and a digest of the transcript.
 Reply with operations that change the current state. Return an empty ops list when nothing should change.
-- set_title names what the session is about in 2 to 5 words, like "SODA retry bug" or "Analyzer session titles". Name the subject: a feature, bug, system, or ticket topic. Never the current activity: no words like triage, implementing, fixing, investigating, debugging, reviewing, or WIP. No ticket key.
-- Keep the current title unless the session's subject has clearly changed. When the session title is (none), always set it. Never send set_title when the title is fixed by user.
+- set_title names the whole session in 2 to 5 words, like "SODA retry bug" or "Analyzer efficiency". It covers every workstream and the session name, not the latest step. Name the subject: a feature, bug, system, or ticket topic. Never the current activity or a step: no phase numbers, no "Phase 6:", no words like triage, implementing, fixing, investigating, debugging, reviewing, or WIP. No ticket key.
+- Send set_title only on a recheck pass, or when the session title is (none). Never send it when the title is fixed by user.
 - A workstream is a unit of work as it happened in the session, such as "QA fix: SODA score retry" that spans PRs in two repos. Never make one workstream per ticket.
 - Group by when and why the work happened, not only by repo or ticket. Items and user prompts carry times; read the timeline.
 - A new problem raised after earlier work shipped or went to review or QA, such as a QA finding, a bug report, a regression, or a reviewer-found defect, gets its own workstream titled like "QA fix: <what broke>". This holds even when the fix touches the same repos or its PR title carries the same ticket key.
@@ -240,7 +240,8 @@ export function applyOps(analysis: SessionAnalysis, ops: AnalyzerOp[], edits: Wo
   for (const op of ops) {
     switch (op.op) {
       case "set_title":
-        if (!context.isTitleLocked) {
+        // A diff pass sees only the latest transcript, so it would name the latest step.
+        if (!context.isTitleLocked && (context.mode === "recheck" || nextAnalysis.title === undefined)) {
           nextAnalysis.title = clipLine(op.title, MAX_SESSION_TITLE_CHARS);
         }
         break;

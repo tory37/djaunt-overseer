@@ -466,9 +466,10 @@ describe("session title", () => {
     expect(JSON.stringify(analyzerOutputSchema(STATUS_IDS))).toContain('"enum":["set_title"]');
   });
 
-  it("tells the model to name the subject, keep the title, and always set it on a first pass or recheck", () => {
-    expect(ANALYZER_SYSTEM_PROMPT).toContain("set_title names what the session is about in 2 to 5 words");
-    expect(ANALYZER_SYSTEM_PROMPT).toContain("Keep the current title unless the session's subject has clearly changed.");
+  it("tells the model to name the whole session, never a step, and set it only on a recheck or when there is none", () => {
+    expect(ANALYZER_SYSTEM_PROMPT).toContain("set_title names the whole session in 2 to 5 words");
+    expect(ANALYZER_SYSTEM_PROMPT).toContain("no phase numbers");
+    expect(ANALYZER_SYSTEM_PROMPT).toContain("Send set_title only on a recheck pass, or when the session title is (none).");
     expect(ANALYZER_SYSTEM_PROMPT).toMatch(/On a recheck pass[^\n]*set the title/);
   });
 
@@ -482,8 +483,19 @@ describe("session title", () => {
 
   it("ignores set_title when the user locked the title", () => {
     const current: SessionAnalysis = { ...emptyAnalysis(), title: "SODA retry bug" };
-    const analysis = applyOps(current, [{ op: "set_title", title: "Something else" }], edits(), context("diff", [PR_A, PR_B, ARTIFACT], true));
+    const analysis = applyOps(current, [{ op: "set_title", title: "Something else" }], edits(), context("recheck", [PR_A, PR_B, ARTIFACT], true));
     expect(analysis.title).toBe("SODA retry bug");
+  });
+
+  it("ignores set_title on a diff pass when a title exists, since a diff sees only the latest step", () => {
+    const current: SessionAnalysis = { ...emptyAnalysis(), title: "Analyzer efficiency" };
+    const analysis = applyOps(current, [{ op: "set_title", title: "Phase 6: prompt gate default" }], edits(), context("diff"));
+    expect(analysis.title).toBe("Analyzer efficiency");
+  });
+
+  it("replaces the title on a recheck pass", () => {
+    const current: SessionAnalysis = { ...emptyAnalysis(), title: "Phase 6: prompt gate default" };
+    expect(applyOps(current, [{ op: "set_title", title: "Analyzer efficiency" }], edits(), context("recheck")).title).toBe("Analyzer efficiency");
   });
 
   it("keeps the current title when a pass sends no set_title, even on a recheck", () => {

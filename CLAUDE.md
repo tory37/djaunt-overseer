@@ -45,7 +45,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `analysisSeed.ts` | Pure: first analysis state from the old declared files and link marks. |
 | `analysisStore.ts` | Reads and writes `~/.claude/overseer/analysis/<sid>.json` and the old declared files for the seed. |
 | `analyzerDigest.ts` | Pure: the analyzer's model input. State, items oldest first with first-seen times and the prompt that began their stretch of work, transcript with timestamped prompts kept first, overlap prompt. 16 KB diff, 64 KB recheck. |
-| `analyzerOps.ts` | Pure: the analyzer's op schema, system prompt, strict parser, and `applyOps`. `set_title` is skipped when the user locked the title. |
+| `analyzerOps.ts` | Pure: the analyzer's op schema, system prompt, strict parser, and `applyOps`. `set_title` applies only on a recheck or when there is no title, and never when the user locked it. |
 | `analyzerPass.ts` | One analyzer pass with an injected runner; a diff reply that fails the schema retries on the recheck model. `planAnalyzerPass` gives a first pass a recheck digest on the diff model. |
 | `sessionAnalyzer.ts` | Runs analyzer passes (2 at once, 1 per session) under a cross-window lock, seeds on first read, copies state on `/clear` and fork. `autoAnalyze` checks the gates, then again under the lock. Keeps the last 20 gate and pass decisions per session in memory. Keeps each session's last analyzer title in memory for the sync `sessionTitle`. Logs with `[analyzer]`. |
 | `analyzerUsage.ts` | Pure: one usage record per analyzer call, its `[analyzer] usage` log line, and the JSON Lines text appended to `~/.claude/overseer/analyzer-usage.jsonl`. |
