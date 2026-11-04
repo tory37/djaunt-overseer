@@ -572,19 +572,30 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .ticket-line { display: flex; flex-wrap: wrap; gap: 0 var(--s2); max-height: 36px; overflow: hidden; padding: 0 var(--s4) var(--s1) calc(var(--s4) + var(--icon-size) + var(--s1)); }
   .ticket-chip { display: inline-flex; align-items: center; gap: var(--s1); font-family: var(--mono); font-size: 11px; line-height: 18px; color: var(--vscode-foreground); text-decoration: none; }
   a.ticket-chip:hover { text-decoration: underline; }
+  .ticket-chip .kind-badge { width: 16px; height: 16px; }
   .dot { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--status-color, var(--muted)); }
   .list { list-style: none; margin: 0; padding: 0; }
-  .link-row { position: relative; display: flex; align-items: center; gap: var(--s2); height: var(--row-height); padding: 0 var(--s4) 0 calc(var(--s4) + var(--depth, 0) * var(--indent)); transition: background-color 80ms linear; }
+  .link-row { position: relative; display: grid; grid-template-columns: 18px minmax(0, max-content) minmax(0, 1fr) auto; grid-template-areas: "badge key status actions" ". label label label"; align-items: center; column-gap: var(--s2); min-height: var(--row-height); padding: 2px var(--s4) 2px calc(var(--s4) + var(--depth, 0) * var(--indent)); box-sizing: border-box; transition: background-color 80ms linear; }
+  .link-row > .kind-badge { grid-area: badge; }
+  .link-row > .key { grid-area: key; max-width: none; }
+  .link-row > .row-status { grid-area: status; justify-self: end; display: flex; align-items: center; gap: var(--s1); min-width: 0; }
+  .link-row > .actions { grid-area: actions; }
+  .link-row > .label { grid-area: label; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; padding-bottom: 2px; font-size: 12px; line-height: 16px; }
   .link-row:hover { background: var(--vscode-list-hoverBackground); }
-  .glyph { flex-shrink: 0; width: var(--icon-size); height: var(--icon-size); stroke: var(--status-color, var(--muted)); }
+  .kind-badge { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 4px; background: color-mix(in srgb, var(--kind-color) 18%, transparent); }
+  .kind-badge.ticket { --kind-color: var(--vscode-charts-blue); }
+  .kind-badge.pr { --kind-color: var(--vscode-charts-purple); }
+  .kind-badge.artifact { --kind-color: var(--vscode-charts-yellow); }
+  .kind-badge.commit { --kind-color: var(--vscode-icon-foreground); }
+  .glyph { width: 12px; height: 12px; stroke: var(--kind-color); }
   .key { flex: 0 1 auto; min-width: 32px; max-width: 72px; font-family: var(--mono); font-size: 11px; color: var(--vscode-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
   a.key { cursor: pointer; }
   a.key:hover { text-decoration: underline; }
   .label { flex: 1 1 0; min-width: 0; font-size: 13px; color: var(--muted); }
-  .short-status { flex: 0 1 auto; min-width: 0; max-width: 30%; font-family: var(--mono); font-size: 11px; color: var(--status-color, var(--muted)); }
+  .short-status { flex: 0 1 auto; min-width: 0; font-family: var(--mono); font-size: 11px; color: var(--status-color, var(--muted)); }
   .actions { display: none; flex-shrink: 0; margin: calc(-1 * var(--s1)) calc(-1 * var(--s2)) calc(-1 * var(--s1)) 0; }
   .link-row:hover .actions, .link-row:focus-within .actions, .link-row:has(.is-open) .actions { display: flex; }
-  .link-row:hover .short-status, .link-row:focus-within .short-status, .link-row:has(.is-open) .short-status { display: none; }
+  .link-row:hover .row-status, .link-row:focus-within .row-status, .link-row:has(.is-open) .row-status { display: none; }
   .gripper { position: absolute; left: 1px; visibility: hidden; cursor: grab; font-size: var(--icon-size); color: var(--muted); }
   .link-row:hover .gripper, .ws-header:hover .gripper { visibility: visible; }
   .removed .key { text-decoration: line-through; }
@@ -742,11 +753,13 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     svg.setAttribute("class", "glyph");
     svg.setAttribute("viewBox", "0 0 24 24");
     svg.setAttribute("fill", "none");
-    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-width", "2.5");
     svg.setAttribute("stroke-linecap", "round");
     svg.setAttribute("stroke-linejoin", "round");
     svg.innerHTML = row.glyph;
-    return svg;
+    const badge = element("span", "kind-badge " + row.kind);
+    badge.append(svg);
+    return badge;
   }
 
   function send(message) {
@@ -868,9 +881,15 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       item.style.setProperty("--status-color", row.statusColor);
     }
     item.title = row.hoverTitle;
-    item.append(glyphElement(row), keyElement(row, "key"), element("span", "label ellipsis", row.label || MISSING_LABELS[row.kind]));
+    item.append(glyphElement(row), keyElement(row, "key"));
     if (row.shortStatus) {
-      item.append(element("span", "short-status ellipsis", row.shortStatus));
+      const status = element("span", "row-status");
+      status.append(element("span", "dot"), element("span", "short-status ellipsis", row.shortStatus));
+      item.append(status);
+    }
+    const label = row.label || MISSING_LABELS[row.kind];
+    if (label) {
+      item.append(element("span", "label", label));
     }
     if (row.mark === "removed") {
       item.append(rowActions(row, undefined));
@@ -1098,7 +1117,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
         chip.style.setProperty("--status-color", ticket.statusColor);
       }
       chip.title = ticket.hoverTitle;
-      chip.append(element("span", "dot"), element("span", "", ticket.displayId));
+      chip.append(glyphElement(ticket), element("span", "", ticket.displayId), element("span", "dot"));
       line.append(chip);
     }
     return line;
