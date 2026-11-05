@@ -8,3 +8,9 @@ export function quoteForShell(text: string): string {
 export function launchShellCommand(claudeCommand: string): string {
   return `exec ${claudeCommand}`;
 }
+
+export function newSessionCommand(sessionId: string, sessionName: string | undefined, initialPrompt: string | undefined): string {
+  const nameArgument = sessionName === undefined ? "" : ` -n ${quoteForShell(sessionName)}`;
+  const promptArgument = initialPrompt === undefined ? "" : ` ${quoteForShell(initialPrompt)}`;
+  return `claude --session-id ${sessionId}${nameArgument}${promptArgument}`;
+}
