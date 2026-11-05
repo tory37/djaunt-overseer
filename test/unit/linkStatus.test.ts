@@ -1,7 +1,8 @@
+import * as fs from "fs";
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_PR_COLORS,
   parsePrStatus,
+  PR_COLOR_IDS,
   PR_STATUS_KEYS,
   prStatusArgs,
   statusGlyph,
@@ -60,10 +61,12 @@ describe("status commands", () => {
   });
 });
 
-describe("DEFAULT_PR_COLORS", () => {
-  it("has a color for every PR status", () => {
+describe("PR_COLOR_IDS", () => {
+  it("has a contributed theme color for every PR status", () => {
+    const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
+    const contributedIds = packageJson.contributes.colors.map((color: { id: string }) => color.id);
     for (const statusKey of PR_STATUS_KEYS) {
-      expect(DEFAULT_PR_COLORS[statusKey]).toMatch(/^#[0-9A-F]{6}$/);
+      expect(contributedIds).toContain(PR_COLOR_IDS[statusKey]);
     }
   });
 });

@@ -2,14 +2,14 @@ export type PrStatusKey = "draft" | "open" | "review required" | "approved" | "c
 
 export const PR_STATUS_KEYS: PrStatusKey[] = ["draft", "open", "review required", "approved", "changes requested", "merged", "closed"];
 
-export const DEFAULT_PR_COLORS: Record<PrStatusKey, string> = {
-  draft: "#8B8B8B",
-  open: "#3FA45B",
-  "review required": "#C08A00",
-  approved: "#3A9C9E",
-  "changes requested": "#C47520",
-  merged: "#A371F7",
-  closed: "#E5534B",
+export const PR_COLOR_IDS: Record<PrStatusKey, string> = {
+  draft: "overseer.prDraft",
+  open: "overseer.prOpen",
+  "review required": "overseer.prReviewRequired",
+  approved: "overseer.prApproved",
+  "changes requested": "overseer.prChangesRequested",
+  merged: "overseer.prMerged",
+  closed: "overseer.prClosed",
 };
 
 // `colorKey` names the status in the color config: a PR status key, or the Jira status name.

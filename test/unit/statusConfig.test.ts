@@ -57,6 +57,19 @@ describe("StatusConfig", () => {
     expect(statusConfig.jiraColor("ASSMNT", "Done")).toBe(defaultDone);
     expect(statusConfig.prColor("merged")).not.toBe("#445566");
   });
+
+  it("falls back to the theme color until the user saves an override", async () => {
+    const statusConfig = new StatusConfig(memoryStore());
+    expect(statusConfig.jiraColor("CR", "Done")).toBe("var(--vscode-overseer-ticketDone)");
+    expect(statusConfig.jiraColorOverride("CR", "Done")).toBeUndefined();
+    expect(statusConfig.prColor("changes requested")).toBe("var(--vscode-overseer-prChangesRequested)");
+    expect(statusConfig.prColor("unknown")).toBe("var(--vscode-overseer-prOpen)");
+
+    await statusConfig.setPrColor("changes requested", "#445566");
+
+    expect(statusConfig.prColor("changes requested")).toBe("#445566");
+    expect(statusConfig.prColorOverride("changes requested")).toBe("#445566");
+  });
 });
 
 describe("StoredStatusCache", () => {

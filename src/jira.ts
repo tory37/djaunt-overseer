@@ -17,25 +17,25 @@ export interface JiraWorkflow {
 
 const TICKET_KEY_PATTERN = /^([A-Z][A-Z0-9]+)-\d+$/;
 
-// Status words map to a color family; the first match wins, so "Ready for QA" is ready, not QA.
-const STATUS_COLOR_RULES: Array<{ pattern: RegExp; color: string }> = [
-  { pattern: /block|hold|reject|fail/i, color: "#E5534B" },
-  { pattern: /done|closed|deployed|shipped|resolved|complete/i, color: "#3FA45B" },
-  { pattern: /removed|won'?t|cancel|duplicate/i, color: "#8B8B8B" },
-  { pattern: /ready/i, color: "#3A9C9E" },
-  { pattern: /review|approved/i, color: "#A371F7" },
-  { pattern: /qa|test|validat|verif/i, color: "#2F9FD0" },
-  { pattern: /progress|doing|develop/i, color: "#C08A00" },
-  { pattern: /to ?do|backlog|open|new|triage/i, color: "#8B8B8B" },
+// Status words map to a theme color id; the first match wins, so "Ready for QA" is ready, not QA.
+const STATUS_COLOR_RULES: Array<{ pattern: RegExp; colorId: string }> = [
+  { pattern: /block|hold|reject|fail/i, colorId: "overseer.ticketBlocked" },
+  { pattern: /done|closed|deployed|shipped|resolved|complete/i, colorId: "overseer.ticketDone" },
+  { pattern: /removed|won'?t|cancel|duplicate/i, colorId: "overseer.ticketRemoved" },
+  { pattern: /ready/i, colorId: "overseer.ticketReady" },
+  { pattern: /review|approved/i, colorId: "overseer.ticketReview" },
+  { pattern: /qa|test|validat|verif/i, colorId: "overseer.ticketQa" },
+  { pattern: /progress|doing|develop/i, colorId: "overseer.ticketProgress" },
+  { pattern: /to ?do|backlog|open|new|triage/i, colorId: "overseer.ticketTodo" },
 ];
-const FALLBACK_STATUS_COLOR = "#8E7CC3";
+const FALLBACK_STATUS_COLOR_ID = "overseer.ticketOther";
 
 export function projectKeyOf(ticketKey: string): string | undefined {
   return TICKET_KEY_PATTERN.exec(ticketKey)?.[1];
 }
 
-export function defaultJiraStatusColor(statusName: string): string {
-  return STATUS_COLOR_RULES.find((rule) => rule.pattern.test(statusName))?.color ?? FALLBACK_STATUS_COLOR;
+export function jiraStatusColorId(statusName: string): string {
+  return STATUS_COLOR_RULES.find((rule) => rule.pattern.test(statusName))?.colorId ?? FALLBACK_STATUS_COLOR_ID;
 }
 
 // Parses the Jira MCP server's `jira_issues get` envelope; failed tickets are left out.

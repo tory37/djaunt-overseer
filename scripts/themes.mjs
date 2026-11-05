@@ -45,6 +45,24 @@ const MIN_TEXT_CONTRAST = 4.5;
 const STATUS_KEYS = ["red", "orange", "yellow", "green", "blue", "purple", "cyan", "pink"];
 const CHECKED_SYNTAX_KEYS = ["kw", "fn", "str", "num", "type", "cnst", "prop", "punc"];
 const SURFACE_KEYS = ["deep", "editor", "side", "header", "raised", "hover", "select", "inactiveSelect"];
+const LINK_STATUS_PALETTE_KEYS = {
+  "overseer.prDraft": "muted",
+  "overseer.prOpen": "green",
+  "overseer.prReviewRequired": "yellow",
+  "overseer.prApproved": "cyan",
+  "overseer.prChangesRequested": "orange",
+  "overseer.prMerged": "purple",
+  "overseer.prClosed": "red",
+  "overseer.ticketBlocked": "red",
+  "overseer.ticketDone": "green",
+  "overseer.ticketRemoved": "muted",
+  "overseer.ticketReady": "cyan",
+  "overseer.ticketReview": "purple",
+  "overseer.ticketQa": "blue",
+  "overseer.ticketProgress": "orange",
+  "overseer.ticketTodo": "muted",
+  "overseer.ticketOther": "purple",
+};
 
 const hexToRgb = (hex) => [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16));
 const rgbToHex = (rgb) => "#" + rgb.map((channel) => Math.round(channel).toString(16).padStart(2, "0")).join("").toUpperCase();
@@ -86,6 +104,9 @@ const ansiPalette = (theme) => {
 };
 
 const withAlpha = (hex, alphaHex) => hex + alphaHex;
+
+const linkStatusColors = (theme) =>
+  Object.fromEntries(Object.entries(LINK_STATUS_PALETTE_KEYS).map(([colorId, paletteKey]) => [colorId, theme[paletteKey]]));
 
 function workbenchColors(theme) {
   const isDark = theme.kind === "dark";
@@ -366,6 +387,7 @@ function workbenchColors(theme) {
     "overseer.statusBlue": theme.blue,
     "overseer.statusPurple": theme.purple,
     "overseer.statusPink": theme.pink,
+    ...linkStatusColors(theme),
   };
 }
 
@@ -439,6 +461,7 @@ function buildTheme(theme) {
 function contrastFailures(variantName, theme) {
   const checks = [
     ...STATUS_KEYS.map((key) => ({ what: `status ${key} on side`, foreground: theme[key], background: theme.side })),
+    ...Object.entries(linkStatusColors(theme)).map(([colorId, hex]) => ({ what: `${colorId} on side`, foreground: hex, background: theme.side })),
     ...CHECKED_SYNTAX_KEYS.map((key) => ({ what: `syntax ${key} on editor`, foreground: theme[key], background: theme.editor })),
     ...SURFACE_KEYS.map((key) => ({ what: `fg on ${key}`, foreground: theme.fg, background: theme[key] })),
   ];

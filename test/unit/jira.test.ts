@@ -1,6 +1,7 @@
+import * as fs from "fs";
 import { describe, expect, it } from "vitest";
 import {
-  defaultJiraStatusColor,
+  jiraStatusColorId,
   parseIssueStatuses,
   parseWorkflow,
   projectKeyOf,
@@ -69,13 +70,22 @@ describe("transitionError", () => {
   });
 });
 
-describe("defaultJiraStatusColor", () => {
+describe("jiraStatusColorId", () => {
   it("groups status names by meaning", () => {
-    expect(defaultJiraStatusColor("Blocked")).toBe(defaultJiraStatusColor("On Hold"));
-    expect(defaultJiraStatusColor("Done")).toBe(defaultJiraStatusColor("Deployed to Prod"));
-    expect(defaultJiraStatusColor("Ready for QA")).toBe(defaultJiraStatusColor("Ready to Ship"));
-    expect(defaultJiraStatusColor("Ready for QA")).not.toBe(defaultJiraStatusColor("In QA"));
-    expect(defaultJiraStatusColor("Peer Review")).toBe(defaultJiraStatusColor("PR Approved"));
-    expect(defaultJiraStatusColor("Something Odd")).toMatch(/^#[0-9A-F]{6}$/);
+    expect(jiraStatusColorId("Blocked")).toBe(jiraStatusColorId("On Hold"));
+    expect(jiraStatusColorId("Done")).toBe(jiraStatusColorId("Deployed to Prod"));
+    expect(jiraStatusColorId("Ready for QA")).toBe(jiraStatusColorId("Ready to Ship"));
+    expect(jiraStatusColorId("Ready for QA")).not.toBe(jiraStatusColorId("In QA"));
+    expect(jiraStatusColorId("Peer Review")).toBe(jiraStatusColorId("PR Approved"));
+    expect(jiraStatusColorId("Something Odd")).toBe("overseer.ticketOther");
+  });
+
+  it("only returns contributed theme colors", () => {
+    const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
+    const contributedIds = packageJson.contributes.colors.map((color: { id: string }) => color.id);
+    const sampleStatuses = ["Blocked", "Done", "Removed", "Ready", "In Review", "In QA", "In Progress", "To Do", "Something Odd"];
+    for (const statusName of sampleStatuses) {
+      expect(contributedIds).toContain(jiraStatusColorId(statusName));
+    }
   });
 });

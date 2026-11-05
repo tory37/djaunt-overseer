@@ -118,6 +118,7 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - PR status comes from `gh`. Ticket status comes from the Jira MCP server in your `~/.claude.json`, the same one Claude Code uses. Overseer starts it on its own and reads all visible tickets in one call.
 - **Jira Settings…** lists each Jira project Overseer has seen, like ASSMNT or CR, with its full status list and a color for each status. Turn a project off to stop its status lookups.
 - **GitHub Settings…** sets one color per PR state: draft, open, review required, approved, changes requested, merged, and closed.
+- Status colors follow your theme until you pick one. A picked color wins over the theme. The theme ids are `overseer.prDraft` through `overseer.prClosed` and `overseer.ticketBlocked` through `overseer.ticketOther`, so `workbench.colorCustomizations` can set them too.
 - Overseer tells the agent nothing. Sessions launch as plain `claude`, with no plugin, skill, or CLI.
 - Old `~/.claude/overseer/declared/`, `work/`, and `where/` files seed a session's first analysis once. Overseer never changes or deletes them.
 

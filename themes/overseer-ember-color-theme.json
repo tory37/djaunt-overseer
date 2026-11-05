@@ -267,7 +267,23 @@
     "overseer.statusTeal": "#7FD8F0",
     "overseer.statusBlue": "#7F9BF0",
     "overseer.statusPurple": "#B48AE8",
-    "overseer.statusPink": "#E07AC0"
+    "overseer.statusPink": "#E07AC0",
+    "overseer.prDraft": "#948677",
+    "overseer.prOpen": "#54D7A7",
+    "overseer.prReviewRequired": "#F2C14E",
+    "overseer.prApproved": "#7FD8F0",
+    "overseer.prChangesRequested": "#FF9560",
+    "overseer.prMerged": "#B48AE8",
+    "overseer.prClosed": "#F0505A",
+    "overseer.ticketBlocked": "#F0505A",
+    "overseer.ticketDone": "#54D7A7",
+    "overseer.ticketRemoved": "#948677",
+    "overseer.ticketReady": "#7FD8F0",
+    "overseer.ticketReview": "#B48AE8",
+    "overseer.ticketQa": "#7F9BF0",
+    "overseer.ticketProgress": "#FF9560",
+    "overseer.ticketTodo": "#948677",
+    "overseer.ticketOther": "#B48AE8"
   },
   "tokenColors": [
     {

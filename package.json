@@ -1359,6 +1359,166 @@
           "highContrast": "list.warningForeground",
           "highContrastLight": "list.warningForeground"
         }
+      },
+      {
+        "id": "overseer.prDraft",
+        "description": "Overseer PR status: draft.",
+        "defaults": {
+          "dark": "#8B8B8B",
+          "light": "#767676",
+          "highContrast": "#8B8B8B",
+          "highContrastLight": "#595959"
+        }
+      },
+      {
+        "id": "overseer.prOpen",
+        "description": "Overseer PR status: open.",
+        "defaults": {
+          "dark": "#3FA45B",
+          "light": "#34864B",
+          "highContrast": "#3FA45B",
+          "highContrastLight": "#266438"
+        }
+      },
+      {
+        "id": "overseer.prReviewRequired",
+        "description": "Overseer PR status: review required.",
+        "defaults": {
+          "dark": "#C08A00",
+          "light": "#9A6E00",
+          "highContrast": "#C08A00",
+          "highContrastLight": "#735300"
+        }
+      },
+      {
+        "id": "overseer.prApproved",
+        "description": "Overseer PR status: approved.",
+        "defaults": {
+          "dark": "#3A9C9E",
+          "light": "#308183",
+          "highContrast": "#3A9C9E",
+          "highContrastLight": "#246162"
+        }
+      },
+      {
+        "id": "overseer.prChangesRequested",
+        "description": "Overseer PR status: changes requested.",
+        "defaults": {
+          "dark": "#C47520",
+          "light": "#AB661C",
+          "highContrast": "#C47520",
+          "highContrastLight": "#7F4C15"
+        }
+      },
+      {
+        "id": "overseer.prMerged",
+        "description": "Overseer PR status: merged.",
+        "defaults": {
+          "dark": "#A371F7",
+          "light": "#895FCF",
+          "highContrast": "#A371F7",
+          "highContrastLight": "#67479C"
+        }
+      },
+      {
+        "id": "overseer.prClosed",
+        "description": "Overseer PR status: closed.",
+        "defaults": {
+          "dark": "#E5534B",
+          "light": "#CC4A43",
+          "highContrast": "#E5534B",
+          "highContrastLight": "#993832"
+        }
+      },
+      {
+        "id": "overseer.ticketBlocked",
+        "description": "Overseer ticket status: blocked, on hold, rejected, or failed.",
+        "defaults": {
+          "dark": "#E5534B",
+          "light": "#CC4A43",
+          "highContrast": "#E5534B",
+          "highContrastLight": "#993832"
+        }
+      },
+      {
+        "id": "overseer.ticketDone",
+        "description": "Overseer ticket status: done, closed, deployed, or resolved.",
+        "defaults": {
+          "dark": "#3FA45B",
+          "light": "#34864B",
+          "highContrast": "#3FA45B",
+          "highContrastLight": "#266438"
+        }
+      },
+      {
+        "id": "overseer.ticketRemoved",
+        "description": "Overseer ticket status: removed, won't do, canceled, or duplicate.",
+        "defaults": {
+          "dark": "#8B8B8B",
+          "light": "#767676",
+          "highContrast": "#8B8B8B",
+          "highContrastLight": "#595959"
+        }
+      },
+      {
+        "id": "overseer.ticketReady",
+        "description": "Overseer ticket status: ready.",
+        "defaults": {
+          "dark": "#3A9C9E",
+          "light": "#308183",
+          "highContrast": "#3A9C9E",
+          "highContrastLight": "#246162"
+        }
+      },
+      {
+        "id": "overseer.ticketReview",
+        "description": "Overseer ticket status: in review or approved.",
+        "defaults": {
+          "dark": "#A371F7",
+          "light": "#895FCF",
+          "highContrast": "#A371F7",
+          "highContrastLight": "#67479C"
+        }
+      },
+      {
+        "id": "overseer.ticketQa",
+        "description": "Overseer ticket status: QA, test, or verification.",
+        "defaults": {
+          "dark": "#2F9FD0",
+          "light": "#257EA4",
+          "highContrast": "#2F9FD0",
+          "highContrastLight": "#1C5F7D"
+        }
+      },
+      {
+        "id": "overseer.ticketProgress",
+        "description": "Overseer ticket status: in progress.",
+        "defaults": {
+          "dark": "#C08A00",
+          "light": "#9A6E00",
+          "highContrast": "#C08A00",
+          "highContrastLight": "#735300"
+        }
+      },
+      {
+        "id": "overseer.ticketTodo",
+        "description": "Overseer ticket status: to do, backlog, or new.",
+        "defaults": {
+          "dark": "#8B8B8B",
+          "light": "#767676",
+          "highContrast": "#8B8B8B",
+          "highContrastLight": "#595959"
+        }
+      },
+      {
+        "id": "overseer.ticketOther",
+        "description": "Overseer ticket status: any other status.",
+        "defaults": {
+          "dark": "#8E7CC3",
+          "light": "#7D6DAC",
+          "highContrast": "#8E7CC3",
+          "highContrastLight": "#5E5281"
+        }
       }
     ],
     "themes": [

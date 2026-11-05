@@ -1,5 +1,5 @@
-import { defaultJiraStatusColor } from "./jira";
-import { DEFAULT_PR_COLORS, PR_STATUS_KEYS, PrStatusKey } from "./linkStatus";
+import { jiraStatusColorId } from "./jira";
+import { PR_COLOR_IDS, PrStatusKey } from "./linkStatus";
 import { KeyValueStore } from "./registry";
 
 export interface JiraProject {
@@ -15,6 +15,18 @@ const JIRA_COLORS_KEY = "overseer.jiraStatusColors";
 const PR_COLORS_KEY = "overseer.prStatusColors";
 
 type ProjectColors = Record<string, Record<string, string>>;
+
+export function themeColorVariable(colorId: string): string {
+  return `--vscode-${colorId.replace(/\./g, "-")}`;
+}
+
+export function themeColorValue(colorId: string): string {
+  return `var(${themeColorVariable(colorId)})`;
+}
+
+export function prColorId(statusKey: string): string {
+  return PR_COLOR_IDS[statusKey as PrStatusKey] ?? PR_COLOR_IDS.open;
+}
 
 // Projects and colors are shared by every window, so each change re-reads the store before it writes.
 export class StatusConfig {
@@ -74,8 +86,13 @@ export class StatusConfig {
     }
   }
 
+  // A saved hex is the user's override; without one the theme decides, so these return CSS color values.
   jiraColor(projectKey: string, statusName: string): string {
-    return this.allJiraColors()[projectKey]?.[statusName] ?? defaultJiraStatusColor(statusName);
+    return this.jiraColorOverride(projectKey, statusName) ?? themeColorValue(jiraStatusColorId(statusName));
+  }
+
+  jiraColorOverride(projectKey: string, statusName: string): string | undefined {
+    return this.allJiraColors()[projectKey]?.[statusName];
   }
 
   async setJiraColor(projectKey: string, statusName: string, color: string): Promise<void> {
@@ -88,15 +105,12 @@ export class StatusConfig {
   }
 
   prColor(statusKey: string): string {
-    const savedColors = this.store.get<Record<string, string>>(PR_COLORS_KEY) ?? {};
-    return savedColors[statusKey] ?? DEFAULT_PR_COLORS[statusKey as PrStatusKey] ?? DEFAULT_PR_COLORS.open;
+    return this.prColorOverride(statusKey) ?? themeColorValue(prColorId(statusKey));
   }
 
-  prColors(): Record<PrStatusKey, string> {
-    return Object.fromEntries(PR_STATUS_KEYS.map((statusKey) => [statusKey, this.prColor(statusKey)])) as Record<
-      PrStatusKey,
-      string
-    >;
+  prColorOverride(statusKey: string): string | undefined {
+    const savedColors = this.store.get<Record<string, string>>(PR_COLORS_KEY) ?? {};
+    return savedColors[statusKey];
   }
 
   async setPrColor(statusKey: PrStatusKey, color: string): Promise<void> {

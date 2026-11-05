@@ -14,7 +14,8 @@ import {
 import { readAnalyzerGateSettings } from "./sessionAnalyzer";
 import { configuredStatuses, saveStatuses } from "./sessionStatusView";
 import { DEFAULT_SESSION_STATUSES, parseSessionStatuses, SessionStatus, STATUS_COLORS, statusColorId } from "./sessionStatuses";
-import { StatusConfig } from "./statusConfig";
+import { jiraStatusColorId } from "./jira";
+import { prColorId, StatusConfig, themeColorVariable } from "./statusConfig";
 import { statusGlyphMarkup } from "./statusIcons";
 
 export type SettingsSection = "sessions" | "statuses" | "jira" | "github" | "analyzer" | "general";
@@ -27,7 +28,8 @@ export interface SettingsPanelDependencies {
 
 interface StatusRow {
   name: string;
-  color: string;
+  customColor: string | undefined;
+  colorVariable: string;
   glyph: string;
 }
 
@@ -178,13 +180,15 @@ export class SettingsPanel {
       isEnabled: project.isEnabled,
       statuses: project.statuses.map((statusName) => ({
         name: statusName,
-        color: statusConfig.jiraColor(project.key, statusName),
+        customColor: statusConfig.jiraColorOverride(project.key, statusName),
+        colorVariable: themeColorVariable(jiraStatusColorId(statusName)),
         glyph: statusGlyphMarkup(statusGlyph("ticket", ticketStatus(statusName))),
       })),
     }));
     const prStatuses = PR_STATUS_KEYS.map((statusKey) => ({
       name: statusKey,
-      color: statusConfig.prColor(statusKey),
+      customColor: statusConfig.prColorOverride(statusKey),
+      colorVariable: themeColorVariable(prColorId(statusKey)),
       glyph: statusGlyphMarkup(statusGlyph("pr", { text: statusKey, colorKey: statusKey })),
     }));
     const viewsConfig = vscode.workspace.getConfiguration("overseer.views");
@@ -268,10 +272,6 @@ export class SettingsPanel {
         return;
     }
   }
-}
-
-function themeColorVariable(colorId: string): string {
-  return `--vscode-${colorId.replace(/\./g, "-")}`;
 }
 
 function readColorCustomizations(): Record<string, unknown> | undefined {
@@ -600,19 +600,20 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   function statusRow(status, saveColor) {
     const row = document.createElement("label");
     row.className = "row";
+    const shownColor = status.customColor || resolvedThemeHex(status.colorVariable);
     const picker = document.createElement("input");
     picker.type = "color";
-    picker.value = status.color;
+    picker.value = shownColor;
     picker.setAttribute("aria-label", status.name + " color");
-    const icon = glyphIcon(status.glyph, status.color);
-    const hex = textSpan("hex muted", status.color.toUpperCase());
+    const icon = glyphIcon(status.glyph, shownColor);
+    const hex = textSpan("hex muted", shownColor.toUpperCase());
     const warning = textSpan("warn", "");
     const showColor = (color) => {
       icon.setAttribute("stroke", color);
       hex.textContent = color.toUpperCase();
       warning.textContent = lowContrastText(color);
     };
-    showColor(status.color);
+    showColor(shownColor);
     picker.addEventListener("input", () => showColor(picker.value));
     picker.addEventListener("change", () => saveColor(picker.value));
     row.append(picker, icon, textSpan("name", status.name), warning, hex);
