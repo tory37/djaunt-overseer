@@ -12,7 +12,20 @@ function outputOf(...itemKeyGroups: string[][]): { itemKeys: string[] }[] {
   return itemKeyGroups.map((itemKeys) => ({ itemKeys }));
 }
 
-const PERFECT_PAIR_PARTS = { pairPrecision: 1, pairRecall: 1, pairF1: 1, coverage: 1, countDelta: 0, unsortedItems: 0 };
+const PERFECT_PAIR_PARTS = {
+  pairPrecision: 1,
+  pairRecall: 1,
+  pairF1: 1,
+  coverage: 1,
+  countDelta: 0,
+  unsortedItems: 0,
+  referenceMatched: 0,
+  referenceMismatched: 0,
+};
+
+function withReferences(label: EvalLabel, referenceItemKeys: string[]): EvalLabel {
+  return { ...label, referenceItemKeys };
+}
 
 describe("scoreGrouping", () => {
   it("scores an identical grouping 1 on every part", () => {
@@ -85,5 +98,45 @@ describe("scoreGrouping", () => {
   it("does not count empty label workstreams", () => {
     const score = scoreGrouping(labelOf(["a1", "a2"], []), outputOf(["a1", "a2"]));
     expect(score.countDelta).toBe(0);
+  });
+
+  it("scores a label without reference keys the same as one with none", () => {
+    const output = outputOf(["a1", "a2"], ["b1"]);
+    const oldLabel = labelOf(["a1", "a2", "a3"], ["b1", "b2"]);
+    expect(scoreGrouping(oldLabel, output)).toEqual(scoreGrouping(withReferences(oldLabel, []), output, []));
+    expect(scoreGrouping(oldLabel, output).unsortedItems).toBe(2);
+    expect(scoreGrouping(oldLabel, output).coverage).toBeCloseTo(3 / 5);
+  });
+
+  it("counts a reference item the output marks reference as covered", () => {
+    const label = withReferences(labelOf(["a1", "a2"]), ["ref:1", "ref:2"]);
+    const score = scoreGrouping(label, outputOf(["a1", "a2"]), ["ref:1", "ref:2"]);
+    expect(score).toEqual({ ...PERFECT_PAIR_PARTS, labeledItems: 4, referenceMatched: 2 });
+  });
+
+  it("counts a reference item the output left out as unsorted", () => {
+    const label = withReferences(labelOf(["a1", "a2"]), ["ref:1"]);
+    const score = scoreGrouping(label, outputOf(["a1", "a2"]));
+    expect(score.coverage).toBeCloseTo(2 / 3);
+    expect(score.unsortedItems).toBe(1);
+    expect(score.referenceMismatched).toBe(0);
+  });
+
+  it("counts a reference item the output put in a workstream as a mismatch", () => {
+    const label = withReferences(labelOf(["a1", "a2"]), ["ref:1"]);
+    const score = scoreGrouping(label, outputOf(["a1", "a2", "ref:1"]));
+    expect(score.coverage).toBeCloseTo(2 / 3);
+    expect(score.referenceMatched).toBe(0);
+    expect(score.referenceMismatched).toBe(1);
+    expect(score.unsortedItems).toBe(0);
+    expect(score.pairF1).toBe(1);
+  });
+
+  it("counts a workstream item the output marked reference as a mismatch", () => {
+    const score = scoreGrouping(labelOf(["a1", "a2", "a3"]), outputOf(["a1", "a2"]), ["a3"]);
+    expect(score.coverage).toBeCloseTo(2 / 3);
+    expect(score.referenceMismatched).toBe(1);
+    expect(score.unsortedItems).toBe(0);
+    expect(score.pairRecall).toBeCloseTo(1 / 3);
   });
 });

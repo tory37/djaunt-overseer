@@ -3,6 +3,7 @@ import { Workstream } from "./analysisState";
 export interface EvalLabel {
   sessionId: string;
   workstreams: { title: string; itemKeys: string[] }[];
+  referenceItemKeys?: string[];
   where?: string[];
 }
 
@@ -14,6 +15,8 @@ export interface GroupingScore {
   countDelta: number;
   labeledItems: number;
   unsortedItems: number;
+  referenceMatched: number;
+  referenceMismatched: number;
 }
 
 type WorkstreamIndexesByItem = Map<string, Set<number>>;
@@ -46,12 +49,22 @@ function ratioOrOne(numerator: number, denominator: number): number {
   return denominator === 0 ? 1 : numerator / denominator;
 }
 
-export function scoreGrouping(label: EvalLabel, output: Pick<Workstream, "itemKeys">[]): GroupingScore {
-  const labeledItemKeys = new Set(label.workstreams.flatMap((workstream) => workstream.itemKeys));
-  const labelIndexesByItem = workstreamIndexesByItem(label.workstreams, labeledItemKeys);
+export function scoreGrouping(
+  label: EvalLabel,
+  output: Pick<Workstream, "itemKeys">[],
+  outputReferenceItemKeys: string[] = [],
+): GroupingScore {
+  const labeledWorkstreamItemKeys = new Set(label.workstreams.flatMap((workstream) => workstream.itemKeys));
+  const labeledReferenceItemKeys = new Set(
+    (label.referenceItemKeys ?? []).filter((itemKey) => !labeledWorkstreamItemKeys.has(itemKey)),
+  );
+  const labeledItemKeys = new Set([...labeledWorkstreamItemKeys, ...labeledReferenceItemKeys]);
+  const labelIndexesByItem = workstreamIndexesByItem(label.workstreams, labeledWorkstreamItemKeys);
   const outputIndexesByItem = workstreamIndexesByItem(output, labeledItemKeys);
+  const outputReferenceKeys = new Set(outputReferenceItemKeys);
+  const isOutputReference = (itemKey: string) => outputReferenceKeys.has(itemKey) && !outputIndexesByItem.has(itemKey);
 
-  const itemKeys = [...labeledItemKeys];
+  const itemKeys = [...labeledWorkstreamItemKeys];
   let truePositivePairs = 0;
   let falsePositivePairs = 0;
   let falseNegativePairs = 0;
@@ -80,7 +93,12 @@ export function scoreGrouping(label: EvalLabel, output: Pick<Workstream, "itemKe
   }
 
   const labeledItems = labeledItemKeys.size;
-  const sortedItems = outputIndexesByItem.size;
+  const workstreamMatched = [...labeledWorkstreamItemKeys].filter((itemKey) => outputIndexesByItem.has(itemKey)).length;
+  const workstreamMarkedReference = [...labeledWorkstreamItemKeys].filter(isOutputReference).length;
+  const referenceMatched = [...labeledReferenceItemKeys].filter(isOutputReference).length;
+  const referencePutInWorkstream = [...labeledReferenceItemKeys].filter((itemKey) => outputIndexesByItem.has(itemKey)).length;
+  const coveredItems = workstreamMatched + referenceMatched;
+  const referenceMismatched = workstreamMarkedReference + referencePutInWorkstream;
   const labelWorkstreamCount = label.workstreams.filter((workstream) => workstream.itemKeys.length > 0).length;
   // An output workstream holding only items the label removed is not a real disagreement.
   const outputWorkstreamCount = new Set([...outputIndexesByItem.values()].flatMap((indexes) => [...indexes])).size;
@@ -89,9 +107,11 @@ export function scoreGrouping(label: EvalLabel, output: Pick<Workstream, "itemKe
     pairPrecision,
     pairRecall,
     pairF1,
-    coverage: ratioOrOne(sortedItems, labeledItems),
+    coverage: ratioOrOne(coveredItems, labeledItems),
     countDelta: labelWorkstreamCount - outputWorkstreamCount,
     labeledItems,
-    unsortedItems: labeledItems - sortedItems,
+    unsortedItems: labeledItems - coveredItems - referenceMismatched,
+    referenceMatched,
+    referenceMismatched,
   };
 }
