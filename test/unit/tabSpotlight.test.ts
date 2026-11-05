@@ -103,3 +103,44 @@ describe("withTabSpotlight non-object input", () => {
     expect(withTabSpotlight(null, COLORS_BY_THEME, true)).toHaveProperty("[Overseer Hoard]");
   });
 });
+
+const PRIOR_COLORS_BY_THEME = {
+  "Overseer Hoard": { "tab.unfocusedActiveBackground": ["#0B0A08", "#0A0907"] },
+};
+
+describe("withTabSpotlight upgrades earlier shipped values", () => {
+  it("replaces a stored value that an earlier release shipped, ignoring hex case", () => {
+    const customized = { "[Overseer Hoard]": { ...COLORS_BY_THEME["Overseer Hoard"], "tab.unfocusedActiveBackground": "#0b0a08" } };
+    const result = withTabSpotlight(customized, COLORS_BY_THEME, true, PRIOR_COLORS_BY_THEME);
+    expect(result?.["[Overseer Hoard]"]).toEqual(COLORS_BY_THEME["Overseer Hoard"]);
+  });
+
+  it("keeps a user value that no release shipped", () => {
+    const customized = { "[Overseer Hoard]": { ...COLORS_BY_THEME["Overseer Hoard"], "tab.unfocusedActiveBackground": "#123456" } };
+    const result = withTabSpotlight(customized, COLORS_BY_THEME, true, PRIOR_COLORS_BY_THEME);
+    expect(result?.["[Overseer Hoard]"]).toEqual(customized["[Overseer Hoard]"]);
+  });
+
+  it("keeps a prior value of another theme or key", () => {
+    const customized = {
+      "[Overseer Frost]": { ...COLORS_BY_THEME["Overseer Frost"], "tab.unfocusedActiveBackground": "#0B0A08" },
+      "[Overseer Hoard]": { ...COLORS_BY_THEME["Overseer Hoard"], "tab.activeBackground": "#0B0A08" },
+    };
+    expect(withTabSpotlight(customized, COLORS_BY_THEME, true, PRIOR_COLORS_BY_THEME)).toBeUndefined();
+  });
+
+  it("changes nothing on a second run after an upgrade", () => {
+    const customized = { "[Overseer Hoard]": { ...COLORS_BY_THEME["Overseer Hoard"], "tab.unfocusedActiveBackground": "#0A0907" } };
+    const firstRun = withTabSpotlight(customized, COLORS_BY_THEME, true, PRIOR_COLORS_BY_THEME);
+    expect(withTabSpotlight(firstRun, COLORS_BY_THEME, true, PRIOR_COLORS_BY_THEME)).toBeUndefined();
+  });
+
+  it("removes a prior shipped value when disabled, and keeps a user value", () => {
+    const customized = {
+      "[Overseer Hoard]": { ...COLORS_BY_THEME["Overseer Hoard"], "tab.unfocusedActiveBackground": "#0A0907", "tab.activeBorderTop": "#FF0000" },
+    };
+    expect(withTabSpotlight(customized, COLORS_BY_THEME, false, PRIOR_COLORS_BY_THEME)).toEqual({
+      "[Overseer Hoard]": { "tab.activeBorderTop": "#FF0000" },
+    });
+  });
+});

@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { formatAge } from "./format";
 import { branchStatusLabel, CommitAuthorship, commitSessionId, CommitEntry } from "./gitStatus";
 import { tildePath } from "./paths";
+import { repoRowColors } from "./repoColors";
 import { RepoService, RepoStatus } from "./repoService";
 import { RepoEntry } from "./repoSet";
 
@@ -11,6 +12,7 @@ export type RepoTreeNode =
   | { kind: "commit"; repoRoot: string; commit: CommitEntry; sessionId: string | undefined };
 
 export const COMMIT_DOCUMENT_SCHEME = "overseer-git";
+const REPO_ROW_SCHEME = "overseer-repo";
 const MAX_SUBJECT_LENGTH = 80;
 
 export interface RepoTreeDependencies {
@@ -87,23 +89,50 @@ export function commitDocumentUri(repoRoot: string, commit: CommitEntry): vscode
   });
 }
 
+// Repo rows carry this URI so the decoration below can tint the label. The query keeps the root exact on any platform.
+function repoRowUri(repoRoot: string): vscode.Uri {
+  return vscode.Uri.from({ scheme: REPO_ROW_SCHEME, path: `/${path.basename(repoRoot)}`, query: repoRoot });
+}
+
+export class RepoRowDecorations implements vscode.FileDecorationProvider, vscode.Disposable {
+  private readonly decorationChangeEmitter = new vscode.EventEmitter<vscode.Uri[]>();
+  readonly onDidChangeFileDecorations = this.decorationChangeEmitter.event;
+  private readonly serviceSubscription: vscode.Disposable;
+
+  constructor(private readonly repoService: RepoService) {
+    this.serviceSubscription = repoService.onDidChange(() =>
+      this.decorationChangeEmitter.fire(repoService.currentRepos().map((repo) => repoRowUri(repo.root))),
+    );
+  }
+
+  provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
+    if (uri.scheme !== REPO_ROW_SCHEME) {
+      return undefined;
+    }
+    const { labelColorId } = repoRowColors(this.repoService.status(uri.query));
+    return labelColorId === undefined ? undefined : new vscode.FileDecoration(undefined, undefined, new vscode.ThemeColor(labelColorId));
+  }
+
+  dispose(): void {
+    this.serviceSubscription.dispose();
+    this.decorationChangeEmitter.dispose();
+  }
+}
+
 function repoTreeItem(repo: RepoEntry, status: RepoStatus, sessionTitle: (sessionId: string) => string): vscode.TreeItem {
   const treeItem = new vscode.TreeItem(repo.name, vscode.TreeItemCollapsibleState.Collapsed);
   treeItem.id = `repo:${repo.root}`;
   treeItem.contextValue = "repo";
+  treeItem.resourceUri = repoRowUri(repo.root);
   if (status.kind === "loading") {
     treeItem.description = "loading…";
-    treeItem.iconPath = new vscode.ThemeIcon("repo");
   } else if (status.kind === "failed") {
     treeItem.description = "git failed";
-    treeItem.iconPath = new vscode.ThemeIcon("warning", new vscode.ThemeColor("problemsWarningIcon.foreground"));
   } else {
-    const isDirty = status.branchStatus.changedFileCount > 0;
     treeItem.description = branchStatusLabel(status.branchStatus);
-    treeItem.iconPath = isDirty
-      ? new vscode.ThemeIcon("repo", new vscode.ThemeColor("gitDecoration.modifiedResourceForeground"))
-      : new vscode.ThemeIcon("repo");
   }
+  const { iconName, iconColorId } = repoRowColors(status);
+  treeItem.iconPath = new vscode.ThemeIcon(iconName, new vscode.ThemeColor(iconColorId));
   treeItem.tooltip = repoTooltip(repo, status, sessionTitle);
   return treeItem;
 }

@@ -1,3 +1,4 @@
+import { sessionIconSpec } from "./sessionIcons";
 // Tree labels take only theme colors, so each status picks one of these contributed palette colors.
 export const STATUS_COLORS = ["gray", "red", "orange", "yellow", "green", "teal", "blue", "purple", "pink"] as const;
 
@@ -38,6 +39,14 @@ const CODICON_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*(~spin)?$/;
 
 export function statusColorId(color: StatusColor): string {
   return `overseer.status${color[0].toUpperCase()}${color.slice(1)}`;
+}
+
+// A marked status wins. Otherwise a terminal open in this window tints the label like the running icon.
+export function sessionLabelColorId(markedColor: StatusColor | undefined, hasOpenTerminal: boolean): string | undefined {
+  if (markedColor !== undefined) {
+    return statusColorId(markedColor);
+  }
+  return hasOpenTerminal ? sessionIconSpec("running").colorId : undefined;
 }
 
 // A setting edited by hand can hold anything; bad entries drop out and bad fields fall back, so the tree never breaks.

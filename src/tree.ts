@@ -4,7 +4,8 @@ import { buildSectionGroups, PinnedSession, pinnedSessionTitle, SessionGroup, Se
 import { SessionMeta } from "./indexer";
 import { LiveSession } from "./liveParse";
 import { LiveSessionMonitor } from "./liveSessions";
-import { GroupRef, Registry, TerminalSession } from "./registry";
+import { groupIconColorId } from "./groupIcons";
+import { GroupRef, Registry, TerminalSession, userGroupRef } from "./registry";
 import { moveBeside } from "./reorder";
 import { otherReposLabel } from "./repoFilter";
 import { SessionIconState, sessionIconName, sessionIconSpec } from "./sessionIcons";
@@ -71,7 +72,9 @@ export class SessionTreeProvider
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
     if (node.kind === "group") {
-      return groupTreeItem(node.group, this.registry.isGroupCollapsed(this.collapseKey(node.group.ref)));
+      const userGroupRefs = this.registry.userGroupsInActiveWorkspace().map((group) => userGroupRef(group.id));
+      const iconColorId = groupIconColorId(node.group.ref, userGroupRefs);
+      return groupTreeItem(node.group, this.registry.isGroupCollapsed(this.collapseKey(node.group.ref)), iconColorId);
     }
     const status = sessionStatusFor(this.registry, node.pinned.sessionId);
     if (node.pinned.terminal !== undefined) {
@@ -216,14 +219,14 @@ function nodeSessionId(node: SessionNode): string {
   return node.pinned.sessionId;
 }
 
-function groupTreeItem(group: SessionGroup, isCollapsed: boolean): vscode.TreeItem {
+function groupTreeItem(group: SessionGroup, isCollapsed: boolean, iconColorId: string): vscode.TreeItem {
   const collapsibleState = isCollapsed
     ? vscode.TreeItemCollapsibleState.Collapsed
     : vscode.TreeItemCollapsibleState.Expanded;
   const treeItem = new vscode.TreeItem(group.label, collapsibleState);
   treeItem.id = `group:${group.ref}`;
   treeItem.description = String(group.sessions.length);
-  treeItem.iconPath = new vscode.ThemeIcon("folder");
+  treeItem.iconPath = new vscode.ThemeIcon("folder", new vscode.ThemeColor(iconColorId));
   treeItem.contextValue = `group.${group.kind}`;
   return treeItem;
 }

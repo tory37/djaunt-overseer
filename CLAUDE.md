@@ -30,7 +30,8 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `sessionTitle.ts` | Pure: the shown session title (locked label, analyzer title, label, indexed title) and the label's ticket keys the title hides. Grouping still reads the label. |
 | `reorder.ts` | Pure: drag reorder (`moveBeside`) and saved-order sort. |
 | `tree.ts` | TreeDataProvider and drag-and-drop. |
-| `terminals.ts` | Launch, find, suspend, slash commands. Terminals `exec claude`, so the terminal pid is Claude's pid. |
+| `groupIcons.ts` | Pure: a group's folder icon color. User groups cycle `overseer.groupIcon1`-`6` by their saved order; Ungrouped uses `icon.foreground`. |
+| `terminals.ts` | Launch, find, suspend, slash commands. Terminals `exec claude`, so the terminal pid is Claude's pid. Tab icons use `overseer.terminalIcon`. |
 | `commands.ts` | Every command handler. |
 | `linkCandidates.ts` | Pure: scans a transcript for PR, ticket, artifact, and commit candidates with signals, titles, and the nearest user prompt. Counts user prompts by offset. Resumes from a byte offset. |
 | `candidateEnrichment.ts` | Pure: attaches cached PR and ticket status (title, branch, state, summary, parent) to scanned candidates. |
@@ -60,7 +61,8 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `linkStatus.ts` / `linkStatusService.ts` | PR state via `gh`, ticket status via the Jira MCP server. Five-minute cache, at most 4 calls at once, on-screen links only. |
 | `repoSet.ts` | Pure: the repos of the pinned sessions and terminals, newest first. |
 | `gitStatus.ts` | Pure: git arguments and parsers for status, log, and commit hashes in transcripts. |
-| `repoService.ts` / `repoTree.ts` | Repos view. Runs git (at most 4 at once), watches each `.git` folder, and builds the rows. |
+| `repoService.ts` / `repoTree.ts` | Repos view. Runs git (at most 4 at once), watches each `.git` folder, and builds the rows. Repo rows carry an `overseer-repo:` URI; `RepoRowDecorations` tints the label. |
+| `repoColors.ts` | Pure: a repo row's icon and label color. Clean is `overseer.repoClean`, dirty is the git modified color, failed is a warning. |
 | `quickPick.ts` / `repoFilter.ts` | All Sessions picker and the `repo:` filter. |
 | `claudeLaunch.ts` | Pure: the plain `exec claude` launch command, the new-session command with an optional first prompt, and `quoteForShell`. |
 | `handoff.ts` | Pure: handoff draft and approved paths under `~/.claude/overseer/handoffs/`, the one-line write, revise, and seed prompts, and the order that puts the new session below the old one. |
@@ -70,11 +72,11 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `sessionSidebarText.ts` | Pure: the Session sidebar's meta line, state sentence, short link status, and row hover text. |
 | `resourceRows.ts` | Pure: sidebar link rows and stale-drag checks. |
 | `sessionPreview.ts` / `sessionPreviewModel.ts` | One reused editor tab for sessions with no terminal here: summary, last turns, prompts, and the commits and PRs the transcript scan found. Resume replaces it with the terminal. The model is pure. |
-| `scripts/themes.mjs` | Dev only: the Overseer theme palettes. Frame and floating layers use the `THEMES` surfaces; the editor body and tab bar use a tinted surface ladder. Second accent, syntax tiers, and bracket hues come from each theme's `roles`. Writes `themes/*.json`, the site's `docs/assets/overseer-themes.js`, and `src/themeTabSpotlight.ts`, and fails if text contrast is under 4.5:1. Run `npm run themes` after a palette change. |
-| `scripts/themeLab.mjs` / `theme-lab/` | Dev only: Theme Lab. Builds the shipped themes ("Current") plus each proposal layer, in order (`PROPOSAL_LAYERS` in `scripts/themeLabProposal.mjs`) into the git-ignored `theme-lab/lab-data.js`. `theme-lab/index.html` shows them in a mock workbench colored only by VS Code keys. |
+| `scripts/themes.mjs` | Dev only: the Overseer theme palettes. Frame and floating layers use the `THEMES` surfaces; the editor body and tab bar use a tinted surface ladder. Second accent, syntax tiers, and bracket hues come from each theme's `roles`. Also sets the extension's own ids (session states, group icons, repo clean, terminal icon) and checks them on the sidebar. Writes `themes/*.json`, the site's `docs/assets/overseer-themes.js`, and `src/themeTabSpotlight.ts`, and fails if text contrast is under 4.5:1. When a shipped spotlight value changes, add the old one to `SHIPPED_TAB_SPOTLIGHT_HISTORY`. Run `npm run themes` after a palette change. |
+| `scripts/themeLab.mjs` / `theme-lab/` | Dev only: Theme Lab. Builds the shipped themes ("Current") plus each proposal layer, in order (`PROPOSAL_LAYERS` in `scripts/themeLabProposal.mjs`) into the git-ignored `theme-lab/lab-data.js`. `theme-lab/index.html` shows them in a mock workbench colored only by VS Code keys. The mock draws only what the extension draws, and tags "needs code" on any color id that `contributes.colors` lacks and no shipped theme sets. |
 | `themes/` | Generated color themes: Hoard, Ember, Frost (dark), Parchment (light). Edit the script, not the JSON. |
-| `themeTabSpotlight.ts` | Generated: each Overseer theme's four spotlight tab colors. Edit `scripts/themes.mjs`, not this file. |
-| `tabSpotlight.ts` | Pure: adds the spotlight tab colors to `workbench.colorCustomizations` per theme block, never over a user value, or removes only the unchanged ones. |
+| `themeTabSpotlight.ts` | Generated: each Overseer theme's four spotlight tab colors, and the values earlier releases shipped. Edit `scripts/themes.mjs`, not this file. |
+| `tabSpotlight.ts` | Pure: adds the spotlight tab colors to `workbench.colorCustomizations` per theme block, upgrades a value an earlier release shipped, never touches a user value, or removes only shipped ones. |
 | `tabSpotlightSync.ts` | Applies `tabSpotlight` to the global `workbench.colorCustomizations` on activation and on a theme or `overseer.theme.tabSpotlight` change. Adds only while an Overseer theme is active. Logs with `[tabSpotlight]`. |
 
 ## Rules
@@ -85,7 +87,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 - Send slash commands only when the session is idle. Typed input is lost while Claude is busy.
 - Never resume a session that is live elsewhere. Two processes on one transcript corrupt it. Offer a fork.
 - Session names reach the shell. Quote with `quoteForShell` and strip newlines.
-- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `claudeLaunch`, `handoff`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerEval`, `analyzerFlags`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`, `sessionTitle`, `tabSpotlight`) and test it there. `vscode` can't be imported in unit tests.
+- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `claudeLaunch`, `handoff`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerEval`, `analyzerFlags`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`, `sessionTitle`, `tabSpotlight`, `groupIcons`, `repoColors`) and test it there. `vscode` can't be imported in unit tests.
 - The agent is not told about Overseer. Sessions launch as plain `claude`. The extension derives tracking from transcripts.
 - New commands need an entry in `contributes.commands`, a menu `when` clause, and `"when": "false"` under `commandPalette` if they need a tree node.
 

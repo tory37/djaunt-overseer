@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { withTabSpotlight } from "./tabSpotlight";
-import { THEME_TAB_SPOTLIGHT } from "./themeTabSpotlight";
+import { THEME_TAB_SPOTLIGHT, THEME_TAB_SPOTLIGHT_PRIOR } from "./themeTabSpotlight";
 
 const TAB_SPOTLIGHT_SETTING = "overseer.theme.tabSpotlight";
 const COLOR_THEME_SETTING = "workbench.colorTheme";
@@ -16,12 +16,12 @@ export async function syncTabSpotlight(log: vscode.OutputChannel): Promise<void>
     const workbench = vscode.workspace.getConfiguration("workbench");
     // Only the global value, so workspace colors never get copied into user settings.
     const globalCustomizations = workbench.inspect("colorCustomizations")?.globalValue;
-    const nextCustomizations = withTabSpotlight(globalCustomizations, THEME_TAB_SPOTLIGHT, isEnabled);
+    const nextCustomizations = withTabSpotlight(globalCustomizations, THEME_TAB_SPOTLIGHT, isEnabled, THEME_TAB_SPOTLIGHT_PRIOR);
     if (nextCustomizations === undefined) {
       return;
     }
     await workbench.update("colorCustomizations", nextCustomizations, vscode.ConfigurationTarget.Global);
-    log.appendLine(`[tabSpotlight] ${isEnabled ? "Added" : "Removed"} tab colors in user settings`);
+    log.appendLine(`[tabSpotlight] ${isEnabled ? "Added or upgraded" : "Removed"} tab colors in user settings`);
   } catch (error) {
     log.appendLine(`[tabSpotlight] Can't update workbench.colorCustomizations: ${String(error)}`);
   }

@@ -25,3 +25,27 @@ export const THEME_TAB_SPOTLIGHT: Readonly<Record<string, Readonly<Record<string
     "tab.unfocusedActiveBorderTop": "#00000000"
   }
 };
+
+// Values earlier releases wrote. A stored value found here is the extension's, so it gets upgraded or removed.
+export const THEME_TAB_SPOTLIGHT_PRIOR: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = {
+  "Overseer Hoard": {
+    "tab.unfocusedActiveBackground": [
+      "#0D0C0A"
+    ]
+  },
+  "Overseer Ember": {
+    "tab.unfocusedActiveBackground": [
+      "#100A07"
+    ]
+  },
+  "Overseer Frost": {
+    "tab.unfocusedActiveBackground": [
+      "#060B14"
+    ]
+  },
+  "Overseer Parchment": {
+    "tab.unfocusedActiveBackground": [
+      "#F3EDDF"
+    ]
+  }
+};

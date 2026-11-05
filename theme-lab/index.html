@@ -54,6 +54,9 @@
         .wb { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: 13px; line-height: 1.4; }
         .wb-mono { font-family: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace; }
         .wb * { box-sizing: border-box; }
+        .wb [data-needs-code] { outline: 1px dashed #FF2BD6; outline-offset: -1px; }
+        .wb [data-needs-code]:not(.absolute) { position: relative; }
+        .wb [data-needs-code]::after { content: 'needs code'; position: absolute; top: -6px; right: -2px; z-index: 5; padding: 0 3px; font: 600 8px/11px ui-monospace, monospace; color: #FFFFFF; background: #B0108F; border-radius: 2px; pointer-events: none; white-space: nowrap; }
     </style>
 </head>
 <body class="bg-bg text-bone font-sans antialiased min-h-screen overflow-x-hidden">
@@ -72,7 +75,15 @@
 
         const cssVarName = (colorKey) => `--vsc-${colorKey.replace(/\./g, '-')}`;
         const c = (colorKey, fallback) => (fallback ? `var(${cssVarName(colorKey)}, ${fallback})` : `var(${cssVarName(colorKey)})`);
-        const region = (name, colorKeys) => ({ 'data-region': name, 'data-keys': colorKeys.join(',') });
+        // A key is deliverable when the extension contributes it, a shipped theme sets it, or VS Code has it built in.
+        const BUILT_IN_UNSET_KEYS = [];
+        const DELIVERABLE_COLOR_IDS = new Set([...LAB.contributedColorIds, ...LAB.shippedBuiltInColorIds, ...BUILT_IN_UNSET_KEYS]);
+        const isDeliverableKey = (colorKey) => colorKey.startsWith('tok:') || colorKey.endsWith('*') || DELIVERABLE_COLOR_IDS.has(colorKey);
+        const region = (name, colorKeys) => ({
+            'data-region': name,
+            'data-keys': colorKeys.join(','),
+            ...(colorKeys.every(isDeliverableKey) ? {} : { 'data-needs-code': colorKeys.filter((colorKey) => !isDeliverableKey(colorKey)).join(',') }),
+        });
 
         const SNIPPET_SCOPES = {
             kw: 'keyword.control',
@@ -434,46 +445,56 @@
             </div>
         );
 
-        const SectionHeader = ({ label }) => (
+        const SectionHeader = ({ label, note }) => (
             <div {...region('Sidebar section header', ['sideBarSectionHeader.background', 'sideBarSectionHeader.foreground', 'sideBarSectionHeader.border'])} className="flex items-center gap-1 px-1" style={{ height: 22, fontSize: 11, fontWeight: 700, background: c('sideBarSectionHeader.background'), color: c('sideBarSectionHeader.foreground'), borderTop: `1px solid ${c('sideBarSectionHeader.border')}` }}>
                 <Icon name="ChevronDown" size={14} />{label}
+                {note && <span className="ml-auto pr-1" style={{ fontSize: 9, fontWeight: 500, color: c('descriptionForeground') }}>{note}</span>}
             </div>
         );
 
+        // The tree's real session states (src/sessionIcons.ts), drawn with the nearest Lucide icon.
         const STATE_LOOK = {
-            busy: { icon: 'LoaderCircle', key: 'overseer.sessionBusy', label: 'busy' },
-            idle: { icon: 'Circle', key: 'overseer.sessionIdle', label: 'idle' },
-            needsInput: { icon: 'MessageCircleQuestion', key: 'overseer.sessionNeedsInput', label: 'needs input' },
+            working: { icon: 'LoaderCircle', key: 'overseer.sessionWorking', label: 'working in this window' },
+            compacting: { icon: 'RefreshCw', key: 'overseer.sessionCompacting', label: 'compacting' },
+            running: { icon: 'SquareTerminal', key: 'overseer.sessionRunning', label: 'running in this window' },
+            elsewhere: { icon: 'AppWindow', key: 'overseer.sessionElsewhere', label: 'running outside this window' },
             suspended: { icon: 'Pause', key: 'overseer.sessionSuspended', label: 'suspended' },
+            duplicate: { icon: 'TriangleAlert', key: 'overseer.sessionDuplicate', label: 'copies running' },
         };
 
-        const CHIP_LOOK = {
-            prOpen: { icon: 'GitPullRequest', key: 'overseer.prOpen' },
-            prMerged: { icon: 'GitMerge', key: 'overseer.prMerged' },
-            ticketProgress: { icon: 'Ticket', key: 'overseer.ticketProgress' },
-            ticketDone: { icon: 'TicketCheck', key: 'overseer.ticketDone' },
+        // A user status tints the label and adds its badge, through a file decoration (src/sessionStatusView.ts).
+        const STATUS_LOOK = {
+            review: { key: 'overseer.statusPurple', badge: 'R', name: 'In review' },
+            blocked: { key: 'overseer.statusRed', badge: 'B', name: 'Blocked' },
         };
 
+        // The row description is only the ticket keys the shown title hides.
         const SESSION_GROUPS = [
-            { name: 'Login sprint', sessions: [
-                { title: 'Login session timeout', detail: 'web-app · 2m', state: 'busy', chips: [['prOpen', '#482']] },
-                { title: 'Refresh window PR', detail: 'web-app · 9m', state: 'idle', chips: [['prMerged', '#477'], ['ticketDone', 'PROJ-2567']], isSelected: true },
+            { name: 'Login sprint', kind: 'user', sessions: [
+                { title: 'Login session timeout', detail: 'PROJ-2571', state: 'working' },
+                { title: 'Refresh window PR', detail: '', state: 'running', status: 'review', isSelected: true },
             ] },
-            { name: 'Billing export', sessions: [
-                { title: 'Chunked billing export', detail: 'api · 1m', state: 'needsInput', chips: [['ticketProgress', 'OPS-4410']] },
-                { title: 'Export retry backoff', detail: 'api · 22m', state: 'idle', chips: [] },
-                { title: 'Invoice CSV columns', detail: 'api · 1h', state: 'idle', chips: [['prOpen', '#490']], isHovered: true },
+            { name: 'Billing export', kind: 'user', sessions: [
+                { title: 'Chunked billing export', detail: 'OPS-4410', state: 'elsewhere' },
+                { title: 'Export retry backoff', detail: '', state: 'compacting' },
+                { title: 'Invoice CSV columns', detail: '2 copies running', state: 'duplicate', isHovered: true },
             ] },
-            { name: 'Ungrouped', sessions: [
-                { title: 'Theme lab pass', detail: 'djaunt-overseer · now', state: 'busy', chips: [] },
-                { title: 'Flaky e2e triage', detail: 'web-app · 2d', state: 'suspended', chips: [['ticketProgress', 'QA-118']] },
-                { title: 'Release 0.0.35', detail: 'djaunt-overseer · 3h', state: 'idle', chips: [] },
+            { name: 'Ungrouped', kind: 'ungrouped', sessions: [
+                { title: 'Theme lab pass', detail: '', state: 'working' },
+                { title: 'Flaky e2e triage', detail: 'QA-118', state: 'suspended', status: 'blocked' },
+                { title: 'Release 0.0.35', detail: '', state: 'suspended' },
             ] },
         ];
+
+        // Mirrors src/groupIcons.ts: user groups cycle six ids, Ungrouped uses the plain icon color.
+        const GROUP_ICON_COUNT = 6;
+        const UNGROUPED_ICON_KEY = 'icon.foreground';
+        const groupIconKey = (group, userGroupIndex) => (group.kind === 'user' ? `overseer.groupIcon${(userGroupIndex % GROUP_ICON_COUNT) + 1}` : UNGROUPED_ICON_KEY);
 
         const SessionRow = ({ session }) => {
             const { focus } = useContext(MockContext);
             const look = STATE_LOOK[session.state];
+            const status = session.status && STATUS_LOOK[session.status];
             const isSidebarFocused = focus === 'sidebar';
             let rowStyle = {};
             let rowRegion = region('Session row', ['sideBar.foreground', 'descriptionForeground', 'tree.indentGuidesStroke']);
@@ -488,21 +509,15 @@
                 rowStyle = { background: c('list.hoverBackground'), color: c('list.hoverForeground') };
                 rowRegion = region('Hovered row', ['list.hoverBackground', 'list.hoverForeground']);
             }
-            // Current themes lack the overseer.session* state ids, so those rows fall back to muted.
-            const stateColor = c(look.key, c('descriptionForeground'));
             return (
                 <div {...rowRegion} className="relative flex items-center gap-1.5 pr-2" style={{ height: 22, paddingLeft: 30, ...rowStyle }}>
                     <span className="absolute top-0 bottom-0" style={{ left: 15, width: 1, background: c('tree.indentGuidesStroke') }} />
-                    <span {...region(`Session state: ${look.label}`, [look.key])} className="inline-flex" style={{ color: stateColor }}><Icon name={look.icon} size={14} /></span>
-                    <span className="truncate min-w-0 shrink">{session.title}</span>
+                    <span {...region(`Session state: ${look.label}`, [look.key])} className="inline-flex" style={{ color: c(look.key) }}><Icon name={look.icon} size={14} /></span>
+                    {status
+                        ? <span {...region(`Session status: ${status.name}`, [status.key])} className="truncate min-w-0 shrink" style={{ color: c(status.key) }}>{session.title}</span>
+                        : <span className="truncate min-w-0 shrink">{session.title}</span>}
                     <span className="truncate min-w-0" style={{ flexShrink: 100, fontSize: 11, color: session.isSelected ? 'inherit' : c('descriptionForeground'), opacity: session.isSelected ? 0.8 : 1 }}>{session.detail}</span>
-                    <span className="ml-auto flex items-center gap-1.5 shrink-0">
-                        {session.chips.map(([chip, label]) => (
-                            <span key={label} {...region('Link status', [CHIP_LOOK[chip].key])} className="inline-flex items-center gap-0.5" style={{ fontSize: 11, color: c(CHIP_LOOK[chip].key) }}>
-                                <Icon name={CHIP_LOOK[chip].icon} size={12} />{label}
-                            </span>
-                        ))}
-                    </span>
+                    {status && <span className="ml-auto shrink-0" style={{ fontSize: 11, color: c(status.key) }}>{status.badge}</span>}
                 </div>
             );
         };
@@ -516,9 +531,15 @@
             { name: 'dist', folder: '', letter: '', label: 'ignored', icon: 'Folder', key: 'gitDecoration.ignoredResourceForeground' },
         ];
 
+        // Mirrors src/repoColors.ts: the icon and the label (a file decoration) share the clean or dirty color.
         const REPO_ROWS = [
-            { name: 'djaunt-overseer', detail: 'feat/theme-lab', badge: 'M 4', key: 'gitDecoration.modifiedResourceForeground' },
-            { name: 'web-app', detail: 'main', badge: 'U 1', key: 'gitDecoration.untrackedResourceForeground' },
+            { name: 'djaunt-overseer', detail: 'feat/extension-colors · ↑2 · 4 changed', key: 'gitDecoration.modifiedResourceForeground', state: 'dirty' },
+            { name: 'web-app', detail: 'main', key: 'overseer.repoClean', state: 'clean' },
+        ];
+
+        const COMMIT_ROWS = [
+            { subject: 'Color the repo rows', detail: 'a1b2c3d · 4m · Theme lab pass', isFromSession: true },
+            { subject: 'Bump vitest', detail: '9f8e7d6 · 2d', isFromSession: false },
         ];
 
         const SideBar = () => (
@@ -539,7 +560,7 @@
                     <div key={group.name}>
                         <div {...region('Tree group', ['sideBar.foreground', 'descriptionForeground'])} className="flex items-center gap-1 px-1" style={{ height: 22 }}>
                             <Icon name="ChevronDown" size={14} style={{ color: c('icon.foreground') }} />
-                            <span {...region('Group icon', [`overseer.groupIcon${groupIndex + 1}`, 'icon.foreground'])} className="inline-flex" style={{ color: c(`overseer.groupIcon${groupIndex + 1}`, c('icon.foreground')) }}><Icon name="Folder" size={14} /></span>
+                            <span {...region('Group icon', [groupIconKey(group, groupIndex)])} className="inline-flex" style={{ color: c(groupIconKey(group, groupIndex)) }}><Icon name="Folder" size={14} /></span>
                             <span style={{ fontWeight: 600 }}>{group.name}</span>
                             <span style={{ color: c('descriptionForeground'), fontSize: 11 }}>{group.sessions.length}</span>
                         </div>
@@ -547,7 +568,7 @@
                     </div>
                 ))}
                 <div style={{ height: 6 }} />
-                <SectionHeader label="CHANGES" />
+                <SectionHeader label="CHANGES" note="built-in VS Code Explorer" />
                 {CHANGED_FILES.map((file) => (
                     <div key={file.name} {...region(`Changed file (${file.label})`, [file.key])} className="flex items-center gap-1.5 px-3" style={{ height: 22, color: c(file.key) }}>
                         <Icon name={file.icon} size={14} />
@@ -557,19 +578,30 @@
                     </div>
                 ))}
                 <SectionHeader label="REPOS" />
-                {REPO_ROWS.map((repo) => (
-                    <div key={repo.name} {...region('Repo row (git decoration)', [repo.key])} className="flex items-center gap-1.5 px-2" style={{ height: 22, color: c(repo.key) }}>
-                        <Icon name="GitBranch" size={14} />
-                        <span>{repo.name}</span>
-                        <span style={{ fontSize: 11, color: c('descriptionForeground') }}>{repo.detail}</span>
-                        <span className="ml-auto" style={{ fontSize: 11 }}>{repo.badge}</span>
+                {REPO_ROWS.map((repo, repoIndex) => (
+                    <div key={repo.name}>
+                        <div {...region(`Repo row (${repo.state})`, [repo.key])} className="flex items-center gap-1.5 px-1" style={{ height: 22 }}>
+                            <Icon name={repoIndex === 0 ? 'ChevronDown' : 'ChevronRight'} size={14} style={{ color: c('icon.foreground') }} />
+                            <span className="inline-flex" style={{ color: c(repo.key) }}><Icon name="BookMarked" size={14} /></span>
+                            <span className="whitespace-nowrap shrink-0" style={{ color: c(repo.key) }}>{repo.name}</span>
+                            <span className="truncate" style={{ fontSize: 11, color: c('descriptionForeground') }}>{repo.detail}</span>
+                        </div>
+                        {repoIndex === 0 && COMMIT_ROWS.map((commit) => (
+                            <div key={commit.subject} className="flex items-center gap-1.5" style={{ height: 22, paddingLeft: 30 }}>
+                                {commit.isFromSession
+                                    ? <span {...region('Commit from a session', ['overseer.sessionRunning'])} className="inline-flex" style={{ color: c('overseer.sessionRunning') }}><Icon name="Sparkles" size={14} /></span>
+                                    : <span className="inline-flex" style={{ color: c('icon.foreground') }}><Icon name="GitCommitHorizontal" size={14} /></span>}
+                                <span className="truncate">{commit.subject}</span>
+                                <span className="truncate" style={{ fontSize: 11, color: c('descriptionForeground') }}>{commit.detail}</span>
+                            </div>
+                        ))}
                     </div>
                 ))}
                 <span {...region('Scrollbar (hover)', ['scrollbarSlider.hoverBackground'])} className="absolute" style={{ right: 0, top: 70, width: 10, height: 120, background: c('scrollbarSlider.hoverBackground') }} />
             </div>
         );
 
-        const Tab = ({ label, icon, kind, isModified, groupActive }) => {
+        const Tab = ({ label, icon, iconKey, kind, isModified, groupActive }) => {
             const looks = {
                 active: groupActive
                     ? { name: 'Active tab (active group)', keys: ['tab.activeBackground', 'tab.activeForeground', 'tab.activeBorderTop', 'tab.activeBorder'], background: c('tab.activeBackground'), color: c('tab.activeForeground'), top: c('tab.activeBorderTop', 'transparent'), bottom: c('tab.activeBorder', 'transparent') }
@@ -585,7 +617,9 @@
                 : (groupActive ? 'tab.inactiveModifiedBorder' : 'tab.unfocusedInactiveModifiedBorder');
             return (
                 <div {...region(look.name, look.keys)} className="flex items-center gap-1.5 px-3 shrink-0" style={{ height: 35, background: look.background, color: look.color, borderTop: `1px solid ${look.top}`, borderBottom: `1px solid ${look.bottom}`, borderRight: `1px solid ${c('tab.border')}`, fontSize: 12 }}>
-                    <Icon name={icon} size={14} />
+                    {iconKey
+                        ? <span {...region('Terminal tab icon', [iconKey])} className="inline-flex" style={{ color: c(iconKey) }}><Icon name={icon} size={14} /></span>
+                        : <Icon name={icon} size={14} />}
                     <span style={{ fontStyle: kind === 'hover' ? 'italic' : 'normal' }}>{label}</span>
                     {isModified ? <span {...region('Modified dot', [modifiedKey])} className="rounded-full" style={{ width: 8, height: 8, background: c(modifiedKey, 'currentColor'), marginLeft: 4 }} /> : <Icon name="X" size={13} style={{ opacity: kind === 'active' ? 1 : 0 }} />}
                 </div>
@@ -639,6 +673,7 @@
                         <TabBar>
                             <Tab label="Badge.tsx" icon="FileCode" kind="active" groupActive={false} />
                             <Tab label="notes.md" icon="FileText" kind="inactive" groupActive={false} />
+                            <Tab label="Login session timeout" icon="SquareTerminal" iconKey="overseer.terminalIcon" kind="inactive" groupActive={false} />
                         </TabBar>
                         <div className="overflow-hidden pt-1"><CodeView tokenLines={JSX_TOKEN_LINES} showDecorations={false} /></div>
                     </div>
@@ -705,7 +740,7 @@
                 <StatusItem name="Status item" keys={['statusBar.foreground']}><Icon name="GitBranch" size={13} />feat/theme-lab</StatusItem>
                 <StatusItem name="Error item" keys={['statusBarItem.errorForeground']} style={{ color: c('statusBarItem.errorForeground') }}><Icon name="CircleX" size={13} />1</StatusItem>
                 <StatusItem name="Warning item" keys={['statusBarItem.warningForeground']} style={{ color: c('statusBarItem.warningForeground') }}><Icon name="TriangleAlert" size={13} />2</StatusItem>
-                <StatusItem name="Prominent item" keys={['statusBarItem.prominentBackground', 'statusBarItem.prominentForeground']} style={{ background: c('statusBarItem.prominentBackground', 'rgba(0, 0, 0, 0.5)'), color: c('statusBarItem.prominentForeground', c('statusBar.foreground')) }}><Icon name="Layers" size={13} />Overseer: 2 busy</StatusItem>
+                <StatusItem name="Overseer workspace item" keys={['statusBar.foreground']}><Icon name="Layers" size={13} />Default</StatusItem>
                 <span className="ml-auto flex items-center h-full">
                     <StatusItem name="Hovered status item" keys={['statusBarItem.hoverBackground']} style={{ background: c('statusBarItem.hoverBackground') }}>Ln 6, Col 16</StatusItem>
                     <StatusItem name="Status item" keys={['statusBar.foreground']}>Spaces: 2</StatusItem>
@@ -767,12 +802,12 @@
             <div {...region('Notification toast', ['notifications.background', 'notifications.foreground', 'notificationToast.border', 'notificationsInfoIcon.foreground'])} className="absolute rounded-sm p-2.5" style={{ right: 12, bottom: 34, width: 340, background: c('notifications.background'), color: c('notifications.foreground'), border: `1px solid ${c('notificationToast.border')}`, zIndex: 3, fontSize: 12 }}>
                 <div className="flex gap-2">
                     <span {...region('Info icon', ['notificationsInfoIcon.foreground'])} className="inline-flex" style={{ color: c('notificationsInfoIcon.foreground') }}><Icon name="Info" size={16} /></span>
-                    <span className="flex-1">Chunked billing export is waiting for your input. <span {...region('Link', ['textLink.foreground'])} style={{ color: c('textLink.foreground') }}>Show transcript</span></span>
+                    <span className="flex-1">Overseer: no statuses set up yet. <span {...region('Link', ['textLink.foreground'])} style={{ color: c('textLink.foreground') }}>Learn more</span></span>
                     <Icon name="X" size={14} />
                 </div>
                 <div className="flex justify-end gap-2 mt-2.5">
                     <span {...region('Secondary button', ['button.secondaryBackground', 'button.secondaryForeground'])} className="px-3 rounded-sm" style={{ lineHeight: '24px', background: c('button.secondaryBackground'), color: c('button.secondaryForeground') }}>Later</span>
-                    <span {...region('Primary button', ['button.background', 'button.foreground', 'button.border'])} className="px-3 rounded-sm" style={{ lineHeight: '24px', background: c('button.background'), color: c('button.foreground'), border: `1px solid ${c('button.border', 'transparent')}` }}>Open Session</span>
+                    <span {...region('Primary button', ['button.background', 'button.foreground', 'button.border'])} className="px-3 rounded-sm" style={{ lineHeight: '24px', background: c('button.background'), color: c('button.foreground'), border: `1px solid ${c('button.border', 'transparent')}` }}>Open Settings</span>
                 </div>
             </div>
         );

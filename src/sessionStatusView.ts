@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { Registry } from "./registry";
-import { MarkedStatus, parseSessionStatuses, SessionStatus, StatusOption, statusColorId, statusOfSession } from "./sessionStatuses";
+import { MarkedStatus, parseSessionStatuses, SessionStatus, sessionLabelColorId, StatusOption, statusOfSession } from "./sessionStatuses";
+import { findSessionTerminal } from "./terminals";
 
 const SESSION_STATUS_SCHEME = "overseer-session";
 const STATUSES_SETTING = "sessionStatuses";
@@ -57,17 +58,24 @@ export class SessionStatusDecorations implements vscode.FileDecorationProvider, 
     if (uri.scheme !== SESSION_STATUS_SCHEME) {
       return undefined;
     }
-    const status = sessionStatusFor(this.registry, uri.path.slice(1));
-    if (status === undefined) {
+    const sessionId = uri.path.slice(1);
+    const status = sessionStatusFor(this.registry, sessionId);
+    const labelColorId = sessionLabelColorId(status?.color, findSessionTerminal(sessionId) !== undefined);
+    if (labelColorId === undefined) {
       return undefined;
     }
-    const tooltip = status.reason ? `${status.name}: ${status.reason}` : status.name;
-    return new vscode.FileDecoration(status.badge || undefined, tooltip, new vscode.ThemeColor(statusColorId(status.color)));
+    const tooltip = status === undefined ? undefined : status.reason ? `${status.name}: ${status.reason}` : status.name;
+    return new vscode.FileDecoration(status?.badge || undefined, tooltip, new vscode.ThemeColor(labelColorId));
   }
 
   // A cleared status needs its old row repainted too, so every pinned row refreshes, not only those with a status.
-  private refresh(): void {
+  refresh(): void {
     this.decorationChangeEmitter.fire(this.registry.pinnedSessionIds().map(sessionStatusUri));
+  }
+
+  // A terminal opened or closed changes only its own session's label color.
+  refreshSession(sessionId: string): void {
+    this.decorationChangeEmitter.fire([sessionStatusUri(sessionId)]);
   }
 
   dispose(): void {

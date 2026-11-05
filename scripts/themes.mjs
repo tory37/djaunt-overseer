@@ -14,7 +14,7 @@ export const THEMES = {
     accent: "#D4A017", accentHi: "#F0C24B", onAccent: "#0D0C0A",
     red: "#E0624A", orange: "#E08A55", yellow: "#F0C24B", green: "#5FBF7A", blue: "#6FA8E8", purple: "#9F8AE6", cyan: "#7FD8F0", pink: "#E07AA8",
     kw: "#F0C24B", fn: "#8DB7EC", str: "#9CCB86", num: "#E89A6A", type: "#B4A2EE", cnst: "#7FD8F0", prop: "#C8C0AE", cmt: "#6E6858", punc: "#8E887A",
-    roles: { secondary: "cyan", param: "pink", tag: "red", attr: "orange", brackets: ["pink", "green", "orange", "purple"] },
+    roles: { secondary: "cyan", param: "pink", tag: "red", attr: "orange", brackets: ["pink", "green", "orange", "purple"], elsewhere: "orange", duplicate: "yellow", groupIcons: ["pink", "green", "purple", "orange"] },
   },
   ember: {
     label: "Overseer Ember", kind: "dark",
@@ -24,7 +24,7 @@ export const THEMES = {
     accent: "#FF6B2C", accentHi: "#FF9560", onAccent: "#100A07",
     red: "#F0505A", orange: "#FF9560", yellow: "#F2C14E", green: "#54D7A7", blue: "#7F9BF0", purple: "#B48AE8", cyan: "#7FD8F0", pink: "#E07AC0",
     kw: "#FF9560", fn: "#8FA8F2", str: "#7FDDB5", num: "#F2C14E", type: "#D98BCF", cnst: "#7FD8F0", prop: "#C8BCAE", cmt: "#6F6255", punc: "#948677",
-    roles: { secondary: "cyan", param: "pink", tag: "red", attr: "yellow", brackets: ["yellow", "green", "purple", "pink"] },
+    roles: { secondary: "cyan", param: "pink", tag: "red", attr: "yellow", brackets: ["yellow", "green", "purple", "pink"], elsewhere: "yellow", duplicate: "red", groupIcons: ["green", "purple", "yellow", "pink"] },
   },
   frost: {
     label: "Overseer Frost", kind: "dark",
@@ -34,7 +34,7 @@ export const THEMES = {
     accent: "#6BA4FF", accentHi: "#A6C8FF", onAccent: "#060B14",
     red: "#F06A6A", orange: "#F0B46B", yellow: "#EED27A", green: "#6BD6B5", blue: "#6BA4FF", purple: "#B58CE8", cyan: "#7FD8F0", pink: "#E88CC4",
     kw: "#B58CE8", fn: "#6BA4FF", str: "#6BD6B5", num: "#F0B46B", type: "#E8A6C8", cnst: "#7FD8F0", prop: "#B9C3D3", cmt: "#5F6B80", punc: "#8590A3",
-    roles: { secondary: "purple", param: "yellow", tag: "pink", attr: "orange", brackets: ["cyan", "orange", "green", "pink"] },
+    roles: { secondary: "purple", param: "yellow", tag: "pink", attr: "orange", brackets: ["cyan", "orange", "green", "pink"], elsewhere: "orange", duplicate: "yellow", groupIcons: ["green", "yellow", "pink", "orange"] },
   },
   parchment: {
     label: "Overseer Parchment", kind: "light",
@@ -44,7 +44,7 @@ export const THEMES = {
     accent: "#86610F", accentHi: "#A87A12", onAccent: "#F8F3E7",
     red: "#B5352A", orange: "#9A5017", yellow: "#785700", green: "#24723F", blue: "#2C66A8", purple: "#674FB6", cyan: "#18687D", pink: "#AD3670",
     kw: "#8A5E00", fn: "#2C66A8", str: "#3A7429", num: "#9A5017", type: "#674FB6", cnst: "#18687D", prop: "#554D40", cmt: "#857B68", punc: "#655D4F",
-    roles: { secondary: "blue", param: "pink", tag: "red", attr: "orange", brackets: ["purple", "green", "orange", "pink"] },
+    roles: { secondary: "blue", param: "pink", tag: "red", attr: "orange", brackets: ["purple", "green", "orange", "pink"], elsewhere: "orange", duplicate: "yellow", groupIcons: ["green", "purple", "pink", "red"] },
   },
 };
 
@@ -419,6 +419,32 @@ function modernLayoutTextChecks(theme) {
   ];
 }
 
+// The solid accent on dark themes; darkened on light ones so it reads on the sidebar.
+const accentIconColor = (theme) => (theme.kind === "dark" ? theme.accent : mix(theme.accent, "#000000", LIGHT_ACCENT_TEXT_DARKEN));
+
+// The tab bar is darker than the sidebar on Parchment, so a light theme's green darkens a little there.
+const LIGHT_TERMINAL_ICON_DARKEN = 0.15;
+const terminalIconColor = (theme) => (theme.kind === "dark" ? theme.green : mix(theme.green, "#000000", LIGHT_TERMINAL_ICON_DARKEN));
+
+// The tree's session state icons. Elsewhere and duplicate pick hues that stay clear of the accent.
+export const sessionStateColors = (theme) => ({
+  "overseer.sessionWorking": accentIconColor(theme),
+  "overseer.sessionRunning": theme.green,
+  "overseer.sessionCompacting": theme.secondary,
+  "overseer.sessionElsewhere": theme[theme.roles.elsewhere],
+  "overseer.sessionSuspended": theme.muted,
+  "overseer.sessionDuplicate": theme[theme.roles.duplicate],
+});
+
+// Accent first, then the second accent, then four more distinct hues.
+export const groupIconColors = (theme) => {
+  const hues = [accentIconColor(theme), theme.secondary, ...theme.roles.groupIcons.map((key) => theme[key])];
+  return Object.fromEntries(hues.map((hex, index) => [`overseer.groupIcon${index + 1}`, hex]));
+};
+
+// The colors the extension draws in its own sidebar rows, so each one is checked against the sidebar.
+export const sidebarIconColors = (theme) => ({ ...sessionStateColors(theme), ...groupIconColors(theme), "overseer.repoClean": theme.secondary });
+
 export const linkStatusColors = (theme) =>
   Object.fromEntries(Object.entries(LINK_STATUS_PALETTE_KEYS).map(([colorId, paletteKey]) => [colorId, theme[paletteKey]]));
 
@@ -659,12 +685,8 @@ export function workbenchColors(theme) {
     "minimapGutter.addedBackground": theme.green,
     "minimapGutter.deletedBackground": theme.red,
 
-    "overseer.sessionWorking": theme.green,
-    "overseer.sessionRunning": theme.green,
-    "overseer.sessionCompacting": theme.cyan,
-    "overseer.sessionElsewhere": theme.yellow,
-    "overseer.sessionSuspended": theme.muted,
-    "overseer.sessionDuplicate": theme.orange,
+    ...sidebarIconColors(theme),
+    "overseer.terminalIcon": terminalIconColor(theme),
     "overseer.statusGray": theme.muted,
     "overseer.statusRed": theme.red,
     "overseer.statusOrange": theme.orange,
@@ -863,6 +885,7 @@ const COLOR_TEXT_PAIRS = [
   ["quickInput.foreground", "quickInputList.focusBackground"],
   ["tab.activeForeground", "tab.activeBackground"],
   ["tab.inactiveForeground", "tab.inactiveBackground"],
+  ["overseer.terminalIcon", "tab.inactiveBackground"],
   ["tab.unfocusedActiveForeground", "tab.unfocusedActiveBackground"],
   ["sideBarSectionHeader.foreground", "sideBarSectionHeader.background"],
   ["sideBarTitle.foreground", "sideBar.background"],
@@ -886,7 +909,7 @@ const OPAQUE_HEX_LENGTH = 7;
 export function contrastChecks(theme, colors) {
   const checks = [
     ...STATUS_KEYS.map((key) => ({ what: `status ${key} on side`, foreground: theme[key], background: theme.side })),
-    ...Object.entries(linkStatusColors(theme)).map(([colorId, hex]) => ({ what: `${colorId} on side`, foreground: hex, background: theme.side })),
+    ...Object.entries({ ...linkStatusColors(theme), ...sidebarIconColors(theme) }).map(([colorId, hex]) => ({ what: `${colorId} on side`, foreground: hex, background: colors["sideBar.background"] })),
     ...[...CHECKED_SYNTAX_KEYS, ...ROLE_SYNTAX_KEYS].map((key) => ({ what: `syntax ${key} on editor`, foreground: theme[key], background: colors["editor.background"] })),
     ...SURFACE_KEYS.map((key) => ({ what: `fg on ${key}`, foreground: theme.fg, background: theme[key] })),
     ...modernLayoutTextChecks(theme),
@@ -942,11 +965,34 @@ const tabSpotlightColors = (theme) => ({
   "tab.unfocusedActiveBorderTop": TRANSPARENT,
 });
 
+// Every tab spotlight value an earlier release copied into user settings, from `git log -p -- src/themeTabSpotlight.ts`.
+// The extension treats a stored value found here as its own and upgrades it. Add the old value when a shipped one changes.
+const SHIPPED_TAB_SPOTLIGHT_HISTORY = {
+  "Overseer Hoard": { "tab.unfocusedActiveBackground": ["#0D0C0A"] },
+  "Overseer Ember": { "tab.unfocusedActiveBackground": ["#100A07"] },
+  "Overseer Frost": { "tab.unfocusedActiveBackground": ["#060B14"] },
+  "Overseer Parchment": { "tab.unfocusedActiveBackground": ["#F3EDDF"] },
+};
+
+// Drops the current value and repeats from each key's history.
+function priorTabSpotlight(label, currentColors) {
+  const history = SHIPPED_TAB_SPOTLIGHT_HISTORY[label] ?? {};
+  return Object.fromEntries(
+    Object.entries(history)
+      .map(([colorId, colors]) => [colorId, [...new Set(colors.map((color) => color.toUpperCase()))].filter((color) => color !== currentColors[colorId]?.toUpperCase())])
+      .filter(([, colors]) => colors.length > 0),
+  );
+}
+
 function writeTabSpotlight() {
   const spotlightByLabel = Object.fromEntries(Object.values(THEMES).map((theme) => [theme.label, tabSpotlightColors(shippedPalette(theme))]));
+  const priorByLabel = Object.fromEntries(Object.entries(spotlightByLabel).map(([label, colors]) => [label, priorTabSpotlight(label, colors)]));
   const source = [
     "// Generated by scripts/themes.mjs (npm run themes). Do not edit by hand.",
     `export const THEME_TAB_SPOTLIGHT: Readonly<Record<string, Readonly<Record<string, string>>>> = ${JSON.stringify(spotlightByLabel, null, 2)};`,
+    "",
+    "// Values earlier releases wrote. A stored value found here is the extension's, so it gets upgraded or removed.",
+    `export const THEME_TAB_SPOTLIGHT_PRIOR: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = ${JSON.stringify(priorByLabel, null, 2)};`,
     "",
   ].join("\n");
   fs.writeFileSync(TAB_SPOTLIGHT_PATH, source);

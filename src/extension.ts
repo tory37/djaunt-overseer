@@ -23,7 +23,7 @@ import { createGitRootResolver } from "./gitRoots";
 import { registerRepoCommands } from "./repoCommands";
 import { RepoService } from "./repoService";
 import { resolveRepos } from "./repoSet";
-import { COMMIT_DOCUMENT_SCHEME, CommitDocumentProvider, RepoTreeProvider } from "./repoTree";
+import { COMMIT_DOCUMENT_SCHEME, CommitDocumentProvider, RepoRowDecorations, RepoTreeProvider } from "./repoTree";
 import { CommitAuthorship, indexCommitAuthorship } from "./gitStatus";
 import { registerHandoffCommands } from "./handoffCommands";
 import { HistoryPanel } from "./historyPanel";
@@ -95,6 +95,12 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
   const statusDecorations = new SessionStatusDecorations(registry);
+  const refreshTerminalDecoration = (terminal: vscode.Terminal): void => {
+    const sessionId = sessionIdOfTerminal(terminal);
+    if (sessionId !== undefined) {
+      statusDecorations.refreshSession(sessionId);
+    }
+  };
   const repoService = new RepoService(log);
   let authorshipSource: SessionMeta[] | undefined;
   let authorshipByPrefix = new Map<string, CommitAuthorship[]>();
@@ -114,6 +120,7 @@ export function activate(context: vscode.ExtensionContext): void {
     commitAuthorship,
   });
   const repoTreeView = vscode.window.createTreeView("overseer.repos", { treeDataProvider: repoTreeProvider });
+  const repoRowDecorations = new RepoRowDecorations(repoService);
   repoService.setVisible(repoTreeView.visible);
   // A new resolver each time, so a folder that became a repo since the last update is found.
   const updateRepos = async (): Promise<void> => {
@@ -129,6 +136,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const liveSessions = await liveMonitor.refresh();
     if (await adoptTerminalsByPid(liveSessions, shellPidsBySessionId(registry))) {
       refreshTree();
+      statusDecorations.refresh();
     }
     for (const { fromSessionId, toSessionId } of await followSwitchedSessions(liveSessions)) {
       log.appendLine(`Session ${fromSessionId} became ${toSessionId} in the same terminal; moving its row`);
@@ -204,6 +212,8 @@ export function activate(context: vscode.ExtensionContext): void {
     repoService,
     repoTreeProvider,
     repoTreeView,
+    repoRowDecorations,
+    vscode.window.registerFileDecorationProvider(repoRowDecorations),
     repoTreeView.onDidChangeVisibility(({ visible }) => repoService.setVisible(visible)),
     vscode.workspace.registerTextDocumentContentProvider(COMMIT_DOCUMENT_SCHEME, new CommitDocumentProvider(repoService)),
     sessionIndex.onDidChange(() => repoTreeProvider.refresh()),
@@ -236,8 +246,9 @@ export function activate(context: vscode.ExtensionContext): void {
       refreshTree();
       void adoptRevivedTerminals();
     }),
-    vscode.window.onDidOpenTerminal(() => {
+    vscode.window.onDidOpenTerminal((openedTerminal) => {
       refreshTree();
+      refreshTerminalDecoration(openedTerminal);
       void adoptRevivedTerminals();
     }),
     // A reload can bring a tab back without its name; renaming needs the tab active, so it waits for focus.
@@ -252,8 +263,9 @@ export function activate(context: vscode.ExtensionContext): void {
         void vscode.commands.executeCommand("workbench.action.terminal.renameWithArg", { name: expectedName });
       }
     }),
-    vscode.window.onDidCloseTerminal(() => {
+    vscode.window.onDidCloseTerminal((closedTerminal) => {
       refreshTree();
+      refreshTerminalDecoration(closedTerminal);
       void sessionIndex.refresh();
       void liveMonitor.refresh();
     }),

@@ -8,6 +8,7 @@ const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 const FALLBACK_SHELL = "/bin/zsh";
 const SUSPEND_TIMEOUT_MS = 8_000;
 const CLEAR_INPUT_LINE = "\x15";
+const TERMINAL_ICON_COLOR_ID = "overseer.terminalIcon";
 export const SESSION_ID_ENV_VAR = "OVERSEER_SESSION_ID";
 
 // Terminals revived after a window reload can lose their env, so they are matched to sessions by pid instead.
@@ -152,6 +153,7 @@ export function openShellTerminal(sessionId: string, title: string, cwd: string,
     env: { [SESSION_ID_ENV_VAR]: sessionId },
     location: vscode.TerminalLocation.Editor,
     iconPath: new vscode.ThemeIcon("terminal-bash"),
+    color: new vscode.ThemeColor(TERMINAL_ICON_COLOR_ID),
   });
   terminal.show();
   return terminal;
@@ -217,6 +219,7 @@ function launchClaudeTerminal(
     env: { [SESSION_ID_ENV_VAR]: sessionId },
     location: vscode.TerminalLocation.Editor,
     iconPath: new vscode.ThemeIcon("terminal"),
+    color: new vscode.ThemeColor(TERMINAL_ICON_COLOR_ID),
   });
   terminal.show();
   return terminal;

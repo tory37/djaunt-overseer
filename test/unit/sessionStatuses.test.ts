@@ -4,6 +4,7 @@ import {
   DEFAULT_SESSION_STATUSES,
   doneStatusOf,
   parseSessionStatuses,
+  sessionLabelColorId,
   statusColorId,
   statusIdFor,
   statusOfSession,
@@ -94,5 +95,20 @@ describe("status helpers", () => {
     expect(statusOfSession("a", assignments, DEFAULT_SESSION_STATUSES)?.name).toBe("Triage");
     expect(statusOfSession("b", assignments, DEFAULT_SESSION_STATUSES)).toBeUndefined();
     expect(statusOfSession("c", assignments, DEFAULT_SESSION_STATUSES)).toBeUndefined();
+  });
+});
+
+describe("sessionLabelColorId", () => {
+  it("colors an open terminal's label like the running icon", () => {
+    expect(sessionLabelColorId(undefined, true)).toBe("overseer.sessionRunning");
+  });
+
+  it("leaves a closed terminal plain", () => {
+    expect(sessionLabelColorId(undefined, false)).toBeUndefined();
+  });
+
+  it("lets a marked status win, open or closed", () => {
+    expect(sessionLabelColorId("red", true)).toBe("overseer.statusRed");
+    expect(sessionLabelColorId("red", false)).toBe("overseer.statusRed");
   });
 });

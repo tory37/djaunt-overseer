@@ -1366,6 +1366,86 @@
         }
       },
       {
+        "id": "overseer.groupIcon1",
+        "description": "Overseer group folder icon: 1st user group, then every 6th.",
+        "defaults": {
+          "dark": "charts.yellow",
+          "light": "charts.yellow",
+          "highContrast": "charts.yellow",
+          "highContrastLight": "charts.yellow"
+        }
+      },
+      {
+        "id": "overseer.groupIcon2",
+        "description": "Overseer group folder icon: 2nd user group, then every 6th.",
+        "defaults": {
+          "dark": "terminal.ansiCyan",
+          "light": "terminal.ansiCyan",
+          "highContrast": "terminal.ansiCyan",
+          "highContrastLight": "terminal.ansiCyan"
+        }
+      },
+      {
+        "id": "overseer.groupIcon3",
+        "description": "Overseer group folder icon: 3rd user group, then every 6th.",
+        "defaults": {
+          "dark": "charts.green",
+          "light": "charts.green",
+          "highContrast": "charts.green",
+          "highContrastLight": "charts.green"
+        }
+      },
+      {
+        "id": "overseer.groupIcon4",
+        "description": "Overseer group folder icon: 4th user group, then every 6th.",
+        "defaults": {
+          "dark": "charts.purple",
+          "light": "charts.purple",
+          "highContrast": "charts.purple",
+          "highContrastLight": "charts.purple"
+        }
+      },
+      {
+        "id": "overseer.groupIcon5",
+        "description": "Overseer group folder icon: 5th user group, then every 6th.",
+        "defaults": {
+          "dark": "terminal.ansiMagenta",
+          "light": "terminal.ansiMagenta",
+          "highContrast": "terminal.ansiMagenta",
+          "highContrastLight": "terminal.ansiMagenta"
+        }
+      },
+      {
+        "id": "overseer.groupIcon6",
+        "description": "Overseer group folder icon: 6th user group, then every 6th.",
+        "defaults": {
+          "dark": "charts.orange",
+          "light": "charts.orange",
+          "highContrast": "charts.orange",
+          "highContrastLight": "charts.orange"
+        }
+      },
+      {
+        "id": "overseer.repoClean",
+        "description": "Overseer Repos view: icon and name of a repo with no changed files.",
+        "defaults": {
+          "dark": "terminal.ansiCyan",
+          "light": "terminal.ansiCyan",
+          "highContrast": "terminal.ansiCyan",
+          "highContrastLight": "terminal.ansiCyan"
+        }
+      },
+      {
+        "id": "overseer.terminalIcon",
+        "description": "Overseer terminal tab icon: Claude and shell terminals that Overseer opens.",
+        "defaults": {
+          "dark": "terminal.ansiGreen",
+          "light": "terminal.ansiGreen",
+          "highContrast": "terminal.ansiGreen",
+          "highContrastLight": "terminal.ansiGreen"
+        }
+      },
+      {
         "id": "overseer.prDraft",
         "description": "Overseer PR status: draft.",
         "defaults": {
