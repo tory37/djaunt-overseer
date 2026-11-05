@@ -105,6 +105,13 @@ const ansiPalette = (theme) => {
 
 const withAlpha = (hex, alphaHex) => hex + alphaHex;
 
+const LIST_SELECT_ACCENT_WEIGHT = 0.48;
+const LIST_INACTIVE_SELECT_ACCENT_WEIGHT = 0.34;
+const listSelectColors = (theme) => ({
+  active: mix(theme.side, theme.accent, LIST_SELECT_ACCENT_WEIGHT),
+  inactive: mix(theme.side, theme.accent, LIST_INACTIVE_SELECT_ACCENT_WEIGHT),
+});
+
 const RAIL_ALPHA = "8C";
 const WIDGET_EDGE_ALPHA = "73";
 const TRANSPARENT = "#00000000";
@@ -229,6 +236,7 @@ const linkStatusColors = (theme) =>
 function workbenchColors(theme) {
   const isDark = theme.kind === "dark";
   const ansi = ansiPalette(theme);
+  const listSelect = listSelectColors(theme);
   const terminalColors = {};
   for (const [name, hex] of Object.entries(ansi.base)) terminalColors[`terminal.ansi${name}`] = hex;
   for (const [name, hex] of Object.entries(ansi.bright)) terminalColors[`terminal.ansiBright${name}`] = hex;
@@ -278,11 +286,11 @@ function workbenchColors(theme) {
 
     "list.hoverBackground": theme.hover,
     "list.hoverForeground": theme.fg,
-    "list.activeSelectionBackground": theme.select,
+    "list.activeSelectionBackground": listSelect.active,
     "list.activeSelectionForeground": theme.fg,
-    "list.inactiveSelectionBackground": theme.inactiveSelect,
+    "list.inactiveSelectionBackground": listSelect.inactive,
     "list.inactiveSelectionForeground": theme.fg,
-    "list.focusBackground": theme.select,
+    "list.focusBackground": listSelect.active,
     "list.inactiveFocusOutline": theme.border,
     "list.highlightForeground": isDark ? theme.accentHi : theme.accent,
     "list.focusHighlightForeground": isDark ? theme.accentHi : theme.accent,
@@ -557,6 +565,7 @@ function contrastFailures(variantName, theme) {
     ...CHECKED_SYNTAX_KEYS.map((key) => ({ what: `syntax ${key} on editor`, foreground: theme[key], background: theme.editor })),
     ...SURFACE_KEYS.map((key) => ({ what: `fg on ${key}`, foreground: theme.fg, background: theme[key] })),
     ...modernLayoutTextChecks(theme),
+    ...Object.entries(listSelectColors(theme)).map(([state, background]) => ({ what: `fg on list ${state} selection`, foreground: theme.fg, background })),
   ];
   const ratios = checks.map((check) => ({ ...check, ratio: contrastRatio(check.foreground, check.background) }));
   const lowest = ratios.reduce((min, check) => (check.ratio < min.ratio ? check : min));
