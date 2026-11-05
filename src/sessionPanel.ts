@@ -580,10 +580,11 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .ticket-chip .kind-badge { width: 16px; height: 16px; }
   .dot { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--status-color, var(--muted)); }
   .list { list-style: none; margin: 0; padding: 0; }
-  .link-row { position: relative; display: grid; grid-template-columns: 18px minmax(0, max-content) minmax(0, 1fr) auto; grid-template-areas: "badge key status actions" ". label label label"; align-items: center; column-gap: var(--s2); min-height: var(--row-height); padding: 2px var(--s4) 2px calc(var(--s4) + var(--depth, 0) * var(--indent)); box-sizing: border-box; transition: background-color 80ms linear; }
+  .link-row { position: relative; display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; grid-template-areas: "badge head actions" ". label label"; align-items: center; column-gap: var(--s2); min-height: var(--row-height); padding: 2px var(--s4) 2px calc(var(--s4) + var(--depth, 0) * var(--indent)); box-sizing: border-box; transition: background-color 80ms linear; }
   .link-row > .kind-badge { grid-area: badge; }
-  .link-row > .key { grid-area: key; max-width: none; }
-  .link-row > .row-status { grid-area: status; justify-self: end; display: flex; align-items: center; gap: var(--s1); min-width: 0; }
+  .row-head { grid-area: head; display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--s2); min-width: 0; }
+  .row-head > .key { max-width: 100%; }
+  .row-head > .row-status { display: flex; align-items: center; gap: var(--s1); max-width: 100%; min-width: 0; margin-left: auto; }
   .link-row > .actions { grid-area: actions; }
   .link-row > .label { grid-area: label; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; padding-bottom: 2px; font-size: 12px; line-height: 16px; }
   .link-row:hover { background: var(--vscode-list-hoverBackground); }
@@ -892,12 +893,14 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       item.style.setProperty("--status-color", row.statusColor);
     }
     item.title = row.hoverTitle;
-    item.append(glyphElement(row), keyElement(row, "key"));
+    const head = element("span", "row-head");
+    head.append(keyElement(row, "key"));
     if (row.shortStatus) {
       const status = element("span", "row-status");
       status.append(element("span", "dot"), element("span", "short-status ellipsis", row.shortStatus));
-      item.append(status);
+      head.append(status);
     }
+    item.append(glyphElement(row), head);
     const label = row.label || MISSING_LABELS[row.kind];
     if (label) {
       item.append(element("span", "label", label));
