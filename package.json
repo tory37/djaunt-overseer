@@ -1119,6 +1119,11 @@
           "minimum": 0,
           "description": "Minutes after any pass on a session, in any window, before an auto pass can run on it again."
         },
+        "overseer.theme.tabSpotlight": {
+          "type": "boolean",
+          "default": true,
+          "description": "With an Overseer theme active, add tab colors to your user settings so the focused editor group's active tab gets the accent tint and edge. VS Code's modern UI only reads tab colors from settings. Your own values are kept."
+        },
         "overseer.links.liveStatus": {
           "type": "boolean",
           "default": true,

@@ -148,6 +148,8 @@ Then run **Developer: Reload Window**. Cmd+R only reloads in the F5 development 
 
 For the matching look, run **Preferences: Color Theme** and pick **Overseer Hoard** (or Ember, Frost, Parchment). Each edges the window and the focused tab, list, and widgets in its accent color.
 
+VS Code's modern UI reads tab colors only from settings, so with an Overseer theme active Overseer adds the focused tab's tint and edge to your user `workbench.colorCustomizations`. It keeps your own values. Turn it off with `overseer.theme.tabSpotlight`.
+
 ## Requirements
 
 - VS Code 1.106 or later.

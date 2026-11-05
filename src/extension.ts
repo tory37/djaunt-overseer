@@ -30,6 +30,7 @@ import { HistoryPanel } from "./historyPanel";
 import { SessionFocusTracker } from "./sessionFocus";
 import { SessionPreview } from "./sessionPreview";
 import { SESSION_PANEL_VIEW_ID, SessionPanelProvider } from "./sessionPanel";
+import { registerTabSpotlightSync } from "./tabSpotlightSync";
 import { SessionTreeProvider } from "./tree";
 import { ShownSessionTitle, shownSessionTitle } from "./sessionTitle";
 import { SessionStatusDecorations } from "./sessionStatusView";
@@ -184,6 +185,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     log,
+    registerTabSpotlightSync(log),
     sessionIndex,
     liveMonitor,
     linkService,

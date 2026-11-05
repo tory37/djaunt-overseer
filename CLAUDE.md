@@ -69,8 +69,11 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `sessionSidebarText.ts` | Pure: the Session sidebar's meta line, state sentence, short link status, and row hover text. |
 | `resourceRows.ts` | Pure: sidebar link rows and stale-drag checks. |
 | `sessionPreview.ts` / `sessionPreviewModel.ts` | One reused editor tab for sessions with no terminal here: summary, last turns, prompts, and the commits and PRs the transcript scan found. Resume replaces it with the terminal. The model is pure. |
-| `scripts/themes.mjs` | Dev only: the Overseer theme palettes. Writes `themes/*.json` and the site's `docs/assets/overseer-themes.js`, and fails if text contrast is under 4.5:1. Run `npm run themes` after a palette change. |
+| `scripts/themes.mjs` | Dev only: the Overseer theme palettes. Writes `themes/*.json`, the site's `docs/assets/overseer-themes.js`, and `src/themeTabSpotlight.ts`, and fails if text contrast is under 4.5:1. Run `npm run themes` after a palette change. |
 | `themes/` | Generated color themes: Hoard, Ember, Frost (dark), Parchment (light). Edit the script, not the JSON. |
+| `themeTabSpotlight.ts` | Generated: each Overseer theme's four spotlight tab colors. Edit `scripts/themes.mjs`, not this file. |
+| `tabSpotlight.ts` | Pure: adds the spotlight tab colors to `workbench.colorCustomizations` per theme block, never over a user value, or removes only the unchanged ones. |
+| `tabSpotlightSync.ts` | Applies `tabSpotlight` to the global `workbench.colorCustomizations` on activation and on a theme or `overseer.theme.tabSpotlight` change. Adds only while an Overseer theme is active. Logs with `[tabSpotlight]`. |
 
 ## Rules
 
@@ -80,7 +83,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 - Send slash commands only when the session is idle. Typed input is lost while Claude is busy.
 - Never resume a session that is live elsewhere. Two processes on one transcript corrupt it. Offer a fork.
 - Session names reach the shell. Quote with `quoteForShell` and strip newlines.
-- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `claudeLaunch`, `handoff`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerEval`, `analyzerFlags`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`, `sessionTitle`) and test it there. `vscode` can't be imported in unit tests.
+- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `claudeLaunch`, `handoff`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerEval`, `analyzerFlags`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`, `sessionTitle`, `tabSpotlight`) and test it there. `vscode` can't be imported in unit tests.
 - The agent is not told about Overseer. Sessions launch as plain `claude`. The extension derives tracking from transcripts.
 - New commands need an entry in `contributes.commands`, a menu `when` clause, and `"when": "false"` under `commandPalette` if they need a tree node.
 
