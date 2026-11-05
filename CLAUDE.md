@@ -36,7 +36,6 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `claudeRunner.ts` | Shared headless `claude -p` runner and its flags (`--json-schema` included). |
 | `linkCache.ts` | The scan cache in globalStorage, and the versioned cache file helpers. |
 | `linkView.ts` | Pure: link URLs, display ids, a row link from an item key, concurrency limiter. |
-| `scripts/link-icons.mjs` | Writes the themed Lucide SVGs in `media/links`. Rerun after changing an icon or color. |
 | `transcriptLines.ts` | Reads complete transcript lines from a byte offset, and one line back from its end offset. |
 | `analysisState.ts` | Pure: per-session analysis state (session title, workstreams, artifact titles, where lines, derived status, watermark) and its defensive reader. |
 | `workstreamEdits.ts` | Pure: the user's workstream edits (`overseer.workstreamEdits.v2`): renames, pins (to a workstream or Unsorted), done, order. The merge applies them last. Removals come from link marks via `withLinkMarkRemovals`. |
@@ -70,7 +69,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `sessionSidebarText.ts` | Pure: the Session sidebar's meta line, state sentence, short link status, and row hover text. |
 | `resourceRows.ts` | Pure: sidebar link rows and stale-drag checks. |
 | `sessionPreview.ts` / `sessionPreviewModel.ts` | One reused editor tab for sessions with no terminal here: summary, last turns, prompts, and the commits and PRs the transcript scan found. Resume replaces it with the terminal. The model is pure. |
-| `scripts/themes.mjs` | Dev only: the Overseer theme palettes. Writes `themes/*.json` and fails if text contrast is under 4.5:1. Run `npm run themes` after a palette change. |
+| `scripts/themes.mjs` | Dev only: the Overseer theme palettes. Writes `themes/*.json` and the site's `docs/assets/overseer-themes.js`, and fails if text contrast is under 4.5:1. Run `npm run themes` after a palette change. |
 | `themes/` | Generated color themes: Hoard, Ember, Frost (dark), Parchment (light). Edit the script, not the JSON. |
 
 ## Rules

@@ -27,6 +27,8 @@
 
     <script src="https://unpkg.com/lucide@1.49.0/dist/umd/lucide.min.js"></script>
 
+    <script src="assets/overseer-themes.js"></script>
+
     <script>
         tailwind.config = {
             theme: {
@@ -91,16 +93,42 @@
             return <span ref={iconHost} aria-hidden="true" className={`inline-flex shrink-0 ${className}`} />;
         };
 
-        // Same colors as scripts/link-icons.mjs writes for the extension's dark theme.
+        const OVERSEER_THEMES = window.OVERSEER_THEMES;
+        const DEFAULT_THEME_ID = 'hoard';
+        const CARD_FRAME_ALPHA = '73';
+
+        // Colors resolve from the nearest container's --ov-* variables, so each mock shows its own theme.
         const LINK_COLORS = {
-            green: '#5FBF7A',
-            gray: '#9DA3AE',
-            purple: '#9F8AE6',
-            red: '#E0492E',
-            gold: '#F0C24B',
-            cyan: '#7FD8F0',
-            dim: '#6B6B6B',
+            ...Object.fromEntries(Object.keys(OVERSEER_THEMES[DEFAULT_THEME_ID].links).map((linkKey) => [linkKey, `var(--ov-${linkKey})`])),
+            commit: 'var(--ov-muted)',
+            artifact: 'var(--ov-cyan)',
+            removed: 'var(--ov-faint)',
         };
+
+        const overseerVariables = (theme) => ({
+            ...Object.fromEntries(Object.entries(theme.palette).map(([paletteKey, hex]) => [`--ov-${paletteKey}`, hex])),
+            ...Object.fromEntries(Object.entries(theme.links).map(([linkKey, hex]) => [`--ov-${linkKey}`, hex])),
+            '--ov-card-frame': theme.palette.accent + CARD_FRAME_ALPHA,
+        });
+
+        const mockSurfaceVariables = (theme) => ({
+            '--dj-bg': theme.palette.editor,
+            '--dj-surface': theme.palette.side,
+            '--dj-surface-raised': theme.palette.raised,
+            '--dj-border': theme.palette.border,
+            '--dj-text': theme.palette.fg,
+            '--dj-text-muted': theme.palette.muted,
+            '--dj-accent': theme.palette.accent,
+            '--dj-accent-hi': theme.palette.accentHi,
+            '--dj-accent-deep': theme.palette.accent + CARD_FRAME_ALPHA,
+            '--dj-on-accent': theme.palette.onAccent,
+            '--dj-success': theme.palette.green,
+            '--dj-warning': theme.palette.yellow,
+        });
+
+        const themedMockStyle = (theme) => ({ ...overseerVariables(theme), ...mockSurfaceVariables(theme) });
+
+        const CARD_FRAME_STYLE = { outline: '1px solid var(--ov-card-frame)', outlineOffset: '-1px' };
 
         const LinkIcon = ({ name, color }) => (
             <span style={{ color: LINK_COLORS[color] }} className="inline-flex"><Icon name={name} className="w-4 h-4" /></span>
@@ -166,7 +194,7 @@
             elsewhere: { name: 'AppWindow', className: 'text-warning' },
             suspended: { name: 'Pause', className: 'text-muted' },
             duplicate: { name: 'TriangleAlert', className: 'text-warning' },
-            compacting: { name: 'RefreshCw', className: 'text-[#7FD8F0] animate-spin motion-reduce:animate-none' },
+            compacting: { name: 'RefreshCw', className: 'text-[color:var(--ov-cyan)] animate-spin motion-reduce:animate-none' },
         };
 
         const LIVE_STATES = ['running', 'working', 'duplicate', 'compacting'];
@@ -234,9 +262,16 @@
             );
         };
 
-        const prItem = (label, text, detail, color = 'green', icon = 'GitPullRequest') => ({ icon, color, label, text, detail });
-        const commitItem = (hash, subject, repo) => ({ icon: 'GitCommitHorizontal', color: 'gray', label: hash, text: subject, detail: repo });
-        const artifactItem = (shortName, slug) => ({ icon: 'Sparkles', color: 'cyan', label: shortName, detail: 'artifact', hover: slug });
+        const PR_STATE_LINK_COLORS = {
+            draft: 'prDraft',
+            open: 'prOpen',
+            'review required': 'prReviewRequired',
+            approved: 'prApproved',
+            merged: 'prMerged',
+        };
+        const prItem = (label, text, state, icon = 'GitPullRequest') => ({ icon, color: PR_STATE_LINK_COLORS[state], label, text, detail: state });
+        const commitItem = (hash, subject, repo) => ({ icon: 'GitCommitHorizontal', color: 'commit', label: hash, text: subject, detail: repo });
+        const artifactItem = (shortName, slug) => ({ icon: 'Sparkles', color: 'artifact', label: shortName, detail: 'artifact', hover: slug });
 
         const SESSION_DETAILS = {
             '5f1c9a2e': {
@@ -245,7 +280,7 @@
                 workstreams: [
                     {
                         title: 'Session timeout fix',
-                        tickets: [{ key: 'PROJ-2567', detail: 'In Progress', color: 'gold' }],
+                        tickets: [{ key: 'PROJ-2567', detail: 'In Progress', color: 'ticketProgress' }],
                         items: [
                             prItem('web-app#412', 'Extend refresh window', 'approved'),
                             commitItem('a1b2c3d', 'Extend session timeout', 'web-app'),
@@ -262,8 +297,8 @@
                     },
                     {
                         title: 'Cookie flag',
-                        tickets: [{ key: 'PROJ-2571', detail: 'Done', color: 'green', icon: 'TicketCheck' }],
-                        items: [prItem('web-app#409', 'Set SameSite on the session cookie', 'merged', 'purple', 'GitMerge')],
+                        tickets: [{ key: 'PROJ-2571', detail: 'Done', color: 'ticketDone', icon: 'TicketCheck' }],
+                        items: [prItem('web-app#409', 'Set SameSite on the session cookie', 'merged', 'GitMerge')],
                         isDone: true,
                     },
                 ],
@@ -280,9 +315,9 @@
                 workstreams: [
                     {
                         title: 'Chunked billing export',
-                        tickets: [{ key: 'OPS-4410', detail: 'In Progress', color: 'gold' }],
+                        tickets: [{ key: 'OPS-4410', detail: 'In Progress', color: 'ticketProgress' }],
                         items: [
-                            prItem('api#388', 'Stream export in chunks', 'draft', 'gray', 'GitPullRequestDraft'),
+                            prItem('api#388', 'Stream export in chunks', 'draft', 'GitPullRequestDraft'),
                             prItem('infra#77', 'Export bucket policy', 'open'),
                             commitItem('b7d09e4', 'Write export parts to S3', 'api'),
                         ],
@@ -306,7 +341,7 @@
                 status: { label: 'In Progress', className: 'text-warning', isAuto: true },
                 where: ['The new build runs. 12 nav links were fixed.'],
                 workstreams: [],
-                unsorted: [{ icon: 'Ticket', color: 'gray', label: 'DOCS-88', text: 'Docs build migration', detail: 'To Do' }],
+                unsorted: [{ icon: 'Ticket', color: 'ticketTodo', label: 'DOCS-88', text: 'Docs build migration', detail: 'To Do' }],
             },
             '9a4c7d21': {
                 where: [],
@@ -439,7 +474,7 @@
                         <Icon name="ChevronRight" className={`w-3 h-3 transition-transform duration-100 ease-linear ${isOpen ? 'rotate-90' : ''}`} />
                         Removed ({items.length})
                     </button>
-                    {isOpen && items.map((item) => <WorkItemRow key={item.label} item={{ ...item, color: 'dim' }} action={<RestoreAction />} />)}
+                    {isOpen && items.map((item) => <WorkItemRow key={item.label} item={{ ...item, color: 'removed' }} action={<RestoreAction />} />)}
                 </div>
             );
         };
@@ -462,7 +497,7 @@
             const stateIcon = STATE_ICONS[session.state];
             const details = SESSION_DETAILS[session.id];
             return (
-                <div className="hidden xl:flex flex-col min-w-0 border-l border-line bg-surface">
+                <div style={CARD_FRAME_STYLE} className="hidden xl:flex flex-col min-w-0 bg-surface">
                     <div className="pt-3.5 px-4">
                         <div className="flex items-center gap-2 min-w-0">
                             <Icon name={stateIcon.name} className={`w-4 h-4 ${stateIcon.className}`} />
@@ -515,7 +550,7 @@
             return <div className={`whitespace-pre-wrap break-words ${lineColors[line.kind]}`}>{line.text}</div>;
         };
 
-        const OverseerMock = () => {
+        const OverseerMock = ({ theme }) => {
             const [sessions, setSessions] = useState(INITIAL_SESSIONS);
             const [selectedId, setSelectedId] = useState(INITIAL_SESSIONS[0].id);
             const [terminalLines, setTerminalLines] = useState(() => {
@@ -566,15 +601,15 @@
             const isSelectedLive = selectedSession !== undefined && isLiveHere(selectedSession);
 
             return (
-                <div className="border border-line bg-bg font-mono text-xs shadow-float">
-                    <div className="flex items-center gap-2 h-8 px-3 border-b border-line bg-surface">
+                <div style={themedMockStyle(theme)} className="border border-line bg-[color:var(--ov-deep)] text-bone font-mono text-xs shadow-float">
+                    <div className="flex items-center gap-2 h-8 px-3">
                         <span className="w-2.5 h-2.5 rounded-full bg-line" />
                         <span className="w-2.5 h-2.5 rounded-full bg-line" />
                         <span className="w-2.5 h-2.5 rounded-full bg-line" />
                         <span className="flex-1 text-center text-muted truncate">agent-tools — Visual Studio Code</span>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-[3rem_22rem_1fr] xl:grid-cols-[3rem_22rem_1fr_18rem]">
-                        <div className="hidden md:flex flex-col items-center gap-4 py-3 border-r border-line bg-surface text-muted">
+                    <div className="grid grid-cols-1 gap-1.5 px-1.5 pb-1.5 md:pl-0 md:grid-cols-[3rem_22rem_1fr] xl:grid-cols-[3rem_22rem_1fr_18rem]">
+                        <div className="hidden md:flex flex-col items-center gap-4 py-3 text-muted">
                             <Icon name="Files" className="w-5 h-5" />
                             <Icon name="Search" className="w-5 h-5" />
                             <Icon name="GitBranch" className="w-5 h-5" />
@@ -583,7 +618,7 @@
                                 <img src="assets/overseer-gold.svg" alt="" className="w-6 h-6" />
                             </span>
                         </div>
-                        <div className="border-b md:border-b-0 md:border-r border-line bg-surface">
+                        <div style={CARD_FRAME_STYLE} className="bg-surface">
                             <div className="flex items-center justify-between h-8 px-3 text-muted">
                                 <span className="uppercase tracking-label">Overseer</span>
                                 <span className="flex gap-2">
@@ -648,7 +683,7 @@
                                 })}
                             </div>
                         </div>
-                        <div className="flex flex-col min-w-0 min-h-72">
+                        <div style={CARD_FRAME_STYLE} className="flex flex-col min-w-0 min-h-72 bg-bg">
                             <div className="flex h-8 border-b border-line bg-surface overflow-hidden">
                                 {selectedSession !== undefined && !isSelectedLive && (
                                     <span className="flex items-center gap-2 px-3 border-r border-line max-w-48 bg-bg text-bone border-t border-t-accent italic">
@@ -702,6 +737,42 @@
                         </div>
                         <SessionSidebar session={focusedSession} onToggle={toggleSession} />
                     </div>
+                </div>
+            );
+        };
+
+        const ThemeSwatch = ({ theme }) => (
+            <span style={{ background: theme.palette.side, borderColor: theme.palette.accent }} className="inline-flex items-center justify-center w-4 h-4 border">
+                <span style={{ background: theme.palette.accent }} className="w-1.5 h-1.5" />
+            </span>
+        );
+
+        const ThemeSwitcher = ({ selectedThemeId, onSelect }) => (
+            <div role="radiogroup" aria-label="Overseer color theme" className="flex flex-wrap items-center gap-2 font-mono text-xs">
+                <span className="mr-1 uppercase tracking-label text-muted">Theme</span>
+                {Object.entries(OVERSEER_THEMES).map(([themeId, theme]) => {
+                    const isSelected = themeId === selectedThemeId;
+                    return (
+                        <button
+                            key={themeId}
+                            role="radio"
+                            aria-checked={isSelected}
+                            onClick={() => onSelect(themeId)}
+                            className={`flex items-center gap-2 h-8 px-3 border transition-colors duration-200 ease-dj ${isSelected ? 'border-accent text-bone' : 'border-line text-muted hover:border-accent hover:text-bone'}`}
+                        >
+                            <ThemeSwatch theme={theme} />{theme.name}
+                        </button>
+                    );
+                })}
+            </div>
+        );
+
+        const OverseerShowcase = () => {
+            const [selectedThemeId, setSelectedThemeId] = useState(DEFAULT_THEME_ID);
+            return (
+                <div className="space-y-3">
+                    <ThemeSwitcher selectedThemeId={selectedThemeId} onSelect={setSelectedThemeId} />
+                    <OverseerMock theme={OVERSEER_THEMES[selectedThemeId]} />
                 </div>
             );
         };
@@ -901,13 +972,13 @@
         const LinkStatusVisual = () => (
             <div className="font-mono text-xs grid grid-cols-2 gap-x-4 gap-y-2">
                 {[
-                    { icon: 'GitPullRequest', color: 'green', label: 'PR open' },
-                    { icon: 'Ticket', color: 'gray', label: 'To Do' },
-                    { icon: 'GitPullRequestDraft', color: 'gray', label: 'PR draft' },
-                    { icon: 'Ticket', color: 'gold', label: 'In Progress' },
-                    { icon: 'GitMerge', color: 'purple', label: 'PR merged' },
-                    { icon: 'TicketCheck', color: 'green', label: 'Done' },
-                    { icon: 'GitPullRequestClosed', color: 'red', label: 'PR closed' },
+                    { icon: 'GitPullRequest', color: 'prOpen', label: 'PR open' },
+                    { icon: 'Ticket', color: 'ticketTodo', label: 'To Do' },
+                    { icon: 'GitPullRequestDraft', color: 'prDraft', label: 'PR draft' },
+                    { icon: 'Ticket', color: 'ticketProgress', label: 'In Progress' },
+                    { icon: 'GitMerge', color: 'prMerged', label: 'PR merged' },
+                    { icon: 'TicketCheck', color: 'ticketDone', label: 'Done' },
+                    { icon: 'GitPullRequestClosed', color: 'prClosed', label: 'PR closed' },
                 ].map((entry) => (
                     <div key={entry.label} className="flex items-center gap-3">
                         <LinkIcon name={entry.icon} color={entry.color} />
@@ -1064,7 +1135,7 @@
                     <div className="space-y-1">
                         <div className="uppercase tracking-label text-muted">Commits</div>
                         <p className="flex items-center gap-2 text-bone"><Icon name="GitCommitHorizontal" className="w-4 h-4 text-muted" />7c41e0a Use a token bucket</p>
-                        <p className="flex items-center gap-2 text-bone"><LinkIcon name="GitPullRequest" color="green" />api#391</p>
+                        <p className="flex items-center gap-2 text-bone"><LinkIcon name="GitPullRequest" color="prOpen" />api#391</p>
                     </div>
                 </div>
             </div>
@@ -1159,7 +1230,7 @@
                 <SectionLabel text="Work" />
                 <Workstream workstream={{
                     title: 'Session timeout fix',
-                    tickets: [{ key: 'PROJ-2567', detail: 'In Progress', color: 'gold' }],
+                    tickets: [{ key: 'PROJ-2567', detail: 'In Progress', color: 'ticketProgress' }],
                     items: [
                         prItem('web-app#412', 'Extend refresh window', 'approved'),
                         commitItem('a1b2c3d', 'Extend session timeout', 'web-app'),
@@ -1197,10 +1268,10 @@
                     <span className="font-mono text-bone">b7d09e4</span>
                     <span className="flex-1 min-w-0 truncate text-muted">Write export parts to S3</span>
                 </div>
-                <UnsortedGroup items={[{ icon: 'Ticket', color: 'gray', label: 'OPS-4422', text: 'Export retries', detail: 'To Do' }]} />
+                <UnsortedGroup items={[{ icon: 'Ticket', color: 'ticketTodo', label: 'OPS-4422', text: 'Export retries', detail: 'To Do' }]} />
                 <RemovedGroup defaultOpen items={[
                     prItem('web-app#397', 'Passing mention', 'merged'),
-                    { icon: 'Ticket', color: 'gray', label: 'PROJ-2502', text: 'Login redirect', detail: 'To Do' },
+                    { icon: 'Ticket', color: 'ticketTodo', label: 'PROJ-2502', text: 'Login redirect', detail: 'To Do' },
                 ]} />
             </div>
         );
@@ -1226,6 +1297,26 @@
             </div>
         );
 
+        const ThemesVisual = () => (
+            <div className="grid grid-cols-2 gap-2 font-mono text-xs">
+                {Object.entries(OVERSEER_THEMES).map(([themeId, theme]) => (
+                    <div key={themeId} style={{ ...themedMockStyle(theme), ...CARD_FRAME_STYLE }} className="bg-surface text-bone p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                            <span>{theme.name}</span>
+                            <span className="text-muted">{theme.kind}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <LinkIcon name="GitPullRequest" color="prOpen" />
+                            <LinkIcon name="GitMerge" color="prMerged" />
+                            <LinkIcon name="Ticket" color="ticketProgress" />
+                            <LinkIcon name="TicketCheck" color="ticketDone" />
+                            <span className="ml-auto h-1 w-8 bg-accent" />
+                        </div>
+                    </div>
+                ))}
+            </div>
+        );
+
         // A lone last card spans both columns, so the grid never shows an empty cell.
         const isLastOfOddCount = (index, count) => count % 2 === 1 && index === count - 1;
 
@@ -1242,6 +1333,7 @@
             { title: 'Check PR and ticket status at a glance', body: 'Each PR and ticket shows its live status, and its icon takes the color you pick for that status. PR status comes from gh. Ticket status comes from the Jira MCP server Claude Code already uses.', Visual: LinkStatusVisual },
             { title: 'Recheck when it looks wrong', body: 'Update runs a Haiku pass on what is new, right now. Recheck rebuilds the workstreams from the whole transcript with Sonnet and a 64 KB digest. It keeps your edits. If a recheck drops much of the sorted work, a guard rejects it and keeps the old grouping. When an update never came, Flag: This Didn\'t Update logs a snapshot of why.', Visual: RecheckVisual },
             { title: 'Pick your own icons and colors', body: 'The Settings panel sets the icon and color for each session state, a color for every status in each Jira project, a color for each PR state, and which views show. Type Overseer in the Command Palette to reach every setting.', Visual: SettingsVisual },
+            { title: 'Four color themes tuned for the sidebars', body: 'Overseer ships Hoard, Ember, Frost, and Parchment. Parchment is the light one. Each sets the session, status, PR, and ticket colors so they stay readable on its sidebars, and frames each pane in a thin accent line. Pick one with Preferences: Color Theme.', Visual: ThemesVisual },
             { title: 'Keep plain terminals in their own view', body: 'New Terminal opens a shell in a folder you pick. Terminals get their own Terminals view, apart from your Claude sessions, with the same groups. Click one to bring it forward, and reopen it in the same folder after you close it. Settings can hide the Sessions, Terminals, and Repos views.', Visual: TerminalVisual },
             { title: 'Mark where each session stands', body: 'Set Status puts a session or terminal in Todo, Triage, In Progress, Blocked, AI Review, Human Review, or Ready to Ship. The status tints the row and adds a short badge. Blocked asks why, and the reason shows in the row\'s tooltip. Statuses do not follow Jira, so a status like Triage works. With no status set, Overseer suggests one from the transcript and tags it auto. A status you set wins. The Settings panel adds, renames, reorders, and recolors them.', Visual: StatusMarkVisual },
             { title: 'Send your usual prompts in two clicks', body: 'Click Run command in the Session sidebar while the session is idle. Pick a saved prompt, like Check PR Reviews, and Overseer types it into the session. Write {ticket link} in a prompt and Overseer asks for that value first. The list is the overseer.sessionCommands setting.', Visual: CommandsVisual },
@@ -1298,7 +1390,7 @@
         };
 
         const App = () => (
-            <div className="w-full">
+            <div style={overseerVariables(OVERSEER_THEMES[DEFAULT_THEME_ID])} className="w-full">
                 <header className="max-w-6xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between border-b border-line">
                     <a href="#" className="flex items-center gap-3">
                         <img src="assets/overseer-gold.svg" alt="" className="w-6 h-6" />
@@ -1335,8 +1427,8 @@
                         </div>
                         </div>
                         <div className="xl:-mr-32 space-y-3">
-                            <OverseerMock />
-                            <p className="font-mono text-xs text-muted">This is a live demo. Click a row to see its terminal, click the pause or play icon on a session, or double-click a title to rename it.</p>
+                            <OverseerShowcase />
+                            <p className="font-mono text-xs text-muted">This is a live demo. Click a row to see its terminal, click the pause or play icon on a session, or double-click a title to rename it. The theme buttons recolor it.</p>
                         </div>
                     </div>
                 </section>
