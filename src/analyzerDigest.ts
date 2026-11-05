@@ -200,7 +200,7 @@ export function buildAnalyzerDigest(input: AnalyzerDigestInput): AnalyzerDigest 
   const keptItemKeys = new Set(input.analysis.seedFacts.keptItemKeys);
   const stampedPrompts = input.events.flatMap((event) => (isStampedPrompt(event.userPrompt) ? [event.userPrompt] : []));
   const keptItems: { item: EnrichedCandidate; entry: string }[] = [];
-  const itemsHeading = `\n\n${input.mode === "recheck" ? "All items" : "New and unsorted items"}, oldest first (times are UTC):`;
+  const itemsHeading = `\n\n${input.mode === "recheck" ? "All items" : "New and unclassified items"}, oldest first (times are UTC):`;
   usedBytes += byteLength(itemsHeading);
   for (const item of rankedItems) {
     const stretchPrompt = stretchStartPrompt(stampedPrompts, timeMsOf(item.firstSeen), input.mode === "recheck");
@@ -286,15 +286,17 @@ function firstSeenOrder(item: EnrichedCandidate): number {
   return item.firstSeenOffsetBytes ?? item.lastSeenOffsetBytes ?? 0;
 }
 
-// Newest first, so the item budget drops the oldest. A diff shows what is new plus what is still unsorted; a recheck shows everything. Removed items never show; kept ones always do.
+// Newest first, so the item budget drops the oldest. A diff shows what is new plus what has no verdict yet; a recheck shows everything. Removed items never show; kept ones always do.
 function digestItems(input: AnalyzerDigestInput): EnrichedCandidate[] {
   const removedItemKeys = new Set(input.edits.removedItems);
   const keptItemKeys = new Set(input.analysis.seedFacts.keptItemKeys);
   const taggedTicketKeys = new Set(input.analysis.workstreams.flatMap((workstream) => workstream.ticketKeys));
+  const referenceItemKeys = new Set(input.analysis.referenceItemKeys);
   const isPlaced = (candidate: EnrichedCandidate): boolean =>
-    candidate.kind === "ticket"
+    referenceItemKeys.has(linkKey(candidate)) ||
+    (candidate.kind === "ticket"
       ? taggedTicketKeys.has(candidate.id)
-      : workstreamOfItem(input.analysis, linkKey(candidate)) !== undefined;
+      : workstreamOfItem(input.analysis, linkKey(candidate)) !== undefined);
   const isNew = (candidate: EnrichedCandidate): boolean =>
     (candidate.lastSeenOffsetBytes ?? 0) > input.analysis.watermarkBytes;
   return input.candidates
@@ -336,6 +338,7 @@ function stateSection(input: AnalyzerDigestInput): string {
       lines.push(`  - ${itemKey}${itemLabel === undefined ? "" : ` "${itemLabel}"`}${fixedText}`);
     }
   }
+  lines.push(`Reference items: ${analysis.referenceItemKeys.length === 0 ? "(none)" : analysis.referenceItemKeys.join(", ")}`);
   const pinnedTickets = Object.entries(edits.pinnedItems).filter(([itemKey]) => itemKey.startsWith(TICKET_ITEM_PREFIX));
   if (pinnedTickets.length > 0) {
     lines.push(`Ticket tags fixed by user: ${pinnedTickets.map(([itemKey, workstreamId]) => `${itemKey} on ${workstreamId}`).join(", ")}`);

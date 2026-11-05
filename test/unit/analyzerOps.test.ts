@@ -366,6 +366,14 @@ describe("artifact placement", () => {
     expect(ANALYZER_SYSTEM_PROMPT).toContain("Only an artifact that covers the whole session");
   });
 
+  it("asks for a verdict on every item and marks read-only items as reference", () => {
+    expect(ANALYZER_SYSTEM_PROMPT).toContain("Give every listed item exactly one verdict");
+    expect(ANALYZER_SYSTEM_PROMPT).toContain("mark_reference marks an item the session only read or named");
+    expect(ANALYZER_SYSTEM_PROMPT).toContain("Never assign an item to an empty workstream.");
+    expect(ANALYZER_SYSTEM_PROMPT).toMatch(/On a recheck pass[^\n]*mark every reference item again/);
+    expect(ANALYZER_SYSTEM_PROMPT).not.toContain("Leave an item out");
+  });
+
   it("accepts a reply that spreads artifacts across their workstreams", () => {
     const reply = {
       ops: [

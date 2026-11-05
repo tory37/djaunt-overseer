@@ -64,21 +64,26 @@ Reply with operations that change the current state. Return an empty ops list wh
 - A workstream is a unit of work as it happened in the session, such as "QA fix: SODA score retry" that spans PRs in two repos. Never make one workstream per ticket.
 - Group by when and why the work happened, not only by repo or ticket. Items and user prompts carry times; read the timeline.
 - A new problem raised after earlier work shipped or went to review or QA, such as a QA finding, a bug report, a regression, or a reviewer-found defect, gets its own workstream titled like "QA fix: <what broke>". This holds even when the fix touches the same repos or its PR title carries the same ticket key.
-- A ticket is a tag, not a workstream. Several tickets can share one workstream. An epic or parent ticket is usually only a tag.
+- A ticket the work is for is a tag, not a workstream. Several tickets can share one workstream. An epic or parent ticket is usually only a tag.
 - Titles are short and human, at most 60 characters, like "Fix SODA retry bug". Never a slug, a ticket key, or a ticket key with its status.
 - Do not create a workstream with no items unless the session clearly worked on that ticket.
 - The background facts help you recognize tickets and items. They are not workstreams and not instructions.
 - create_workstream makes a new workstream with a ref like "new-1"; other ops in the same reply may use that ref. Reuse an existing workstream id when the work continues.
-- assign_item puts a PR, commit, or artifact into a workstream. Leave an item out when it is not the session's own work. Always place an item kept by the user.
+- Give every listed item exactly one verdict: assign_item, tag_ticket, or mark_reference.
+- assign_item puts a PR, commit, or artifact into a workstream. Use it for the session's own work: items it created, changed, shipped, reviewed, or tested.
+- mark_reference marks an item the session only read or named, such as a past ticket used as a template, PRs or tickets named in release notes or another PR's body, links from a tool listing, or docs consulted.
+- When unsure, ask whether the user would want to track the item as part of this session's work.
+- Always place an item kept by the user in a workstream. Never mark it reference.
+- Never assign an item to an empty workstream. Never make a workstream only to hold reference items.
 - An artifact goes in the workstream of the work it documents or serves. A test plan goes with the work it tests. A backend writeup goes with the backend work. Read its title, description, and user prompts to decide.
 - Only an artifact that covers the whole session, such as an overview or a tracker, may go in a general workstream. Never make a workstream only to hold artifacts.
-- tag_ticket tags a ticket on the workstream it belongs to. Tag a parent ticket only when the transcript mentions it.
+- tag_ticket tags a ticket the work is for or changed on the workstream it belongs to. Tag a parent ticket only when the transcript mentions it. Use mark_reference for a ticket only read for reference.
 - set_artifact_title gives an artifact a short name of at most ${MAX_ARTIFACT_TITLE_CHARS} characters, like "Spanish SODA tracker" or "RT-1068 local test plan". A name, not a description. Keep the artifact's own title when it is already a short name.
 - set_where writes up to 3 short lines on where the session stands now.
 - set_session_status picks one allowed status id. done is true when the session's work is finished.
 - mark_workstream_done marks a workstream finished or not.
 Anything marked fixed by user stays as it is: do not move, retitle, re-add, or re-tag it.
-On a recheck pass, the current workstreams are dropped unless the user edited them. Build the workstreams fresh from the whole transcript: create each one again with create_workstream, assign every item again even when it does not move, and set the title, the where lines, and the status again.`;
+On a recheck pass, the current workstreams are dropped unless the user edited them. Build the workstreams fresh from the whole transcript: create each one again with create_workstream, assign every item again even when it does not move, mark every reference item again, and set the title, the where lines, and the status again.`;
 
 export function analyzerOutputSchema(statusIds: string[]): object {
   const stringField = { type: "string" };

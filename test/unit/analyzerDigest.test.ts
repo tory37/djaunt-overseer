@@ -121,7 +121,7 @@ describe("buildAnalyzerDigest", () => {
     expect(digest.text).toContain("User: the latest ask");
   });
 
-  it("shows new and unsorted items on a diff, every item on a recheck, and never removed or passive ones", () => {
+  it("shows new and unclassified items on a diff, every item on a recheck, and never removed or passive ones", () => {
     const analysis: SessionAnalysis = {
       ...emptyAnalysis(),
       watermarkBytes: 1000,
@@ -144,6 +144,31 @@ describe("buildAnalyzerDigest", () => {
     expect(diffDigest.text).toContain("Removed by the user, never assign or tag: pr:a/b/pull/4");
     const recheckDigest = buildAnalyzerDigest(digestInput({ analysis, candidates, edits, mode: "recheck" }));
     expect([...recheckDigest.itemKeys].sort()).toEqual(["pr:a/b/pull/1", "pr:a/b/pull/2", "pr:a/b/pull/3", "ticket:SOA-1"]);
+  });
+
+  it("titles the item list by pass", () => {
+    expect(buildAnalyzerDigest(digestInput()).text).toContain("New and unclassified items, oldest first");
+    expect(buildAnalyzerDigest(digestInput({ mode: "recheck" })).text).toContain("All items, oldest first");
+  });
+
+  it("leaves old reference items out of a diff but shows new ones, and lists every reference item in the state", () => {
+    const analysis: SessionAnalysis = {
+      ...emptyAnalysis(),
+      watermarkBytes: 1000,
+      referenceItemKeys: ["pr:a/b/pull/1", "ticket:SOA-1", "pr:a/b/pull/2"],
+    };
+    const candidates = [
+      candidate("pr", "a/b/pull/1", 500),
+      candidate("ticket", "SOA-1", 300),
+      candidate("pr", "a/b/pull/2", 2000),
+      candidate("pr", "a/b/pull/3", 400),
+    ];
+    const diffDigest = buildAnalyzerDigest(digestInput({ analysis, candidates }));
+    expect(diffDigest.itemKeys).toEqual(["pr:a/b/pull/3", "pr:a/b/pull/2"]);
+    expect(diffDigest.text).toContain("Reference items: pr:a/b/pull/1, ticket:SOA-1, pr:a/b/pull/2");
+    const recheckDigest = buildAnalyzerDigest(digestInput({ analysis, candidates, mode: "recheck" }));
+    expect([...recheckDigest.itemKeys].sort()).toEqual(["pr:a/b/pull/1", "pr:a/b/pull/2", "pr:a/b/pull/3", "ticket:SOA-1"]);
+    expect(buildAnalyzerDigest(digestInput()).text).toContain("Reference items: (none)");
   });
 
   it("marks user locks as fixed and lists the allowed statuses", () => {
