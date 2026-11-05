@@ -70,6 +70,8 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `sessionSidebarText.ts` | Pure: the Session sidebar's meta line, state sentence, short link status, and row hover text. |
 | `resourceRows.ts` | Pure: sidebar link rows and stale-drag checks. |
 | `sessionPreview.ts` / `sessionPreviewModel.ts` | One reused editor tab for sessions with no terminal here: summary, last turns, prompts, and the commits and PRs the transcript scan found. Resume replaces it with the terminal. The model is pure. |
+| `scripts/themes.mjs` | Dev only: the Overseer theme palettes. Writes `themes/*.json` and fails if text contrast is under 4.5:1. Run `npm run themes` after a palette change. |
+| `themes/` | Generated color themes: Hoard, Ember, Frost (dark), Parchment (light). Edit the script, not the JSON. |
 
 ## Rules
 

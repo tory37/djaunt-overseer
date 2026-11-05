@@ -11,6 +11,7 @@
     "vscode": "^1.106.0"
   },
   "categories": [
+    "Themes",
     "Other"
   ],
   "main": "./dist/extension.js",
@@ -1359,6 +1360,28 @@
           "highContrastLight": "list.warningForeground"
         }
       }
+    ],
+    "themes": [
+      {
+        "label": "Overseer Hoard",
+        "uiTheme": "vs-dark",
+        "path": "./themes/overseer-hoard-color-theme.json"
+      },
+      {
+        "label": "Overseer Ember",
+        "uiTheme": "vs-dark",
+        "path": "./themes/overseer-ember-color-theme.json"
+      },
+      {
+        "label": "Overseer Frost",
+        "uiTheme": "vs-dark",
+        "path": "./themes/overseer-frost-color-theme.json"
+      },
+      {
+        "label": "Overseer Parchment",
+        "uiTheme": "vs",
+        "path": "./themes/overseer-parchment-color-theme.json"
+      }
     ]
   },
   "scripts": {
@@ -1366,7 +1389,8 @@
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "package": "npm run build && vsce package --no-dependencies --skip-license"
+    "package": "npm run build && vsce package --no-dependencies --skip-license",
+    "themes": "node scripts/themes.mjs"
   },
   "devDependencies": {
     "@types/node": "22.20.5",
