@@ -356,6 +356,58 @@ describe("reference items", () => {
   });
 });
 
+describe("item-less duplicate workstreams", () => {
+  const STEP_TITLES = ["Triage: AOS task type", "Prove Back and find the cause", "Fix: guard reader route after Back"];
+
+  function stepOps(doneFlags: boolean[], tickets: string[][] = [["ASSMNT-2277"], ["ASSMNT-2277"], ["ASSMNT-2277"]]): AnalyzerOp[] {
+    return STEP_TITLES.flatMap((title, index): AnalyzerOp[] => [
+      { op: "create_workstream", ref: `new-${index}`, title },
+      ...tickets[index].map((ticket): AnalyzerOp => ({ op: "tag_ticket", ticket, workstream: `new-${index}` })),
+      { op: "mark_workstream_done", workstream: `new-${index}`, done: doneFlags[index] },
+    ]);
+  }
+
+  it("tells the model the steps of one task are one workstream", () => {
+    expect(ANALYZER_SYSTEM_PROMPT).toContain("Never split one task into a workstream per step.");
+    expect(ANALYZER_SYSTEM_PROMPT).toContain("A workstream with no items is allowed only when no other workstream carries its tickets.");
+    expect(ANALYZER_SYSTEM_PROMPT).not.toContain("unless the session clearly worked on that ticket");
+  });
+
+  it("merges item-less workstreams with the same ticket into the newest, not done while any step is open", () => {
+    const analysis = applyOps(emptyAnalysis(), stepOps([true, true, false]), edits(), context("recheck"));
+    expect(analysis.workstreams).toEqual([
+      { id: "ws-3", title: "Fix: guard reader route after Back", ticketKeys: ["ASSMNT-2277"], itemKeys: [], done: false },
+    ]);
+  });
+
+  it("marks the merged workstream done when every step was done", () => {
+    const analysis = applyOps(emptyAnalysis(), stepOps([true, true, true]), edits(), context());
+    expect(analysis.workstreams.map((workstream) => [workstream.id, workstream.done])).toEqual([["ws-3", true]]);
+  });
+
+  it("matches ticket sets in any order and keeps different sets apart", () => {
+    const tickets = [["SOA-1", "SOA-2"], ["SOA-2", "SOA-1"], ["SOA-1"]];
+    const analysis = applyOps(emptyAnalysis(), stepOps([false, false, false], tickets), edits(), context());
+    expect(analysis.workstreams.map((workstream) => workstream.id)).toEqual(["ws-2", "ws-3"]);
+  });
+
+  it("never merges a workstream that holds items", () => {
+    const ops: AnalyzerOp[] = [...stepOps([false, false, false]), { op: "assign_item", item: PR_A, workstream: "new-2" }];
+    const analysis = applyOps(emptyAnalysis(), ops, edits(), context());
+    expect(analysis.workstreams.map((workstream) => workstream.id)).toEqual(["ws-2", "ws-3"]);
+  });
+
+  it("skips workstreams the user edited", () => {
+    const firstPass = applyOps(emptyAnalysis(), stepOps([false, false, false]).slice(0, 3), edits(), context());
+    const userEdits = edits({ workstreamTitles: { "ws-1": "My triage" } });
+    const analysis = applyOps(firstPass, stepOps([false, false, false]).slice(3), userEdits, context());
+    expect(analysis.workstreams.map((workstream) => [workstream.id, workstream.title])).toEqual([
+      ["ws-1", "My triage"],
+      ["ws-3", "Fix: guard reader route after Back"],
+    ]);
+  });
+});
+
 describe("artifact placement", () => {
   const TEST_PLAN = "artifact:test-plan";
   const BACKEND_WRITEUP = "artifact:backend-writeup";
