@@ -3,3 +3,4 @@ dist/
 *.vsix
 .agents/
 media/codicons/
+theme-lab/lab-data.js

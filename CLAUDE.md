@@ -9,6 +9,7 @@ npm test            # vitest unit tests (test/unit)
 npm run typecheck   # tsc --noEmit
 npm run build       # esbuild bundles to dist/extension.js
 npm run package     # build + .vsix
+npm run theme-lab   # dev only: build theme-lab/lab-data.js, then open theme-lab/index.html
 code --install-extension djaunt-overseer-<version>.vsix --force
 ```
 
@@ -69,7 +70,8 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `sessionSidebarText.ts` | Pure: the Session sidebar's meta line, state sentence, short link status, and row hover text. |
 | `resourceRows.ts` | Pure: sidebar link rows and stale-drag checks. |
 | `sessionPreview.ts` / `sessionPreviewModel.ts` | One reused editor tab for sessions with no terminal here: summary, last turns, prompts, and the commits and PRs the transcript scan found. Resume replaces it with the terminal. The model is pure. |
-| `scripts/themes.mjs` | Dev only: the Overseer theme palettes. Writes `themes/*.json`, the site's `docs/assets/overseer-themes.js`, and `src/themeTabSpotlight.ts`, and fails if text contrast is under 4.5:1. Run `npm run themes` after a palette change. |
+| `scripts/themes.mjs` | Dev only: the Overseer theme palettes. Frame and floating layers use the `THEMES` surfaces; the editor body and tab bar use a tinted surface ladder. Second accent, syntax tiers, and bracket hues come from each theme's `roles`. Writes `themes/*.json`, the site's `docs/assets/overseer-themes.js`, and `src/themeTabSpotlight.ts`, and fails if text contrast is under 4.5:1. Run `npm run themes` after a palette change. |
+| `scripts/themeLab.mjs` / `theme-lab/` | Dev only: Theme Lab. Builds the shipped themes ("Current") plus each proposal layer, in order (`PROPOSAL_LAYERS` in `scripts/themeLabProposal.mjs`) into the git-ignored `theme-lab/lab-data.js`. `theme-lab/index.html` shows them in a mock workbench colored only by VS Code keys. |
 | `themes/` | Generated color themes: Hoard, Ember, Frost (dark), Parchment (light). Edit the script, not the JSON. |
 | `themeTabSpotlight.ts` | Generated: each Overseer theme's four spotlight tab colors. Edit `scripts/themes.mjs`, not this file. |
 | `tabSpotlight.ts` | Pure: adds the spotlight tab colors to `workbench.colorCustomizations` per theme block, never over a user value, or removes only the unchanged ones. |

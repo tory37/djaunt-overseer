@@ -2,25 +2,25 @@
 export const THEME_TAB_SPOTLIGHT: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   "Overseer Hoard": {
     "tab.activeBackground": "#2E2512",
-    "tab.unfocusedActiveBackground": "#0D0C0A",
+    "tab.unfocusedActiveBackground": "#0F0C05",
     "tab.activeBorderTop": "#D4A017",
     "tab.unfocusedActiveBorderTop": "#00000000"
   },
   "Overseer Ember": {
     "tab.activeBackground": "#3A1A0C",
-    "tab.unfocusedActiveBackground": "#100A07",
+    "tab.unfocusedActiveBackground": "#130905",
     "tab.activeBorderTop": "#FF6B2C",
     "tab.unfocusedActiveBorderTop": "#00000000"
   },
   "Overseer Frost": {
     "tab.activeBackground": "#16305A",
-    "tab.unfocusedActiveBackground": "#060B14",
+    "tab.unfocusedActiveBackground": "#070B13",
     "tab.activeBorderTop": "#6BA4FF",
     "tab.unfocusedActiveBorderTop": "#00000000"
   },
   "Overseer Parchment": {
     "tab.activeBackground": "#E8D49C",
-    "tab.unfocusedActiveBackground": "#F3EDDF",
+    "tab.unfocusedActiveBackground": "#F7EDD5",
     "tab.activeBorderTop": "#86610F",
     "tab.unfocusedActiveBorderTop": "#00000000"
   }
