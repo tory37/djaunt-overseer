@@ -105,12 +105,129 @@ const ansiPalette = (theme) => {
 
 const withAlpha = (hex, alphaHex) => hex + alphaHex;
 
+const RAIL_ALPHA = "8C";
+const WIDGET_EDGE_ALPHA = "73";
+const TRANSPARENT = "#00000000";
+
+function edgeColors(theme) {
+  const rail = withAlpha(theme.accent, RAIL_ALPHA);
+  const widgetEdge = withAlpha(theme.accent, WIDGET_EDGE_ALPHA);
+  return {
+    "titleBar.border": rail,
+    "statusBar.border": rail,
+    "statusBar.noFolderBorder": rail,
+    "statusBar.debuggingBorder": theme.orange,
+
+    focusBorder: theme.accent,
+    "list.focusOutline": theme.accent,
+    "list.focusAndSelectionOutline": theme.accent,
+    "sash.hoverBorder": theme.accent,
+    "editorGroup.focusedEmptyBorder": rail,
+    "tab.activeBorderTop": theme.accent,
+    "tab.activeBorder": TRANSPARENT,
+    "tab.unfocusedActiveBorderTop": TRANSPARENT,
+    "tab.unfocusedActiveBackground": theme.header,
+
+    "widget.border": widgetEdge,
+    "widget.shadow": TRANSPARENT,
+    "editorWidget.border": widgetEdge,
+    "editorHoverWidget.border": widgetEdge,
+    "editorSuggestWidget.border": widgetEdge,
+    "menu.border": widgetEdge,
+    "notifications.border": widgetEdge,
+    "notificationToast.border": widgetEdge,
+    "notificationCenter.border": widgetEdge,
+    "peekView.border": widgetEdge,
+
+    "activityBar.border": theme.border,
+    "sideBar.border": theme.border,
+    "sideBarSectionHeader.border": theme.border,
+    "editorGroupHeader.tabsBorder": theme.border,
+    "tab.border": theme.border,
+    "editorGroup.border": theme.border,
+    "terminal.border": theme.border,
+    "panel.border": theme.border,
+  };
+}
+
+const MODERN_ACTIVE_TINT_ALPHA = "2E";
+const MODERN_TAB_ACTION_ALPHA = "33";
+const MODERN_SASH_GRIP_ALPHA = "99";
+
+// Parchment's accent is 4.0:1 on deep, so the light variant darkens it to pass on the tinted pill.
+const LIGHT_ACTIVE_FOREGROUND_DARKEN = 0.3;
+const modernActiveForeground = (theme) =>
+  theme.kind === "dark" ? theme.accentHi : mix(theme.accent, "#000000", LIGHT_ACTIVE_FOREGROUND_DARKEN);
+
+// VS Code 1.143+ modern UI (workbench.experimental.modernUI) ignores the classic
+// tab, status bar, and title bar borders above and reads these ids instead.
+function modernLayoutColors(theme) {
+  const activeTint = withAlpha(theme.accent, MODERN_ACTIVE_TINT_ALPHA);
+  const tabAction = withAlpha(theme.accent, MODERN_TAB_ACTION_ALPHA);
+  const activeForeground = modernActiveForeground(theme);
+  // Modern UI drops the window, title bar, and status bar borders, so the gold frame moves onto the cards.
+  const cardFrame = withAlpha(theme.accent, WIDGET_EDGE_ALPHA);
+  return {
+    "modernUI.shellBackground": theme.deep,
+    "modernUI.inactiveShellBackground": theme.deep,
+    "surface.border": cardFrame,
+    "editor.border": cardFrame,
+    "modernPanel.border": cardFrame,
+    "editorGroupHeader.connectedTabsBackground": theme.header,
+    "editorGroupHeader.tabsBorder": cardFrame,
+    "window.activeBorder": withAlpha(theme.accent, RAIL_ALPHA),
+    "window.inactiveBorder": theme.border,
+
+    "modernActivityBar.background": theme.deep,
+    "modernActivityBar.inactiveBackground": theme.deep,
+    "modernActivityBar.border": theme.border,
+    "modernActivityBar.activeBackground": activeTint,
+    "modernActivityBar.activeForeground": activeForeground,
+    "modernActivityBar.hoverBackground": theme.hover,
+    "modernActivityBar.hoverForeground": theme.fg,
+    "modernActivityBarItem.activeBackground": activeTint,
+    "modernActivityBarItem.activeForeground": activeForeground,
+    "modernActivityBarItem.hoverBackground": theme.hover,
+    "modernActivityBarItem.hoverForeground": theme.fg,
+
+    "modernEditorTab.activeBackground": theme.select,
+    "modernEditorTab.activeForeground": theme.fg,
+    "modernEditorTab.activeHoverBackground": theme.select,
+    "modernEditorTab.inactiveBackground": TRANSPARENT,
+    "modernEditorTab.hoverBackground": theme.hover,
+    "modernEditorTab.hoverForeground": theme.fg,
+    "modernEditorTab.activeActionBackground": tabAction,
+    "modernEditorTab.activeHoverActionBackground": tabAction,
+    "modernEditorTab.hoverActionBackground": theme.raised,
+    "modernEditorTab.selectedActionBackground": tabAction,
+
+    "modernTab.activeBackground": theme.raised,
+    "modernTab.activeForeground": theme.fg,
+    "modernTab.hoverBackground": theme.hover,
+    "modernTab.hoverForeground": theme.fg,
+
+    "modernSash.gripForeground": withAlpha(theme.accent, MODERN_SASH_GRIP_ALPHA),
+  };
+}
+
+function modernLayoutTextChecks(theme) {
+  const activeForeground = modernActiveForeground(theme);
+  const tintedDeep = mix(theme.deep, theme.accent, parseInt(MODERN_ACTIVE_TINT_ALPHA, 16) / 255);
+  return [
+    { what: "modern editor tab active fg on select", foreground: theme.fg, background: theme.select },
+    { what: "modern editor tab hover fg on hover", foreground: theme.fg, background: theme.hover },
+    { what: "modern tab active fg on raised", foreground: theme.fg, background: theme.raised },
+    { what: "modern activity active fg on deep", foreground: activeForeground, background: theme.deep },
+    { what: "modern activity active fg on tinted deep", foreground: activeForeground, background: tintedDeep },
+    { what: "modern activity hover fg on hover", foreground: theme.fg, background: theme.hover },
+  ];
+}
+
 const linkStatusColors = (theme) =>
   Object.fromEntries(Object.entries(LINK_STATUS_PALETTE_KEYS).map(([colorId, paletteKey]) => [colorId, theme[paletteKey]]));
 
 function workbenchColors(theme) {
   const isDark = theme.kind === "dark";
-  const focus = withAlpha(theme.accent, "99");
   const ansi = ansiPalette(theme);
   const terminalColors = {};
   for (const [name, hex] of Object.entries(ansi.base)) terminalColors[`terminal.ansi${name}`] = hex;
@@ -121,11 +238,8 @@ function workbenchColors(theme) {
     descriptionForeground: theme.muted,
     disabledForeground: theme.faint,
     errorForeground: theme.red,
-    focusBorder: focus,
     contrastBorder: "#00000000",
     "icon.foreground": theme.muted,
-    "widget.border": theme.border,
-    "widget.shadow": isDark ? "#00000066" : "#4A3F2A22",
     "selection.background": withAlpha(theme.accent, "55"),
     "textLink.foreground": isDark ? theme.accentHi : theme.accent,
     "textLink.activeForeground": isDark ? theme.accentHi : theme.accent,
@@ -134,7 +248,6 @@ function workbenchColors(theme) {
     "textBlockQuote.border": theme.border,
     "textCodeBlock.background": theme.raised,
     "textSeparator.foreground": theme.border,
-    "sash.hoverBorder": focus,
     "progressBar.background": theme.accent,
     "scrollbar.shadow": "#00000000",
     "scrollbarSlider.background": withAlpha(theme.faint, "33"),
@@ -145,12 +258,10 @@ function workbenchColors(theme) {
     "titleBar.activeForeground": theme.fg,
     "titleBar.inactiveBackground": theme.deep,
     "titleBar.inactiveForeground": theme.muted,
-    "titleBar.border": theme.border,
 
     "activityBar.background": theme.deep,
     "activityBar.foreground": theme.fg,
     "activityBar.inactiveForeground": theme.faint,
-    "activityBar.border": theme.border,
     "activityBar.activeBorder": theme.accent,
     "activityBar.activeBackground": theme.deep,
     "activityBarBadge.background": theme.accent,
@@ -161,11 +272,9 @@ function workbenchColors(theme) {
 
     "sideBar.background": theme.side,
     "sideBar.foreground": theme.fg,
-    "sideBar.border": theme.border,
     "sideBarTitle.foreground": theme.muted,
     "sideBarSectionHeader.background": theme.header,
     "sideBarSectionHeader.foreground": theme.fg,
-    "sideBarSectionHeader.border": theme.border,
 
     "list.hoverBackground": theme.hover,
     "list.hoverForeground": theme.fg,
@@ -174,8 +283,6 @@ function workbenchColors(theme) {
     "list.inactiveSelectionBackground": theme.inactiveSelect,
     "list.inactiveSelectionForeground": theme.fg,
     "list.focusBackground": theme.select,
-    "list.focusOutline": focus,
-    "list.focusAndSelectionOutline": focus,
     "list.inactiveFocusOutline": theme.border,
     "list.highlightForeground": isDark ? theme.accentHi : theme.accent,
     "list.focusHighlightForeground": isDark ? theme.accentHi : theme.accent,
@@ -223,23 +330,17 @@ function workbenchColors(theme) {
     "editorOverviewRuler.modifiedForeground": theme.yellow,
     "editorOverviewRuler.addedForeground": theme.green,
     "editorOverviewRuler.deletedForeground": theme.red,
-    "editorGroup.border": theme.border,
     "editorGroupHeader.tabsBackground": theme.header,
-    "editorGroupHeader.tabsBorder": theme.border,
     "editorGroupHeader.noTabsBackground": theme.editor,
 
     "tab.activeBackground": theme.editor,
     "tab.activeForeground": theme.fg,
-    "tab.activeBorderTop": theme.accent,
     "tab.inactiveBackground": theme.header,
     "tab.inactiveForeground": theme.muted,
-    "tab.unfocusedActiveBackground": theme.editor,
     "tab.unfocusedActiveForeground": theme.muted,
-    "tab.unfocusedActiveBorderTop": theme.border,
     "tab.unfocusedInactiveBackground": theme.header,
     "tab.unfocusedInactiveForeground": theme.faint,
     "tab.hoverBackground": theme.hover,
-    "tab.border": theme.border,
 
     "breadcrumb.background": theme.editor,
     "breadcrumb.foreground": theme.muted,
@@ -249,15 +350,11 @@ function workbenchColors(theme) {
 
     "editorWidget.background": theme.raised,
     "editorWidget.foreground": theme.fg,
-    "editorWidget.border": theme.border,
     "editorSuggestWidget.background": theme.raised,
-    "editorSuggestWidget.border": theme.border,
     "editorSuggestWidget.foreground": theme.fg,
     "editorSuggestWidget.selectedBackground": theme.select,
     "editorSuggestWidget.highlightForeground": isDark ? theme.accentHi : theme.accent,
     "editorHoverWidget.background": theme.raised,
-    "editorHoverWidget.border": theme.border,
-    "peekView.border": theme.accent,
     "peekViewEditor.background": theme.editor,
     "peekViewResult.background": theme.side,
     "peekViewTitle.background": theme.header,
@@ -280,7 +377,6 @@ function workbenchColors(theme) {
 
     "menu.background": theme.raised,
     "menu.foreground": theme.fg,
-    "menu.border": theme.border,
     "menu.selectionBackground": theme.select,
     "menu.selectionForeground": theme.fg,
     "menu.separatorBackground": theme.border,
@@ -288,9 +384,7 @@ function workbenchColors(theme) {
 
     "notifications.background": theme.raised,
     "notifications.foreground": theme.fg,
-    "notifications.border": theme.border,
     "notificationCenterHeader.background": theme.header,
-    "notificationToast.border": theme.border,
     "notificationsErrorIcon.foreground": theme.red,
     "notificationsWarningIcon.foreground": theme.yellow,
     "notificationsInfoIcon.foreground": theme.blue,
@@ -313,7 +407,6 @@ function workbenchColors(theme) {
     "button.border": "#00000000",
 
     "panel.background": theme.deep,
-    "panel.border": theme.border,
     "panelTitle.activeForeground": theme.fg,
     "panelTitle.inactiveForeground": theme.muted,
     "panelTitle.activeBorder": theme.accent,
@@ -322,10 +415,8 @@ function workbenchColors(theme) {
 
     "statusBar.background": theme.deep,
     "statusBar.foreground": theme.muted,
-    "statusBar.border": theme.border,
     "statusBar.debuggingBackground": theme.deep,
     "statusBar.debuggingForeground": theme.orange,
-    "statusBar.debuggingBorder": theme.orange,
     "statusBar.noFolderBackground": theme.deep,
     "statusBar.noFolderForeground": theme.muted,
     "statusBarItem.hoverBackground": theme.hover,
@@ -336,7 +427,6 @@ function workbenchColors(theme) {
 
     "terminal.background": theme.editor,
     "terminal.foreground": theme.fg,
-    "terminal.border": theme.border,
     "terminal.selectionBackground": withAlpha(theme.accent, "44"),
     "terminal.inactiveSelectionBackground": withAlpha(theme.accent, "22"),
     "terminalCursor.foreground": theme.accent,
@@ -388,6 +478,8 @@ function workbenchColors(theme) {
     "overseer.statusPurple": theme.purple,
     "overseer.statusPink": theme.pink,
     ...linkStatusColors(theme),
+    ...edgeColors(theme),
+    ...modernLayoutColors(theme),
   };
 }
 
@@ -464,6 +556,7 @@ function contrastFailures(variantName, theme) {
     ...Object.entries(linkStatusColors(theme)).map(([colorId, hex]) => ({ what: `${colorId} on side`, foreground: hex, background: theme.side })),
     ...CHECKED_SYNTAX_KEYS.map((key) => ({ what: `syntax ${key} on editor`, foreground: theme[key], background: theme.editor })),
     ...SURFACE_KEYS.map((key) => ({ what: `fg on ${key}`, foreground: theme.fg, background: theme[key] })),
+    ...modernLayoutTextChecks(theme),
   ];
   const ratios = checks.map((check) => ({ ...check, ratio: contrastRatio(check.foreground, check.background) }));
   const lowest = ratios.reduce((min, check) => (check.ratio < min.ratio ? check : min));

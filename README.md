@@ -146,7 +146,7 @@ If `code` isn't on your PATH, use `"/Applications/Visual Studio Code.app/Content
 
 Then run **Developer: Reload Window**. Cmd+R only reloads in the F5 development host.
 
-For the matching look, run **Preferences: Color Theme** and pick **Overseer Hoard** (or Ember, Frost, Parchment).
+For the matching look, run **Preferences: Color Theme** and pick **Overseer Hoard** (or Ember, Frost, Parchment). Each edges the window and the focused tab, list, and widgets in its accent color.
 
 ## Requirements
 
