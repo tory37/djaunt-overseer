@@ -126,6 +126,7 @@ const ACTION_COMMANDS: Record<string, string> = {
   model: "overseer.switchModel",
   cost: "overseer.costSession",
   command: "overseer.runSessionCommand",
+  handoff: "overseer.handoffSession",
   analyze: "overseer.analyzeSession",
   recheckAnalysis: "overseer.recheckSession",
   flag: "overseer.flagMissedUpdate",
@@ -678,6 +679,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     ["model", "sparkle", "Model", "Model"],
     ["cost", "graph", "Cost", "Cost"],
     ["command", "terminal", "Run…", "Run command"],
+    ["handoff", "export", "Handoff…", "Hand off to a new session"],
   ];
   const SESSION_ACTIONS = [
     ["analyze", "sync", "Update", "Update now"],

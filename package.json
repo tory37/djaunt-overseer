@@ -236,6 +236,30 @@
         "category": "Overseer"
       },
       {
+        "command": "overseer.handoffSession",
+        "title": "Handoff…",
+        "category": "Overseer",
+        "icon": "$(export)"
+      },
+      {
+        "command": "overseer.handoffRevise",
+        "title": "Revise Handoff…",
+        "category": "Overseer",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "overseer.handoffApprove",
+        "title": "Approve Handoff…",
+        "category": "Overseer",
+        "icon": "$(check)"
+      },
+      {
+        "command": "overseer.handoffCancel",
+        "title": "Cancel Handoff",
+        "category": "Overseer",
+        "icon": "$(close)"
+      },
+      {
         "command": "overseer.summarizeSession",
         "title": "Summarize with Haiku",
         "category": "Overseer",
@@ -563,6 +587,11 @@
           "group": "1_session@4"
         },
         {
+          "command": "overseer.handoffSession",
+          "when": "view == overseer.sessions && viewItem =~ /^session\\.(running|working)(\\.|$)/",
+          "group": "1_session@5"
+        },
+        {
           "command": "overseer.newSession",
           "when": "view == overseer.sessions && viewItem =~ /^group\\./",
           "group": "inline@0"
@@ -832,6 +861,35 @@
         {
           "command": "overseer.openSessionById",
           "when": "false"
+        },
+        {
+          "command": "overseer.handoffRevise",
+          "when": "false"
+        },
+        {
+          "command": "overseer.handoffApprove",
+          "when": "false"
+        },
+        {
+          "command": "overseer.handoffCancel",
+          "when": "false"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "overseer.handoffApprove",
+          "when": "resourcePath =~ /overseer\\/handoffs\\/drafts\\/[^\\/]+\\.md$/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "overseer.handoffRevise",
+          "when": "resourcePath =~ /overseer\\/handoffs\\/drafts\\/[^\\/]+\\.md$/",
+          "group": "navigation@2"
+        },
+        {
+          "command": "overseer.handoffCancel",
+          "when": "resourcePath =~ /overseer\\/handoffs\\/drafts\\/[^\\/]+\\.md$/",
+          "group": "navigation@3"
         }
       ]
     },

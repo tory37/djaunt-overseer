@@ -62,7 +62,9 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `gitStatus.ts` | Pure: git arguments and parsers for status, log, and commit hashes in transcripts. |
 | `repoService.ts` / `repoTree.ts` | Repos view. Runs git (at most 4 at once), watches each `.git` folder, and builds the rows. |
 | `quickPick.ts` / `repoFilter.ts` | All Sessions picker and the `repo:` filter. |
-| `claudeLaunch.ts` | Pure: the plain `exec claude` launch command and `quoteForShell`. |
+| `claudeLaunch.ts` | Pure: the plain `exec claude` launch command, the new-session command with an optional first prompt, and `quoteForShell`. |
+| `handoff.ts` | Pure: handoff draft and approved paths under `~/.claude/overseer/handoffs/`, the one-line write, revise, and seed prompts, and the order that puts the new session below the old one. |
+| `handoffCommands.ts` | Handoff: asks the idle session for a draft, opens it when written, and the draft tab's Revise, Approve (Start below or Replace), and Cancel buttons. |
 | `sessionFocus.ts` / `sessionFocusState.ts` | The focused session: the active Claude terminal or the preview tab. The state rules are pure. |
 | `sessionPanel.ts` | Secondary Side Bar webview for the focused session: header with the title, a lock icon when locked, and the derived status; the Now lines; resume or suspend; workstreams with Unsorted and Removed, and the tile toolbar. Edits write `overseer.workstreamEdits.v2` and show at once. |
 | `sessionSidebarText.ts` | Pure: the Session sidebar's meta line, state sentence, short link status, and row hover text. |
@@ -77,7 +79,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 - Send slash commands only when the session is idle. Typed input is lost while Claude is busy.
 - Never resume a session that is live elsewhere. Two processes on one transcript corrupt it. Offer a fork.
 - Session names reach the shell. Quote with `quoteForShell` and strip newlines.
-- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `claudeLaunch`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerEval`, `analyzerFlags`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`, `sessionTitle`) and test it there. `vscode` can't be imported in unit tests.
+- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `claudeLaunch`, `handoff`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerEval`, `analyzerFlags`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`, `sessionTitle`) and test it there. `vscode` can't be imported in unit tests.
 - The agent is not told about Overseer. Sessions launch as plain `claude`. The extension derives tracking from transcripts.
 - New commands need an entry in `contributes.commands`, a menu `when` clause, and `"when": "false"` under `commandPalette` if they need a tree node.
 

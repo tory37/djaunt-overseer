@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import * as vscode from "vscode";
-import { launchShellCommand, quoteForShell } from "./claudeLaunch";
+import { launchShellCommand, newSessionCommand } from "./claudeLaunch";
 import { displayTitle, SessionMeta } from "./indexer";
 import { LiveSession } from "./liveParse";
 
@@ -128,10 +128,10 @@ export function startNewSession(
   sessionName: string | undefined,
   cwd: string,
   log: vscode.OutputChannel,
+  initialPrompt?: string,
 ): vscode.Terminal {
-  const nameArgument = sessionName === undefined ? "" : ` -n ${quoteForShell(sessionName)}`;
   log.appendLine(`Starting new session ${sessionId} in ${cwd}`);
-  return launchClaudeTerminal(sessionName ?? "New session", cwd, sessionId, `claude --session-id ${sessionId}${nameArgument}`);
+  return launchClaudeTerminal(sessionName ?? "New session", cwd, sessionId, newSessionCommand(sessionId, sessionName, initialPrompt));
 }
 
 // Uses the user's default terminal profile, so it is the same shell as any other VS Code terminal.

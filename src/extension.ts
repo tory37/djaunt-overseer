@@ -25,6 +25,7 @@ import { RepoService } from "./repoService";
 import { resolveRepos } from "./repoSet";
 import { COMMIT_DOCUMENT_SCHEME, CommitDocumentProvider, RepoTreeProvider } from "./repoTree";
 import { CommitAuthorship, indexCommitAuthorship } from "./gitStatus";
+import { registerHandoffCommands } from "./handoffCommands";
 import { HistoryPanel } from "./historyPanel";
 import { SessionFocusTracker } from "./sessionFocus";
 import { SessionPreview } from "./sessionPreview";
@@ -280,6 +281,16 @@ export function activate(context: vscode.ExtensionContext): void {
       log,
     }),
     ...registerWorkspaceCommands({ registry, sessionIndex, liveMonitor, pinnedSessions, log }),
+    ...registerHandoffCommands({
+      claudeHome,
+      sessionIndex,
+      liveMonitor,
+      registry,
+      sessionFocus,
+      pinnedSessions,
+      groupSessionIdsHolding: (sessionId) => treeProvider.groupSessionIdsHolding(sessionId),
+      log,
+    }),
     vscode.commands.registerCommand("overseer.openHistory", () =>
       HistoryPanel.show({ extensionUri: context.extensionUri, sessionIndex, liveMonitor, registry, claudeHome }),
     ),

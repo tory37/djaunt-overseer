@@ -171,6 +171,11 @@ export class SessionTreeProvider
     return undefined;
   }
 
+  groupSessionIdsHolding(sessionId: string): string[] {
+    const holdingGroup = this.currentGroups().find((group) => group.sessions.some((pinned) => pinned.sessionId === sessionId));
+    return holdingGroup?.sessions.map((pinned) => pinned.sessionId) ?? [];
+  }
+
   pinnedSessions(): PinnedSession[] {
     return this.currentGroups().flatMap((group) => group.sessions);
   }
