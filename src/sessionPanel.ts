@@ -23,7 +23,7 @@ import { statusColorId } from "./sessionStatuses";
 import { shownSessionStatus } from "./sessionStatusView";
 import { StatusConfig } from "./statusConfig";
 import { sessionIdOfTerminal } from "./terminals";
-import { buildWorkstreamDisplay, DisplayGroup, resolveItemDrop } from "./workstreamDisplay";
+import { buildWorkstreamDisplay, DisplayGroup, ReferenceGroup, resolveItemDrop } from "./workstreamDisplay";
 import {
   applyUserEdits,
   withoutRemovedItem,
@@ -89,6 +89,7 @@ interface WorkView {
   where: string[];
   updatedAgo: string | undefined;
   groups: DisplayGroup<PanelRow>[];
+  referenceGroups: ReferenceGroup<PanelRow>[];
   removedRows: PanelRow[];
   isEmpty: boolean;
 }
@@ -138,6 +139,7 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
   private view: vscode.WebviewView | undefined;
   private shownLinks: MarkedLink[] = [];
   private shownGroups: DisplayGroup<PanelRow>[] = [];
+  private shownReferenceGroups: ReferenceGroup<PanelRow>[] = [];
   private readonly workSnapshots = new Map<string, WorkSnapshot>();
   private readonly workLoadsInFlight = new Set<string>();
   private readonly staleWorkLoads = new Set<string>();
@@ -210,6 +212,7 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
     if (sessionId === undefined) {
       this.shownLinks = [];
       this.shownGroups = [];
+      this.shownReferenceGroups = [];
       return { session: undefined, work: undefined, isJiraEnabled: false };
     }
     const meta = this.dependencies.findSessionMeta(sessionId);
@@ -268,12 +271,14 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
     });
     this.shownLinks = [...shownLinksByKey.values()];
     this.shownGroups = display.groups;
+    this.shownReferenceGroups = display.referenceGroups;
     return {
       isLoaded: snapshot !== undefined,
       isAnalyzing: sessionAnalyzer.isAnalyzing(sessionId),
       where: analysis?.where ?? [],
       updatedAgo: analysis?.lastPassAt === undefined ? undefined : formatAge(analysis.lastPassAt),
       groups: display.groups,
+      referenceGroups: display.referenceGroups,
       removedRows: display.removedRows,
       isEmpty: display.isEmpty,
     };
@@ -417,7 +422,7 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
         }
         return;
       case "moveItem": {
-        const targetWorkstreamId = resolveItemDrop(this.shownGroups, [], message.key, message.workstreamId);
+        const targetWorkstreamId = resolveItemDrop(this.shownGroups, this.shownReferenceGroups, message.key, message.workstreamId);
         if (targetWorkstreamId !== undefined) {
           await registry.setWorkstreamEdits(sessionId, withPinnedItem(storedEdits, message.key, targetWorkstreamId));
         }
@@ -555,7 +560,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .ws-group { margin-top: var(--s2); }
   .ws-group.done { opacity: 0.6; }
   .ws-group.done:hover, .ws-group.done:focus-within { opacity: 1; }
-  .ws-group.drop-target { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+  .ws-group.drop-target, .reference.drop-target { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
   .ws-header { position: relative; display: flex; align-items: center; gap: var(--s1); height: var(--row-height); padding: 0 var(--s2) 0 var(--s4); transition: background-color 80ms linear; }
   .ws-header:hover { background: var(--vscode-list-hoverBackground); }
   .chevron { flex-shrink: 0; display: inline-flex; color: var(--muted); }
@@ -600,6 +605,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .link-row:hover .gripper, .ws-header:hover .gripper { visibility: visible; }
   .removed .key { text-decoration: line-through; }
   .disclosure { display: flex; align-items: center; gap: var(--s1); width: 100%; height: var(--row-height); margin-top: var(--s2); padding: 0 var(--s4); font-size: 12px; text-align: left; color: var(--muted); }
+  .reference-kind { display: flex; align-items: center; height: 20px; margin: 0; padding: 0 var(--s4) 0 calc(var(--s4) + var(--icon-size) + var(--s1)); font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); opacity: 0.8; }
   .disclosure:hover { color: var(--vscode-foreground); }
   .disclosure .codicon { flex-shrink: 0; font-size: var(--icon-size); transition: transform 120ms ease-out; }
   .disclosure[aria-expanded="true"] .codicon-chevron-right { transform: rotate(90deg); }
@@ -661,6 +667,8 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   const RUN_ICONS = { idle: "circle-filled", busy: "loading", paused: "debug-pause", elsewhere: "broadcast" };
   const UNSORTED_GROUP_ID = "unsorted";
   const REMOVED_GROUP_ID = "removed";
+  const REFERENCE_GROUP_ID = "reference";
+  const REFERENCE_KIND_HEADINGS = { ticket: "Tickets", pr: "PRs", artifact: "Artifacts", commit: "Commits" };
   const MENU_MARGIN_PX = 4;
   const MENU_GAP_PX = 2;
   const CLAUDE_ACTIONS = [
@@ -842,8 +850,11 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   function moveTargetItems(row, group) {
     const targets = panelState.work.groups.filter((otherGroup) => otherGroup.id !== group.id && !otherGroup.isUnsorted);
     const items = targets.map((target) => menuItem("arrow-right", target.title, () => send({ type: "moveItem", key: row.key, workstreamId: target.id })));
-    if (!group.isUnsorted) {
+    if (group.id !== UNSORTED_GROUP_ID) {
       items.push(menuItem("inbox", "Unsorted", () => send({ type: "moveItem", key: row.key, workstreamId: UNSORTED_GROUP_ID })));
+    }
+    if (group.id !== REFERENCE_GROUP_ID) {
+      items.push(menuItem("book", "Reference", () => send({ type: "moveItem", key: row.key, workstreamId: REFERENCE_GROUP_ID })));
     }
     return items.length === 0 ? [] : [element("div", "menu-separator"), element("p", "menu-heading", "Move to"), ...items];
   }
@@ -1139,6 +1150,29 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     return block;
   }
 
+  // Reference takes row drops but never workstream reorders, so it poses as an unsorted group.
+  function referenceDisclosure(work) {
+    const count = work.referenceGroups.reduce((total, kindGroup) => total + kindGroup.rows.length, 0);
+    if (count === 0) {
+      return [];
+    }
+    const referenceGroup = { id: REFERENCE_GROUP_ID, isUnsorted: true };
+    const block = element("div", "reference");
+    const collapsed = isCollapsed(REFERENCE_GROUP_ID, true);
+    const toggle = textButton("disclosure", "chevron-right", "Reference (" + count + ")", () => setCollapsed(REFERENCE_GROUP_ID, !collapsed));
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    block.append(toggle);
+    if (!collapsed) {
+      for (const kindGroup of work.referenceGroups) {
+        const list = element("ul", "list");
+        list.append(...kindGroup.rows.map((row) => itemRow(row, referenceGroup)));
+        block.append(element("h3", "reference-kind", REFERENCE_KIND_HEADINGS[kindGroup.kind] + " (" + kindGroup.rows.length + ")"), list);
+      }
+    }
+    makeDropTarget(block, referenceGroup);
+    return [block];
+  }
+
   function removedDisclosure(work) {
     const count = work.removedRows.length;
     if (count === 0) {
@@ -1288,7 +1322,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     } else {
       section.append(...work.groups.map(groupElement));
     }
-    section.append(...removedDisclosure(work));
+    section.append(...referenceDisclosure(work), ...removedDisclosure(work));
     return section;
   }
 
