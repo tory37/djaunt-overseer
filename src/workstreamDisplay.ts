@@ -1,7 +1,9 @@
 import { SessionAnalysis, ticketItemKey, Workstream } from "./analysisState";
-import { UNSORTED_WORKSTREAM_ID } from "./workstreamEdits";
+import { LinkKind } from "./linkCandidates";
+import { REFERENCE_WORKSTREAM_ID, UNSORTED_WORKSTREAM_ID } from "./workstreamEdits";
 
 export const MAX_EXPANDED_UNSORTED_ITEMS = 5;
+const REFERENCE_KIND_ORDER: LinkKind[] = ["ticket", "pr", "artifact", "commit"];
 
 export interface DisplayGroup<Row> {
   id: string;
@@ -13,8 +15,14 @@ export interface DisplayGroup<Row> {
   isCollapsedByDefault: boolean;
 }
 
+export interface ReferenceGroup<Row> {
+  kind: LinkKind;
+  rows: Row[];
+}
+
 export interface WorkstreamDisplay<Row> {
   groups: DisplayGroup<Row>[];
+  referenceGroups: ReferenceGroup<Row>[];
   removedRows: Row[];
   isEmpty: boolean;
 }
@@ -43,7 +51,15 @@ export function buildWorkstreamDisplay<Row>(input: WorkstreamDisplayInput<Row>):
       isCollapsedByDefault: workstream.done,
     }),
   );
-  const unsortedKeys = unsortedItemKeys(workstreams, input.candidateItemKeys, input.removedItemKeys, input.lastActivityOf);
+  const placedItemKeys = new Set(
+    workstreams.flatMap((workstream) => [...workstream.itemKeys, ...workstream.ticketKeys.map(ticketItemKey)]),
+  );
+  const referenceKeySet = new Set(input.analysis?.referenceItemKeys ?? []);
+  const removedKeySet = new Set(input.removedItemKeys);
+  const newestFirst = (left: string, right: string): number => input.lastActivityOf(right) - input.lastActivityOf(left);
+  const shownCandidateKeys = [...new Set(input.candidateItemKeys)].filter((itemKey) => !placedItemKeys.has(itemKey) && !removedKeySet.has(itemKey));
+  const unsortedKeys = shownCandidateKeys.filter((itemKey) => !referenceKeySet.has(itemKey)).sort(newestFirst);
+  const referenceKeys = shownCandidateKeys.filter((itemKey) => referenceKeySet.has(itemKey)).sort(newestFirst);
   const unsortedRows = rowsFor(unsortedKeys);
   const groups = [...workstreamGroups];
   if (unsortedRows.length > 0) {
@@ -57,7 +73,16 @@ export function buildWorkstreamDisplay<Row>(input: WorkstreamDisplayInput<Row>):
       isCollapsedByDefault: unsortedRows.length > MAX_EXPANDED_UNSORTED_ITEMS,
     });
   }
-  return { groups, removedRows: rowsFor([...new Set(input.removedItemKeys)]), isEmpty: groups.length === 0 };
+  const referenceGroups = REFERENCE_KIND_ORDER.flatMap((kind): ReferenceGroup<Row>[] => {
+    const rows = rowsFor(referenceKeys.filter((itemKey) => itemKey.startsWith(`${kind}:`)));
+    return rows.length === 0 ? [] : [{ kind, rows }];
+  });
+  return {
+    groups,
+    referenceGroups,
+    removedRows: rowsFor([...new Set(input.removedItemKeys)]),
+    isEmpty: groups.length === 0 && referenceGroups.length === 0,
+  };
 }
 
 // The user's saved order first, then active workstreams newest first, then done ones newest first.
@@ -75,27 +100,19 @@ export function orderWorkstreams(workstreams: Workstream[], savedOrder: string[]
   return [...savedWorkstreams, ...activeWorkstreams, ...doneWorkstreams];
 }
 
-function unsortedItemKeys(
-  workstreams: Workstream[],
-  candidateItemKeys: string[],
-  removedItemKeys: string[],
-  lastActivityOf: (itemKey: string) => number,
-): string[] {
-  const placedItemKeys = new Set(
-    workstreams.flatMap((workstream) => [...workstream.itemKeys, ...workstream.ticketKeys.map(ticketItemKey)]),
-  );
-  const removedKeySet = new Set(removedItemKeys);
-  return [...new Set(candidateItemKeys)]
-    .filter((itemKey) => !placedItemKeys.has(itemKey) && !removedKeySet.has(itemKey))
-    .sort((left, right) => lastActivityOf(right) - lastActivityOf(left));
-}
-
 // A drop names the group under the pointer. It pins the item there, unless the item is not shown or already sits in that group.
-// Unsorted is a valid target even before it has a group of its own.
-export function resolveItemDrop(groups: DisplayGroup<{ key: string }>[], itemKey: string, targetGroupId: string): string | undefined {
-  const sourceGroup = groups.find((group) => group.rows.some((row) => row.key === itemKey));
-  const isKnownTarget = targetGroupId === UNSORTED_WORKSTREAM_ID || groups.some((group) => group.id === targetGroupId);
-  if (sourceGroup === undefined || !isKnownTarget || sourceGroup.id === targetGroupId) {
+// Unsorted and Reference are valid targets even before they have rows of their own.
+export function resolveItemDrop(
+  groups: DisplayGroup<{ key: string }>[],
+  referenceGroups: ReferenceGroup<{ key: string }>[],
+  itemKey: string,
+  targetGroupId: string,
+): string | undefined {
+  const isReferenceItem = referenceGroups.some((group) => group.rows.some((row) => row.key === itemKey));
+  const sourceGroupId = isReferenceItem ? REFERENCE_WORKSTREAM_ID : groups.find((group) => group.rows.some((row) => row.key === itemKey))?.id;
+  const isKnownTarget =
+    targetGroupId === UNSORTED_WORKSTREAM_ID || targetGroupId === REFERENCE_WORKSTREAM_ID || groups.some((group) => group.id === targetGroupId);
+  if (sourceGroupId === undefined || !isKnownTarget || sourceGroupId === targetGroupId) {
     return undefined;
   }
   return targetGroupId;

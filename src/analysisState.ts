@@ -39,6 +39,7 @@ export interface SessionAnalysis {
   workstreams: Workstream[];
   seedFacts: SeedFacts;
   artifactTitles: Record<string, string>;
+  referenceItemKeys: string[];
   where: string[];
   sessionStatus?: string;
   sessionDone: boolean;
@@ -53,7 +54,16 @@ export function emptySeedFacts(): SeedFacts {
 }
 
 export function emptyAnalysis(): SessionAnalysis {
-  return { workstreams: [], seedFacts: emptySeedFacts(), artifactTitles: {}, where: [], sessionDone: false, watermarkBytes: 0, nextWorkstreamNumber: 1 };
+  return {
+    workstreams: [],
+    seedFacts: emptySeedFacts(),
+    artifactTitles: {},
+    referenceItemKeys: [],
+    where: [],
+    sessionDone: false,
+    watermarkBytes: 0,
+    nextWorkstreamNumber: 1,
+  };
 }
 
 export function workstreamIdFor(workstreamNumber: number): string {
@@ -114,6 +124,7 @@ export function readSessionAnalysis(entries: unknown): SessionAnalysis {
     workstreams,
     seedFacts: readSeedFacts(fields.seedFacts),
     artifactTitles: readStringRecord(fields.artifactTitles),
+    referenceItemKeys: readStrings(fields.referenceItemKeys),
     where: cleanWhereLines(Array.isArray(fields.where) ? fields.where : []),
     sessionDone: fields.sessionDone === true,
     watermarkBytes: isNonNegativeNumber(fields.watermarkBytes) ? fields.watermarkBytes : 0,

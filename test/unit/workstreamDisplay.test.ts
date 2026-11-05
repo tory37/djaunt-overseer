@@ -7,7 +7,7 @@ import {
   resolveItemDrop,
   WorkstreamDisplayInput,
 } from "../../src/workstreamDisplay";
-import { UNSORTED_WORKSTREAM_ID } from "../../src/workstreamEdits";
+import { REFERENCE_WORKSTREAM_ID, UNSORTED_WORKSTREAM_ID } from "../../src/workstreamEdits";
 
 const PR_A = "pr:amira/api/pull/1";
 const PR_B = "pr:amira/web/pull/2";
@@ -110,6 +110,51 @@ describe("buildWorkstreamDisplay", () => {
     );
     expect(display.groups.map((group) => group.rows)).toEqual([[{ key: PR_A }]]);
   });
+
+  describe("reference items", () => {
+    const TICKET = "ticket:SOA-7";
+    const OLD_PR = "pr:amira/web/pull/3";
+    const activity: Record<string, number> = { [PR_B]: 5, [OLD_PR]: 1, [TICKET]: 3 };
+
+    function referenceDisplay(overrides: Partial<WorkstreamDisplayInput<{ key: string }>> = {}) {
+      const analysis = { ...analysisWith([]), referenceItemKeys: [COMMIT, PR_B, OLD_PR, TICKET, PR_A, ARTIFACT] };
+      return buildWorkstreamDisplay(
+        displayInput({
+          analysis,
+          candidateItemKeys: [COMMIT, PR_B, OLD_PR, TICKET, PR_A],
+          lastActivityOf: (itemKey) => activity[itemKey] ?? 0,
+          ...overrides,
+        }),
+      );
+    }
+
+    it("groups reference items by kind in fixed order, newest first, and keeps them out of Unsorted", () => {
+      const display = referenceDisplay({ candidateItemKeys: [COMMIT, PR_B, OLD_PR, TICKET, "commit:fff0000"] });
+      expect(display.referenceGroups).toEqual([
+        { kind: "ticket", rows: [{ key: TICKET }] },
+        { kind: "pr", rows: [{ key: PR_B }, { key: OLD_PR }] },
+        { kind: "commit", rows: [{ key: COMMIT }] },
+      ]);
+      expect(display.groups.map((group) => group.rows)).toEqual([[{ key: "commit:fff0000" }]]);
+    });
+
+    it("leaves out removed items, items that are not candidates, and items with no row", () => {
+      const display = referenceDisplay({
+        removedItemKeys: [PR_B],
+        rowFor: (itemKey) => (itemKey === TICKET ? undefined : { key: itemKey }),
+      });
+      expect(display.referenceGroups).toEqual([
+        { kind: "pr", rows: [{ key: OLD_PR }, { key: PR_A }] },
+        { kind: "commit", rows: [{ key: COMMIT }] },
+      ]);
+    });
+
+    it("is not empty when only reference items show", () => {
+      const display = referenceDisplay();
+      expect(display.groups).toEqual([]);
+      expect(display.isEmpty).toBe(false);
+    });
+  });
 });
 
 describe("resolveItemDrop", () => {
@@ -117,15 +162,25 @@ describe("resolveItemDrop", () => {
   const { groups } = buildWorkstreamDisplay(displayInput({ analysis, candidateItemKeys: [COMMIT] }));
 
   it("pins to another workstream or to Unsorted", () => {
-    expect(resolveItemDrop(groups, PR_A, "ws-2")).toBe("ws-2");
-    expect(resolveItemDrop(groups, PR_A, UNSORTED_WORKSTREAM_ID)).toBe(UNSORTED_WORKSTREAM_ID);
-    expect(resolveItemDrop(groups, COMMIT, "ws-1")).toBe("ws-1");
+    expect(resolveItemDrop(groups, [], PR_A, "ws-2")).toBe("ws-2");
+    expect(resolveItemDrop(groups, [], PR_A, UNSORTED_WORKSTREAM_ID)).toBe(UNSORTED_WORKSTREAM_ID);
+    expect(resolveItemDrop(groups, [], COMMIT, "ws-1")).toBe("ws-1");
+  });
+
+  it("pins to Reference, and from Reference to a workstream or Unsorted", () => {
+    const referenceAnalysis = { ...analysis, referenceItemKeys: [PR_B] };
+    const display = buildWorkstreamDisplay(displayInput({ analysis: referenceAnalysis, candidateItemKeys: [COMMIT, PR_B] }));
+    expect(resolveItemDrop(display.groups, display.referenceGroups, PR_A, REFERENCE_WORKSTREAM_ID)).toBe(REFERENCE_WORKSTREAM_ID);
+    expect(resolveItemDrop(display.groups, display.referenceGroups, COMMIT, REFERENCE_WORKSTREAM_ID)).toBe(REFERENCE_WORKSTREAM_ID);
+    expect(resolveItemDrop(display.groups, display.referenceGroups, PR_B, "ws-1")).toBe("ws-1");
+    expect(resolveItemDrop(display.groups, display.referenceGroups, PR_B, UNSORTED_WORKSTREAM_ID)).toBe(UNSORTED_WORKSTREAM_ID);
+    expect(resolveItemDrop(display.groups, display.referenceGroups, PR_B, REFERENCE_WORKSTREAM_ID)).toBeUndefined();
   });
 
   it("ignores a drop on the same group, an unknown group, or an item not shown", () => {
-    expect(resolveItemDrop(groups, PR_A, "ws-1")).toBeUndefined();
-    expect(resolveItemDrop(groups, COMMIT, UNSORTED_WORKSTREAM_ID)).toBeUndefined();
-    expect(resolveItemDrop(groups, PR_A, "ws-9")).toBeUndefined();
-    expect(resolveItemDrop(groups, PR_B, "ws-2")).toBeUndefined();
+    expect(resolveItemDrop(groups, [], PR_A, "ws-1")).toBeUndefined();
+    expect(resolveItemDrop(groups, [], COMMIT, UNSORTED_WORKSTREAM_ID)).toBeUndefined();
+    expect(resolveItemDrop(groups, [], PR_A, "ws-9")).toBeUndefined();
+    expect(resolveItemDrop(groups, [], PR_B, "ws-2")).toBeUndefined();
   });
 });

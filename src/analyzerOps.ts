@@ -25,6 +25,7 @@ export type AnalyzerOp =
   | { op: "retitle_workstream"; workstream: string; title: string }
   | { op: "assign_item"; item: string; workstream: string }
   | { op: "tag_ticket"; ticket: string; workstream: string }
+  | { op: "mark_reference"; item: string }
   | { op: "set_artifact_title"; item: string; title: string }
   | { op: "set_where"; lines: string[] }
   | { op: "set_session_status"; status: string; done: boolean }
@@ -101,6 +102,7 @@ export function analyzerOutputSchema(statusIds: string[]): object {
             opObject("retitle_workstream", { workstream: stringField, title: stringField }),
             opObject("assign_item", { item: stringField, workstream: stringField }),
             opObject("tag_ticket", { ticket: stringField, workstream: stringField }),
+            opObject("mark_reference", { item: stringField }),
             opObject("set_artifact_title", { item: stringField, title: { type: "string", maxLength: MAX_ARTIFACT_TITLE_CHARS } }),
             opObject("set_where", { lines: { type: "array", items: stringField, maxItems: MAX_WHERE_LINES } }),
             ...statusOps,
@@ -201,6 +203,10 @@ function readOp(rawOp: unknown, statusIds: ReadonlySet<string>): AnalyzerOp | un
       const ticket = text("ticket");
       return ticket === undefined || workstream === undefined ? undefined : { op: "tag_ticket", ticket, workstream };
     }
+    case "mark_reference": {
+      const item = text("item");
+      return item === undefined ? undefined : { op: "mark_reference", item };
+    }
     case "set_artifact_title": {
       const item = text("item");
       const title = text("title");
@@ -229,13 +235,19 @@ function readOp(rawOp: unknown, statusIds: ReadonlySet<string>): AnalyzerOp | un
 export function applyOps(analysis: SessionAnalysis, ops: AnalyzerOp[], edits: WorkstreamEdits, context: ApplyContext): SessionAnalysis {
   const nextAnalysis = context.mode === "recheck" ? onlyUserEditedWorkstreams(analysis, edits) : cloneAnalysis(analysis);
   const keptItemKeys = new Set(analysis.seedFacts.keptItemKeys);
-  const placeableItemKeys = new Set([...context.knownItemKeys, ...analysis.workstreams.flatMap((workstream) => workstream.itemKeys)]);
+  const placeableItemKeys = new Set([
+    ...context.knownItemKeys,
+    ...analysis.workstreams.flatMap((workstream) => [...workstream.itemKeys, ...workstream.ticketKeys.map(ticketItemKey)]),
+  ]);
   const workstreamIdsByRef = createWorkstreams(nextAnalysis, ops);
   const findWorkstream = (workstreamRef: string): Workstream | undefined => {
     const workstreamId = workstreamIdsByRef.get(workstreamRef) ?? workstreamRef;
     return nextAnalysis.workstreams.find((workstream) => workstream.id === workstreamId);
   };
   const isRemoved = (itemKey: string): boolean => edits.removedItems.includes(itemKey);
+  const clearReference = (itemKey: string): void => {
+    nextAnalysis.referenceItemKeys = nextAnalysis.referenceItemKeys.filter((referenceKey) => referenceKey !== itemKey);
+  };
 
   for (const op of ops) {
     switch (op.op) {
@@ -254,7 +266,10 @@ export function applyOps(analysis: SessionAnalysis, ops: AnalyzerOp[], edits: Wo
       }
       case "assign_item": {
         if (op.item.startsWith(TICKET_ITEM_PREFIX)) {
-          tagTicket(op.item, findWorkstream(op.workstream), isRemoved);
+          const taggedTicketKey = tagTicket(op.item, findWorkstream(op.workstream), isRemoved);
+          if (taggedTicketKey !== undefined) {
+            clearReference(ticketItemKey(taggedTicketKey));
+          }
           break;
         }
         const isPinned = edits.pinnedItems[op.item] !== undefined;
@@ -270,11 +285,38 @@ export function applyOps(analysis: SessionAnalysis, ops: AnalyzerOp[], edits: Wo
           workstream.itemKeys = workstream.itemKeys.filter((itemKey) => itemKey !== op.item);
         }
         targetWorkstream?.itemKeys.push(op.item);
+        clearReference(op.item);
         break;
       }
-      case "tag_ticket":
-        tagTicket(op.ticket, findWorkstream(op.workstream), isRemoved);
+      case "tag_ticket": {
+        const taggedTicketKey = tagTicket(op.ticket, findWorkstream(op.workstream), isRemoved);
+        if (taggedTicketKey !== undefined) {
+          clearReference(ticketItemKey(taggedTicketKey));
+        }
         break;
+      }
+      case "mark_reference": {
+        const referenceItemKey = canonicalItemKey(op.item);
+        const isPinned = referenceItemKey !== undefined && edits.pinnedItems[referenceItemKey] !== undefined;
+        if (
+          referenceItemKey === undefined ||
+          !placeableItemKeys.has(referenceItemKey) ||
+          isRemoved(referenceItemKey) ||
+          isPinned ||
+          keptItemKeys.has(referenceItemKey)
+        ) {
+          break;
+        }
+        const referenceTicketKey = referenceItemKey.startsWith(TICKET_ITEM_PREFIX) ? ticketKeyOf(referenceItemKey) : undefined;
+        for (const workstream of nextAnalysis.workstreams) {
+          workstream.itemKeys = workstream.itemKeys.filter((itemKey) => itemKey !== referenceItemKey);
+          workstream.ticketKeys = workstream.ticketKeys.filter((ticketKey) => ticketKey !== referenceTicketKey);
+        }
+        if (!nextAnalysis.referenceItemKeys.includes(referenceItemKey)) {
+          nextAnalysis.referenceItemKeys.push(referenceItemKey);
+        }
+        break;
+      }
       case "set_artifact_title":
         if (op.item.startsWith(ARTIFACT_ITEM_PREFIX) && placeableItemKeys.has(op.item)) {
           nextAnalysis.artifactTitles[op.item] = trimToWholeWords(op.title, MAX_ARTIFACT_TITLE_CHARS);
@@ -323,10 +365,12 @@ export function isRecheckDropTooLarge(drop: RecheckDrop): boolean {
   return drop.droppedCount > allowedDropCount;
 }
 
+// A reference verdict counts as classified, so a recheck that keeps it is not a drop.
 function assignedItemKeys(analysis: SessionAnalysis): Set<string> {
-  return new Set(
-    analysis.workstreams.flatMap((workstream) => [...workstream.itemKeys, ...workstream.ticketKeys.map((ticketKey) => ticketItemKey(ticketKey))]),
-  );
+  return new Set([
+    ...analysis.workstreams.flatMap((workstream) => [...workstream.itemKeys, ...workstream.ticketKeys.map((ticketKey) => ticketItemKey(ticketKey))]),
+    ...analysis.referenceItemKeys,
+  ]);
 }
 
 // A create whose title matches an existing workstream reuses it, so repeating a reply never duplicates a header.
@@ -350,14 +394,24 @@ function createWorkstreams(analysis: SessionAnalysis, ops: AnalyzerOp[]): Map<st
   return workstreamIdsByRef;
 }
 
-function tagTicket(rawTicket: string, workstream: Workstream | undefined, isRemoved: (itemKey: string) => boolean): void {
+function tagTicket(rawTicket: string, workstream: Workstream | undefined, isRemoved: (itemKey: string) => boolean): string | undefined {
   const ticketKey = ticketKeyOf(rawTicket);
   if (ticketKey === undefined || workstream === undefined || isRemoved(ticketItemKey(ticketKey))) {
-    return;
+    return undefined;
   }
   if (!workstream.ticketKeys.includes(ticketKey)) {
     workstream.ticketKeys.push(ticketKey);
   }
+  return ticketKey;
+}
+
+// The model may write a ticket key in any case; other item keys must match exactly.
+function canonicalItemKey(rawItemKey: string): string | undefined {
+  if (!rawItemKey.startsWith(TICKET_ITEM_PREFIX)) {
+    return rawItemKey;
+  }
+  const ticketKey = ticketKeyOf(rawItemKey);
+  return ticketKey === undefined ? undefined : ticketItemKey(ticketKey);
 }
 
 // A recheck rebuilds the structure, so only workstreams the user edited keep their ids; the user's pins go back in last.
@@ -366,6 +420,7 @@ function onlyUserEditedWorkstreams(analysis: SessionAnalysis, edits: WorkstreamE
   resetAnalysis.workstreams = resetAnalysis.workstreams
     .filter((workstream) => isUserEditedWorkstream(edits, workstream.id))
     .map((workstream) => ({ ...workstream, itemKeys: [], ticketKeys: [] }));
+  resetAnalysis.referenceItemKeys = [];
   return resetAnalysis;
 }
 

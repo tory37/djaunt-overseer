@@ -61,6 +61,7 @@ describe("parseAnalyzerOutput", () => {
     ["a non-boolean done", envelope({ ops: [{ op: "mark_workstream_done", workstream: "ws-1", done: "yes" }] })],
     ["too many where lines", envelope({ ops: [{ op: "set_where", lines: ["a", "b", "c", "d"] }] })],
     ["a null op", envelope({ ops: [null] })],
+    ["a mark_reference with no item", envelope({ ops: [{ op: "mark_reference" }] })],
   ])("fails the whole reply on %s", (_label, stdout) => {
     expect(parseAnalyzerOutput(stdout, STATUS_IDS)).toBeUndefined();
   });
@@ -279,6 +280,82 @@ describe("applyOps", () => {
   });
 });
 
+describe("reference items", () => {
+  const MARK_PR_B: AnalyzerOp = { op: "mark_reference", item: PR_B };
+
+  it("reads mark_reference and puts it in the schema", () => {
+    expect(parseAnalyzerOutput(envelope({ ops: [{ op: "mark_reference", item: ` ${PR_B} ` }] }), STATUS_IDS)).toEqual([MARK_PR_B]);
+    expect(JSON.stringify(analyzerOutputSchema(STATUS_IDS))).toContain('"mark_reference"');
+  });
+
+  it("marks an item reference and takes it out of its workstream", () => {
+    const firstPass = applyOps(emptyAnalysis(), GROUP_OPS, edits(), context());
+    const marked = applyOps(firstPass, [MARK_PR_B, MARK_PR_B], edits(), context());
+    expect(marked.workstreams[0].itemKeys).toEqual([PR_A]);
+    expect(marked.referenceItemKeys).toEqual([PR_B]);
+  });
+
+  it("marks a ticket reference and strips its tag from every workstream", () => {
+    const firstPass = applyOps(emptyAnalysis(), GROUP_OPS, edits(), context());
+    const marked = applyOps(firstPass, [{ op: "mark_reference", item: "ticket:soa-12" }], edits(), context());
+    expect(marked.workstreams[0].ticketKeys).toEqual([]);
+    expect(marked.referenceItemKeys).toEqual(["ticket:SOA-12"]);
+  });
+
+  it.each([
+    ["an item the model was not shown", { op: "mark_reference", item: "pr:other/repo/pull/9" }, edits()],
+    ["an item the user removed", MARK_PR_B, edits({ removedItems: [PR_B] })],
+    ["an item the user pinned", MARK_PR_B, edits({ pinnedItems: { [PR_B]: "ws-1" } })],
+    ["a malformed ticket", { op: "mark_reference", item: "ticket:nope" }, edits()],
+  ] as [string, AnalyzerOp, WorkstreamEdits][])("ignores mark_reference on %s", (_label, op, userEdits) => {
+    const firstPass = applyOps(emptyAnalysis(), GROUP_OPS, edits(), context());
+    expect(applyOps(firstPass, [op], userEdits, context()).referenceItemKeys).toEqual([]);
+  });
+
+  it("never marks an item the user kept", () => {
+    const keptAnalysis = { ...emptyAnalysis(), seedFacts: { knownItems: [], keptItemKeys: [PR_B], removedItemKeys: [] } };
+    const firstPass = applyOps(keptAnalysis, GROUP_OPS, edits(), context());
+    const marked = applyOps(firstPass, [MARK_PR_B], edits(), context());
+    expect(marked.workstreams[0].itemKeys).toEqual([PR_A, PR_B]);
+    expect(marked.referenceItemKeys).toEqual([]);
+  });
+
+  it("clears the verdict when assign_item or tag_ticket places the item", () => {
+    const marked = applyOps(
+      emptyAnalysis(),
+      [...GROUP_OPS, MARK_PR_B, { op: "mark_reference", item: ARTIFACT }, { op: "mark_reference", item: "ticket:SOA-12" }],
+      edits(),
+      context("diff", [PR_A, PR_B, ARTIFACT, "ticket:SOA-12"]),
+    );
+    expect(marked.referenceItemKeys).toEqual([PR_B, ARTIFACT, "ticket:SOA-12"]);
+    const placed = applyOps(
+      marked,
+      [
+        { op: "assign_item", item: PR_B, workstream: "ws-1" },
+        { op: "assign_item", item: ARTIFACT, workstream: "" },
+        { op: "tag_ticket", ticket: "SOA-12", workstream: "ws-1" },
+      ],
+      edits(),
+      context(),
+    );
+    expect(placed.referenceItemKeys).toEqual([]);
+    expect(placed.workstreams[0]).toMatchObject({ itemKeys: [PR_A, PR_B], ticketKeys: ["SOA-12"] });
+  });
+
+  it("resets verdicts on a recheck and keeps the user's Reference pins", () => {
+    const marked = applyOps(emptyAnalysis(), [...GROUP_OPS, MARK_PR_B, { op: "mark_reference", item: ARTIFACT }], edits(), context());
+    const rechecked = applyOps(marked, GROUP_OPS, edits({ pinnedItems: { [ARTIFACT]: "reference" } }), context("recheck"));
+    expect(rechecked.referenceItemKeys).toEqual([ARTIFACT]);
+    expect(rechecked.workstreams[0].itemKeys).toEqual([PR_A, PR_B]);
+  });
+
+  it("counts a reference verdict as classified in the recheck drop guard", () => {
+    const previousAnalysis = applyOps(emptyAnalysis(), GROUP_OPS, edits(), context());
+    const rechecked = applyOps(previousAnalysis, [...GROUP_OPS.slice(0, 2), MARK_PR_B, GROUP_OPS[3]], edits(), context("recheck"));
+    expect(recheckDropOf(previousAnalysis, rechecked, edits())).toEqual({ droppedCount: 0, previouslyAssignedCount: 3 });
+  });
+});
+
 describe("artifact placement", () => {
   const TEST_PLAN = "artifact:test-plan";
   const BACKEND_WRITEUP = "artifact:backend-writeup";
@@ -368,6 +445,11 @@ describe("readSessionAnalysis", () => {
     expect(analysis.where).toEqual(["one", "two", "three"]);
     expect(analysis.watermarkBytes).toBe(0);
     expect(analysis.nextWorkstreamNumber).toBe(6);
+    expect(analysis.referenceItemKeys).toEqual([]);
+  });
+
+  it("reads reference items and drops duplicates and non-strings", () => {
+    expect(readSessionAnalysis({ referenceItemKeys: [PR_A, PR_A, 3, "", PR_B] }).referenceItemKeys).toEqual([PR_A, PR_B]);
   });
 });
 

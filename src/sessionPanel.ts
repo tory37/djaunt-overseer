@@ -417,7 +417,7 @@ export class SessionPanelProvider implements vscode.WebviewViewProvider, vscode.
         }
         return;
       case "moveItem": {
-        const targetWorkstreamId = resolveItemDrop(this.shownGroups, message.key, message.workstreamId);
+        const targetWorkstreamId = resolveItemDrop(this.shownGroups, [], message.key, message.workstreamId);
         if (targetWorkstreamId !== undefined) {
           await registry.setWorkstreamEdits(sessionId, withPinnedItem(storedEdits, message.key, targetWorkstreamId));
         }

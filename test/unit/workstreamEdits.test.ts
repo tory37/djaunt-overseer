@@ -5,6 +5,7 @@ import {
   emptyWorkstreamEdits,
   hasWorkstreamEdits,
   readWorkstreamEdits,
+  REFERENCE_WORKSTREAM_ID,
   UNSORTED_WORKSTREAM_ID,
   withLinkMarkRemovals,
   withoutRemovedItem,
@@ -67,5 +68,29 @@ describe("applyUserEdits with an Unsorted pin", () => {
     const analysis = analysisWith([workstream("ws-1", { itemKeys: [PR_A] }), workstream("ws-2")]);
     const edited = applyUserEdits(analysis, withPinnedItem(emptyWorkstreamEdits(), PR_A, "ws-2"));
     expect(edited.workstreams.map((shown) => shown.itemKeys)).toEqual([[], [PR_A]]);
+  });
+});
+
+describe("applyUserEdits with a Reference pin", () => {
+  it("takes the item and ticket tag out of every workstream and marks them reference", () => {
+    const analysis = analysisWith([workstream("ws-1", { itemKeys: [PR_A], ticketKeys: ["SOA-1"] })]);
+    const pins = withPinnedItem(withPinnedItem(emptyWorkstreamEdits(), PR_A, REFERENCE_WORKSTREAM_ID), "ticket:SOA-1", REFERENCE_WORKSTREAM_ID);
+    const edited = applyUserEdits(analysis, pins);
+    expect(edited.workstreams.map(({ itemKeys, ticketKeys }) => ({ itemKeys, ticketKeys }))).toEqual([{ itemKeys: [], ticketKeys: [] }]);
+    expect(edited.referenceItemKeys).toEqual([PR_A, "ticket:SOA-1"]);
+  });
+
+  it("clears the reference verdict on a pin to a workstream or to Unsorted", () => {
+    const analysis: SessionAnalysis = { ...analysisWith([workstream("ws-1")]), referenceItemKeys: [PR_A, COMMIT] };
+    const pins = withPinnedItem(withPinnedItem(emptyWorkstreamEdits(), PR_A, "ws-1"), COMMIT, UNSORTED_WORKSTREAM_ID);
+    const edited = applyUserEdits(analysis, pins);
+    expect(edited.workstreams[0].itemKeys).toEqual([PR_A]);
+    expect(edited.referenceItemKeys).toEqual([]);
+  });
+
+  it("lets removal beat a Reference pin and the model's verdict", () => {
+    const analysis: SessionAnalysis = { ...analysisWith([]), referenceItemKeys: [COMMIT] };
+    const edits = { ...withPinnedItem(emptyWorkstreamEdits(), PR_A, REFERENCE_WORKSTREAM_ID), removedItems: [PR_A, COMMIT] };
+    expect(applyUserEdits(analysis, edits).referenceItemKeys).toEqual([]);
   });
 });

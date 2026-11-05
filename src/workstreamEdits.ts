@@ -1,10 +1,11 @@
 import { clipLine, MAX_WORKSTREAM_TITLE_CHARS, SessionAnalysis, TICKET_ITEM_PREFIX, ticketKeyOf, Workstream } from "./analysisState";
 
-// Model workstream ids all start with "ws-", so this pin target never names one.
+// Model workstream ids all start with "ws-", so these pin targets never name one.
 export const UNSORTED_WORKSTREAM_ID = "unsorted";
+export const REFERENCE_WORKSTREAM_ID = "reference";
 
 // What the user changed by hand. Every pass applies these last, so the user always wins over the model.
-// pinnedItems maps an item key to the workstream id it is locked to, or to UNSORTED_WORKSTREAM_ID.
+// pinnedItems maps an item key to the workstream id it is locked to, or to UNSORTED_WORKSTREAM_ID or REFERENCE_WORKSTREAM_ID.
 export interface WorkstreamEdits {
   workstreamTitles: Record<string, string>;
   pinnedItems: Record<string, string>;
@@ -108,9 +109,18 @@ export function applyUserEdits(analysis: SessionAnalysis, edits: WorkstreamEdits
     itemKeys: workstream.itemKeys.filter((itemKey) => !removedItemKeys.has(itemKey)),
     ticketKeys: workstream.ticketKeys.filter((ticketKey) => !removedTicketKeys.has(ticketKey)),
   }));
+  const referenceItemKeys = new Set(analysis.referenceItemKeys.filter((itemKey) => !removedItemKeys.has(itemKey)));
   for (const [itemKey, pinnedWorkstreamId] of Object.entries(edits.pinnedItems)) {
     if (pinnedWorkstreamId === UNSORTED_WORKSTREAM_ID) {
       unsortItem(workstreams, itemKey);
+      referenceItemKeys.delete(itemKey);
+      continue;
+    }
+    if (pinnedWorkstreamId === REFERENCE_WORKSTREAM_ID) {
+      if (!removedItemKeys.has(itemKey)) {
+        unsortItem(workstreams, itemKey);
+        referenceItemKeys.add(itemKey);
+      }
       continue;
     }
     const pinnedWorkstream = workstreams.find((workstream) => workstream.id === pinnedWorkstreamId);
@@ -118,10 +128,12 @@ export function applyUserEdits(analysis: SessionAnalysis, edits: WorkstreamEdits
       continue;
     }
     pinItem(workstreams, pinnedWorkstream, itemKey);
+    referenceItemKeys.delete(itemKey);
   }
   const editedAnalysis: SessionAnalysis = {
     ...analysis,
     workstreams,
+    referenceItemKeys: [...referenceItemKeys],
     sessionDone: edits.sessionDone ?? analysis.sessionDone,
   };
   const sessionStatus = edits.sessionStatus ?? analysis.sessionStatus;
