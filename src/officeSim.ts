@@ -1,12 +1,13 @@
 // Pure: the Office view's people. Each live session gets a guy with a desk. A working session's guy sits at his desk
 // and types; an idle one sits back, then wanders off: the cooler, the coffee, the couch, a walk, or a chat with
-// another idle guy. When his session gets busy again he runs back to his desk. A session that ends walks out the door.
+// another idle guy. When his session gets busy again he runs back to his desk. A suspended session's guy goes back to
+// his desk and falls asleep on it. A session that leaves the sidebar walks out the door.
 // The webview calls syncOffice when the sessions change and stepOffice every frame; time is in seconds.
 
 import { findPath, isWalkable, nearestWalkable, OfficeLayout, openFloorTiles, Point, PropKind } from "./officeLayout";
 import type { Facing, Pose } from "./pixelGuy";
 
-export type AgentStatus = "working" | "idle";
+export type AgentStatus = "working" | "idle" | "asleep";
 
 export interface AgentInput {
   id: string;
@@ -15,10 +16,11 @@ export interface AgentInput {
   title: string;
 }
 
-export type AgentMode = "walk" | "type" | "sit" | "stretch" | "drink" | "loiter" | "chat" | "wait" | "couch";
+export type AgentMode = "walk" | "type" | "sit" | "stretch" | "drink" | "loiter" | "chat" | "wait" | "couch" | "sleep";
 
 export type AgentGoal =
   | { kind: "work" }
+  | { kind: "sleep" }
   | { kind: "desk" }
   | { kind: "prop"; propIndex: number }
   | { kind: "couch" }
@@ -113,6 +115,11 @@ export function syncOffice(
       agent.x = agent.workSpot.x;
       agent.y = agent.workSpot.y;
       agent.facing = "up";
+      if (agent.status === "asleep") {
+        agent.goal = { kind: "sleep" };
+        setMode(state, agent, "sleep", FOREVER);
+        continue;
+      }
       if (agent.status === "idle") {
         // Stagger when they get up, so the room doesn't stand up at once.
         agent.mode = agent.deskIndex === undefined ? "couch" : "sit";
@@ -204,6 +211,9 @@ export function agentPose(agent: Agent, time: number): AgentPose {
       return { pose: "sit", facing: agent.facing, frame: 0, seated: true };
     case "stretch":
       return { pose: "stretch", facing: agent.facing, frame: 0, seated: true };
+    case "sleep":
+      // A slow breath: about four seconds in and out.
+      return { pose: "sleep", facing: agent.facing, frame: Math.floor(time / 2 + phase * 2), seated: true };
     case "drink":
       return { pose: "drink", facing: agent.facing, frame: 0, seated: false };
     case "chat":
@@ -213,11 +223,12 @@ export function agentPose(agent: Agent, time: number): AgentPose {
   }
 }
 
-export function officeCounts(state: OfficeState): { working: number; idle: number } {
+export function officeCounts(state: OfficeState): { working: number; idle: number; asleep: number } {
   const present = state.agents.filter((agent) => !agent.leaving);
   return {
     working: present.filter((agent) => agent.status === "working").length,
     idle: present.filter((agent) => agent.status === "idle").length,
+    asleep: present.filter((agent) => agent.status === "asleep").length,
   };
 }
 
@@ -274,6 +285,20 @@ function assignWorkSpots(state: OfficeState): void {
 
 function onStatusChange(state: OfficeState, agent: Agent, random: Random): void {
   endChat(state, agent);
+  const wasAsleep = agent.mode === "sleep";
+  if (wasAsleep) {
+    say(state, agent, agent.status === "working" ? "!?" : "~", 1.4);
+  }
+  if (agent.status === "asleep") {
+    say(state, agent, "*yawn*", 1.6);
+    goTo(state, agent, agent.workSpot, { kind: "sleep" }, false, random);
+    return;
+  }
+  if (wasAsleep && agent.status === "idle") {
+    // Waking up slow: a few seconds at the desk before getting up.
+    setMode(state, agent, agent.deskIndex === undefined ? "couch" : "sit", between(random, 3, 6));
+    return;
+  }
   if (agent.status === "working") {
     const atWork = agent.path.length === 0 && isAt(agent, agent.workSpot);
     if (!atWork) {
@@ -304,6 +329,10 @@ function decide(state: OfficeState, agent: Agent, random: Random): void {
   }
   if (agent.status === "working") {
     goTo(state, agent, agent.workSpot, { kind: "work" }, false, random);
+    return;
+  }
+  if (agent.status === "asleep") {
+    goTo(state, agent, agent.workSpot, { kind: "sleep" }, false, random);
     return;
   }
   endChat(state, agent);
@@ -456,6 +485,14 @@ function arrive(state: OfficeState, agent: Agent, random: Random): void {
       }
       setMode(state, agent, "type", FOREVER);
       agent.nextBubbleAt = state.time + between(random, 6, 20);
+      return;
+    case "sleep":
+      agent.facing = "up";
+      if (agent.status !== "asleep") {
+        setMode(state, agent, "loiter", 0.5);
+        return;
+      }
+      setMode(state, agent, "sleep", FOREVER);
       return;
     case "desk":
       agent.facing = "up";

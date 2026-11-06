@@ -5,7 +5,7 @@
 export type HairStyle = "short" | "long" | "spiky" | "bob" | "bald" | "mohawk" | "bun" | "curly";
 export type Accessory = "none" | "glasses" | "headphones" | "cap" | "beard";
 export type Facing = "down" | "up" | "left" | "right";
-export type Pose = "stand" | "walk" | "type" | "sit" | "stretch" | "drink" | "talk";
+export type Pose = "stand" | "walk" | "type" | "sit" | "stretch" | "drink" | "talk" | "sleep";
 
 export interface PixelGuyLook {
   skin: string;
@@ -26,7 +26,8 @@ const INNER_HEIGHT = 16;
 export const FRAME_WIDTH = INNER_WIDTH + 2;
 export const FRAME_HEIGHT = INNER_HEIGHT + 2;
 // Walk frames loop over four steps; type and talk over two.
-export const POSE_FRAMES: Record<Pose, number> = { stand: 1, walk: 4, type: 2, sit: 1, stretch: 1, drink: 1, talk: 2 };
+// Sleep breathes: the head sinks a pixel on the second frame.
+export const POSE_FRAMES: Record<Pose, number> = { stand: 1, walk: 4, type: 2, sit: 1, stretch: 1, drink: 1, talk: 2, sleep: 2 };
 
 const SKINS = ["#F9D4B4", "#EDB98A", "#D08B5B", "#AE5D29", "#8D4A28", "#614335"];
 const HAIRS = ["#2C1B12", "#5A3825", "#A0522D", "#D9A441", "#E8D9A0", "#B8B8B8", "#E2504B", "#7C5CE0", "#3FA7D6", "#2E2E2E"];
@@ -133,6 +134,9 @@ export function pixelGuyFrame(look: PixelGuyLook, pose: Pose, facing: Facing, fr
   } else {
     canvas = drawFront(look, pose, step, facing === "up");
   }
+  if (pose === "sleep") {
+    canvas = slumped(canvas, step);
+  }
   return outlined(colorize(canvas, look));
 }
 
@@ -166,8 +170,25 @@ function drawFront(look: PixelGuyLook, pose: Pose, step: number, isBack: boolean
   return canvas;
 }
 
+// Head down on folded arms: the head drops onto the shoulders, one more pixel on the out-breath.
+function slumped(canvas: Canvas, step: number): Canvas {
+  const drop = 2 + step;
+  const result = new Canvas();
+  canvas.cells.forEach((row, y) => row.forEach((key, x) => {
+    if (y >= 7) {
+      result.set(x, y, key);
+    }
+  }));
+  canvas.cells.forEach((row, y) => row.forEach((key, x) => {
+    if (y < 7 && key !== null) {
+      result.set(x, y + drop, key);
+    }
+  }));
+  return result;
+}
+
 function drawFrontLegs(canvas: Canvas, pose: Pose, step: number): void {
-  if (pose === "type" || pose === "sit") {
+  if (pose === "type" || pose === "sit" || pose === "sleep") {
     // Seated: knees forward, so the legs look short.
     canvas.rect(2, 13, 3, 1, "pantsShade");
     canvas.rect(5, 13, 3, 1, "pantsShade");
@@ -189,6 +210,14 @@ function drawFrontArms(canvas: Canvas, pose: Pose, step: number, isBack: boolean
     canvas.rect(8, 2, 1, 6, "shirt");
     canvas.set(1, 1, "skin");
     canvas.set(8, 1, "skin");
+    return;
+  }
+  if (pose === "sleep") {
+    // Arms folded on the desk under the head.
+    canvas.rect(1, 7, 8, 2, "shirt");
+    canvas.rect(2, 8, 6, 1, "shirtShade");
+    canvas.set(1, 9, "skin");
+    canvas.set(8, 9, "skin");
     return;
   }
   if (pose === "type") {

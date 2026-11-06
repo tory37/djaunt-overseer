@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildOfficeLayout, findPath, isWalkable, MIN_COLS, MIN_ROWS, nearestWalkable, officeSceneId } from "../../src/officeLayout";
+import { buildOfficeLayout, desksNeeded, findPath, isWalkable, MIN_COLS, MIN_DESKS, MIN_ROWS, nearestWalkable, officeSceneId, officeShape } from "../../src/officeLayout";
 
 describe("buildOfficeLayout", () => {
   it("never goes below the minimum size", () => {
@@ -85,5 +85,37 @@ describe("nearestWalkable", () => {
     const layout = buildOfficeLayout(12, 8, "office");
     const moved = nearestWalkable(layout, layout.desks[0].desk);
     expect(layout.tiles[moved.y][moved.x]).toMatch(/floor|door/);
+  });
+});
+
+describe("officeShape", () => {
+  it("builds at least ten desks, and exactly the desks it promises", () => {
+    for (const [width, height] of [[300, 250], [600, 200], [200, 600], [1, 1]]) {
+      const shape = officeShape(desksNeeded(0), width, height, 16);
+      expect(shape.desks).toBeGreaterThanOrEqual(MIN_DESKS);
+      expect(buildOfficeLayout(shape.cols, shape.rows, "office").desks).toHaveLength(shape.desks);
+    }
+  });
+
+  it("keeps a couple of spare desks past the sessions", () => {
+    expect(desksNeeded(3)).toBe(MIN_DESKS);
+    expect(desksNeeded(9)).toBe(11);
+    expect(desksNeeded(20)).toBe(22);
+  });
+
+  it("adds desks as sessions open, and never builds fewer than needed", () => {
+    let previous = 0;
+    for (let sessions = 0; sessions <= 40; sessions += 4) {
+      const shape = officeShape(desksNeeded(sessions), 320, 260, 16);
+      expect(shape.desks).toBeGreaterThanOrEqual(desksNeeded(sessions));
+      expect(shape.desks).toBeGreaterThanOrEqual(previous);
+      previous = shape.desks;
+    }
+  });
+
+  it("goes wide in a wide view and tall in a tall one", () => {
+    const wide = officeShape(12, 800, 200, 16);
+    const tall = officeShape(12, 200, 800, 16);
+    expect(wide.cols / wide.rows).toBeGreaterThan(tall.cols / tall.rows);
   });
 });

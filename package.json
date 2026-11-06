@@ -1017,7 +1017,7 @@
         "overseer.views.office": {
           "type": "boolean",
           "default": true,
-          "description": "Show the Office view below Session: a pixel guy for each live session, working at his desk while the session is busy and wandering the office while it's idle. Click a guy to open his session."
+          "description": "Show the Office view below Session: a pixel guy for each session in the sidebar, working at his desk while the session is busy, wandering the office while it's idle, and asleep at his desk while it's suspended. Click a guy to open his session."
         },
         "overseer.views.ticker": {
           "type": "boolean",
@@ -1351,6 +1351,11 @@
             "Server Room"
           ],
           "markdownDescription": "The Office view's room. Switch it with **Overseer: Switch Office Scene…** or the button on the view."
+        },
+        "overseer.office.sleepers": {
+          "type": "boolean",
+          "default": true,
+          "description": "Give suspended sessions in the sidebar a guy too, asleep at his desk. Off shows only running sessions."
         },
         "overseer.office.portraits": {
           "type": "boolean",

@@ -61,6 +61,14 @@ describe("pixelGuyFrame", () => {
     expect(pixelGuyFrame(look, "walk", "down", -1)).toEqual(pixelGuyFrame(look, "walk", "down", 3));
   });
 
+  it("drops the head onto the arms to sleep, and breathes", () => {
+    const look = pixelGuyLook("sleepy");
+    const firstFilledRow = (pose: "sit" | "sleep", frame: number) =>
+      pixelGuyFrame(look, pose, "up", frame).findIndex((row) => row.some((color) => color !== null));
+    expect(firstFilledRow("sleep", 0)).toBeGreaterThan(firstFilledRow("sit", 0));
+    expect(firstFilledRow("sleep", 1)).toBe(firstFilledRow("sleep", 0) + 1);
+  });
+
   it("moves the legs while walking", () => {
     const look = pixelGuyLook("legs");
     expect(pixelGuyFrame(look, "walk", "down", 1)).not.toEqual(pixelGuyFrame(look, "walk", "down", 0));

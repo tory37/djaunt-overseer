@@ -62,7 +62,7 @@ export function buildOfficeLayout(requestedCols: number, requestedRows: number, 
   const tiles: TileKind[][] = Array.from({ length: rows }, (_, y) =>
     Array.from({ length: cols }, (): TileKind => (y === 0 ? "wall" : "floor")),
   );
-  const door = { x: 1, y: 0 };
+  const door = { x: 0, y: 0 };
   tiles[door.y][door.x] = "door";
 
   const desks: Desk[] = [];
@@ -70,10 +70,6 @@ export function buildOfficeLayout(requestedCols: number, requestedRows: number, 
   for (let deskRow = 1; deskRow + 2 <= rows - 2; deskRow += 3) {
     for (let x = 1; x <= cols - 2; x++) {
       if ((x - 1) % 3 === 2) {
-        continue;
-      }
-      // The door needs a way in, so the tile under it stays floor.
-      if (deskRow === 1 && x === door.x) {
         continue;
       }
       tiles[deskRow][x] = "desk";
@@ -111,6 +107,42 @@ export function buildOfficeLayout(requestedCols: number, requestedRows: number, 
   }
 
   return { cols, rows, tiles, door, desks, props, couchSeats };
+}
+
+export const MIN_DESKS = 10;
+// Empty desks kept beyond the sessions, so a new session has a seat without the room changing shape.
+const SPARE_DESKS = 2;
+const MIN_PAIRS_PER_ROW = 3;
+const MAX_PAIRS_PER_ROW = 12;
+
+export interface OfficeShape {
+  cols: number;
+  rows: number;
+  desks: number;
+}
+
+// How many desks the room needs: at least MIN_DESKS, and a couple to spare past the sessions.
+export function desksNeeded(sessionCount: number): number {
+  return Math.max(MIN_DESKS, Math.max(0, Math.floor(sessionCount)) + SPARE_DESKS);
+}
+
+// The room size, in tiles, that holds the desks at the biggest zoom the view allows. A row of p desk pairs is 3p + 1
+// tiles wide; r desk rows are 3r + 2 tiles tall with the wall and the props. Ties go to fewer empty desks.
+export function officeShape(deskCount: number, viewWidth: number, viewHeight: number, tileSize: number): OfficeShape {
+  let best: (OfficeShape & { zoom: number }) | undefined;
+  for (let pairs = MIN_PAIRS_PER_ROW; pairs <= MAX_PAIRS_PER_ROW; pairs++) {
+    const deskRows = Math.max(1, Math.ceil(deskCount / (pairs * 2)));
+    const cols = pairs * 3 + 1;
+    const rows = Math.max(MIN_ROWS, deskRows * 3 + 2);
+    const desks = pairs * 2 * deskRows;
+    const zoom = Math.min(viewWidth / (cols * tileSize), viewHeight / (rows * tileSize));
+    const isBetter = best === undefined || zoom > best.zoom + 1e-9 || (Math.abs(zoom - best.zoom) <= 1e-9 && desks < best.desks);
+    if (isBetter) {
+      best = { cols, rows, desks, zoom };
+    }
+  }
+  const { cols, rows, desks } = best as OfficeShape;
+  return { cols, rows, desks };
 }
 
 export function isWalkable(layout: OfficeLayout, point: Point): boolean {

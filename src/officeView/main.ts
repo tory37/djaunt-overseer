@@ -1,7 +1,7 @@
 // The Office webview: draws the floor plan and the pixel guys, and runs the simulation every frame. The extension
 // posts the live sessions ({ type: "office" }); a click on a guy posts { type: "open" } back.
 
-import { buildOfficeLayout, Desk, OFFICE_SCENES, OfficeLayout, OfficeSceneId, officeSceneId, Point, Prop } from "../officeLayout";
+import { buildOfficeLayout, Desk, desksNeeded, OFFICE_SCENES, officeShape, OfficeLayout, OfficeSceneId, officeSceneId, Point, Prop } from "../officeLayout";
 import { Agent, AgentInput, agentPose, createOffice, officeCounts, relayoutOffice, stepOffice, syncOffice } from "../officeSim";
 import { Facing, FRAME_HEIGHT, FRAME_WIDTH, pixelGuyFrame, pixelGuyLook, PixelGuyLook, Pose } from "../pixelGuy";
 import { SCENE_PALETTES, ScenePalette } from "./palettes";
@@ -37,18 +37,20 @@ let hoveredId: string | undefined;
 
 const random = Math.random;
 
-// Sizes the room to the view: whole-pixel zoom when there's space, shrunk to fit when there isn't.
+// Builds just enough room for the sessions (ten desks at least, more as sessions open), shaped to fit the view, then
+// zooms it as far as the view allows.
 function fitLayout(): void {
-  const zoom = Math.max(1, Math.min(4, Math.floor(Math.min(width / (TILE * 10), height / (TILE * 6)))));
-  const cols = Math.floor(width / (TILE * zoom));
-  const rows = Math.floor(height / (TILE * zoom));
+  const shape = officeShape(desksNeeded(latestInputs.length), width, height, TILE);
   const layout = state.layout;
-  const target = buildOfficeLayout(cols, rows, sceneId);
-  if (target.cols !== layout.cols || target.rows !== layout.rows || sceneChanged) {
+  if (shape.cols !== layout.cols || shape.rows !== layout.rows || sceneChanged) {
     sceneChanged = false;
-    relayoutOffice(state, target, random);
+    relayoutOffice(state, buildOfficeLayout(shape.cols, shape.rows, sceneId), random);
   }
-  scale = Math.min(zoom, width / (state.layout.cols * TILE), height / (state.layout.rows * TILE));
+  const pixelRatio = window.devicePixelRatio || 1;
+  const fit = Math.min(width / (state.layout.cols * TILE), height / (state.layout.rows * TILE));
+  // Whole device pixels keep the art crisp, but not at the cost of a much smaller room.
+  const snapped = Math.floor(fit * pixelRatio) / pixelRatio;
+  scale = snapped >= fit * 0.85 ? snapped : fit;
   originX = Math.floor((width - state.layout.cols * TILE * scale) / 2);
   originY = Math.floor((height - state.layout.rows * TILE * scale) / 2);
 }
@@ -78,7 +80,13 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage>) => {
       fitLayout();
     }
   }
-  latestInputs = data.agents.filter((agent) => typeof agent?.id === "string" && (agent.status === "working" || agent.status === "idle"));
+  latestInputs = data.agents.filter((agent) =>
+    typeof agent?.id === "string" && (agent.status === "working" || agent.status === "idle" || agent.status === "asleep"),
+  );
+  // Grow or shrink the room first, so newcomers get one of the new desks.
+  if (width > 0 && height > 0) {
+    fitLayout();
+  }
   // The first sync seats everyone where they belong; later ones walk newcomers in from the door.
   syncOffice(state, latestInputs, random, hasSynced ? "door" : "seated");
   hasSynced = true;
@@ -223,7 +231,7 @@ function drawDesk(desk: Desk, owner: Agent | undefined, palette: ScenePalette, s
   // Monitor, facing the seat below.
   rect(left + 3, top, 10, 8, palette.monitor);
   const typing = owner !== undefined && owner.mode === "type" && owner.path.length === 0;
-  const present = owner !== undefined && !owner.leaving;
+  const present = owner !== undefined && !owner.leaving && owner.status !== "asleep";
   rect(left + 4, top + 1, 8, 6, typing ? palette.screenOn : present ? palette.screenIdle : palette.screenOff);
   if (typing) {
     for (let line = 0; line < 3; line++) {
@@ -386,6 +394,21 @@ function drawBubble(box: AgentBox, text: string, palette: ScenePalette): void {
   context.fillText(text, bubbleLeft + 3, bubbleTop + 1.5);
 }
 
+// Three z's drifting up and fading, each a little bigger than the last.
+function drawSnore(box: AgentBox, seconds: number, palette: ScenePalette): void {
+  const offset = (box.agent.id.length * 0.73) % 3;
+  context.textBaseline = "alphabetic";
+  for (let index = 0; index < 3; index++) {
+    const age = (seconds + offset + index) % 3;
+    const rise = age / 3;
+    context.globalAlpha = Math.sin(rise * Math.PI);
+    context.font = `${5 + index}px monospace`;
+    context.fillStyle = palette.snore;
+    context.fillText("z", box.left + 8 + rise * 6 + Math.sin(age * 3) * 1.5, box.top + 6 - rise * 12);
+  }
+  context.globalAlpha = 1;
+}
+
 function drawNameTag(box: AgentBox, palette: ScenePalette): void {
   const text = box.agent.title.length > 28 ? box.agent.title.slice(0, 27) + "…" : box.agent.title;
   context.font = "7px monospace";
@@ -439,6 +462,9 @@ function draw(seconds: number): void {
   boxes = nextBoxes;
 
   boxes.forEach((box) => {
+    if (box.agent.mode === "sleep" && box.agent.path.length === 0 && box.agent.bubble === undefined) {
+      drawSnore(box, seconds, palette);
+    }
     if (box.agent.bubble !== undefined) {
       drawBubble(box, box.agent.bubble.text, palette);
     }
@@ -449,7 +475,8 @@ function draw(seconds: number): void {
   }
 
   const counts = officeCounts(state);
-  statusLabel.textContent = state.agents.length === 0 ? "quiet" : `${counts.working} working · ${counts.idle} idle`;
+  const countText = [`${counts.working} working`, `${counts.idle} idle`, ...(counts.asleep > 0 ? [`${counts.asleep} asleep`] : [])];
+  statusLabel.textContent = state.agents.length === 0 ? "quiet" : countText.join(" · ");
 }
 
 let frameHandle = 0;
@@ -496,7 +523,7 @@ canvas.addEventListener("mousemove", (event) => {
     return;
   }
   tooltip.hidden = false;
-  tooltip.textContent = `${agent.title} · ${agent.status === "working" ? "working" : "idle"}`;
+  tooltip.textContent = `${agent.title} · ${agent.status === "asleep" ? "suspended" : agent.status}`;
 });
 
 canvas.addEventListener("mouseleave", () => {

@@ -31,6 +31,7 @@ export interface ScenePalette {
   bubble: string;
   bubbleEdge: string;
   bubbleText: string;
+  snore: string;
 }
 
 export const SCENE_PALETTES: Record<OfficeSceneId, ScenePalette> = {
@@ -64,6 +65,7 @@ export const SCENE_PALETTES: Record<OfficeSceneId, ScenePalette> = {
     bubble: "#FFFFFF",
     bubbleEdge: "#2B2B33",
     bubbleText: "#1A1A2E",
+    snore: "#3D5A80",
   },
   serverRoom: {
     floor: "#2A2F3A",
@@ -95,5 +97,6 @@ export const SCENE_PALETTES: Record<OfficeSceneId, ScenePalette> = {
     bubble: "#0B1F12",
     bubbleEdge: "#3DDC6A",
     bubbleText: "#8EF5A8",
+    snore: "#9ED8F5",
   },
 };

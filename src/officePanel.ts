@@ -8,6 +8,7 @@ import type { Registry } from "./registry";
 
 export const OFFICE_PANEL_VIEW_ID = "overseer.office";
 const SCENE_SETTING = "overseer.office.scene";
+const SLEEPERS_SETTING = "overseer.office.sleepers";
 
 export interface OfficePanelDeps {
   extensionUri: vscode.Uri;
@@ -17,8 +18,8 @@ export interface OfficePanelDeps {
   sessionTitle: (sessionId: string) => string;
 }
 
-// The Office view: a pixel guy for every live session in the sidebar, working at his desk while the session is busy
-// and wandering the room while it's idle. The simulation runs in the webview (src/officeView); this side sends it the
+// The Office view: a pixel guy for every session in the sidebar, working at his desk while the session is busy,
+// wandering the room while it's idle, and asleep at his desk while it's suspended. The simulation runs in the webview (src/officeView); this side sends it the
 // live sessions whenever they change and opens a session when its guy is clicked.
 export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private readonly webviews = new Set<vscode.Webview>();
@@ -29,7 +30,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
       deps.liveMonitor.onDidChange(() => this.postAll()),
       deps.registry.onDidChange(() => this.postAll()),
       vscode.workspace.onDidChangeConfiguration((change) => {
-        if (change.affectsConfiguration(SCENE_SETTING)) {
+        if (change.affectsConfiguration(SCENE_SETTING) || change.affectsConfiguration(SLEEPERS_SETTING)) {
           this.postAll();
         }
       }),
@@ -81,16 +82,21 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
   private message(): { type: "office"; scene: string; agents: AgentInput[] } {
     const agents: AgentInput[] = [];
     const seen = new Set<string>();
+    const showSleepers = vscode.workspace.getConfiguration().get<boolean>(SLEEPERS_SETTING, true);
     for (const pinned of this.deps.pinnedSessions()) {
+      // Plain terminal rows aren't Claude sessions, so they get no guy.
+      if (pinned.terminal !== undefined || seen.has(pinned.sessionId)) {
+        continue;
+      }
       const live = this.deps.liveMonitor.get(pinned.sessionId);
-      if (live === undefined || seen.has(pinned.sessionId)) {
+      if (live === undefined && !showSleepers) {
         continue;
       }
       seen.add(pinned.sessionId);
       agents.push({
         id: pinned.sessionId,
         seed: this.deps.registry.avatarSeed(pinned.sessionId),
-        status: live.status === "idle" ? "idle" : "working",
+        status: live === undefined ? "asleep" : live.status === "idle" ? "idle" : "working",
         title: this.deps.sessionTitle(pinned.sessionId),
       });
     }

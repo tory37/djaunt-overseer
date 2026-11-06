@@ -112,6 +112,36 @@ describe("officeSim", () => {
     expect(agent(state, "a").goal).toEqual({ kind: "work" });
   });
 
+  it("puts a suspended session's guy to sleep at his desk, and wakes him when it resumes", () => {
+    const random = seededRandom(10);
+    const state = createOffice(buildOfficeLayout(12, 8, "office"));
+    syncOffice(state, [input("a", "idle")], random);
+    run(state, 20, random);
+    syncOffice(state, [input("a", "asleep")], random);
+    const guy = agent(state, "a");
+    expect(guy.bubble?.text).toBe("*yawn*");
+    run(state, 20, random);
+    expect(atWorkSpot(guy)).toBe(true);
+    expect(guy.mode).toBe("sleep");
+    expect(agentPose(guy, state.time)).toMatchObject({ pose: "sleep", facing: "up", seated: true });
+    run(state, 60, random);
+    expect(guy.mode).toBe("sleep");
+    expect(officeCounts(state)).toEqual({ working: 0, idle: 0, asleep: 1 });
+    syncOffice(state, [input("a", "working")], random);
+    expect(guy.bubble?.text).toBe("!?");
+    expect(guy.mode).toBe("type");
+  });
+
+  it("starts sleepers asleep when the view opens, and keeps them out of chats", () => {
+    const random = seededRandom(11);
+    const state = createOffice(buildOfficeLayout(10, 6, "office"));
+    syncOffice(state, [input("a", "asleep"), input("b", "idle")], random, "seated");
+    expect(agent(state, "a").mode).toBe("sleep");
+    run(state, 120, random);
+    expect(agent(state, "a").mode).toBe("sleep");
+    expect(agent(state, "b").mode).not.toBe("chat");
+  });
+
   it("walks an ended session's guy out the door", () => {
     const random = seededRandom(6);
     const state = createOffice(buildOfficeLayout(12, 8, "office"));
@@ -119,7 +149,7 @@ describe("officeSim", () => {
     run(state, 15, random);
     syncOffice(state, [input("b", "working")], random);
     expect(agent(state, "a").leaving).toBe(true);
-    expect(officeCounts(state)).toEqual({ working: 1, idle: 0 });
+    expect(officeCounts(state)).toEqual({ working: 1, idle: 0, asleep: 0 });
     run(state, 20, random);
     expect(state.agents.map((guy) => guy.id)).toEqual(["b"]);
   });
