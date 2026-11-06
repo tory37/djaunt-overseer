@@ -60,10 +60,10 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - **Kill and Remove** (right-click) closes the terminal, ends the process, and unpins it. The transcript stays, so All Sessions can still resume it.
 - **Remove from Sidebar** only unpins.
 - Hovering over a session shows its name, state, and status. Everything else is in the Session sidebar.
-- The Claude actions (Compact, Clear, Model, Cost, Run command) are in the Session sidebar. See [Session sidebar](#session-sidebar).
+- Right-click a session for its actions, in groups: Resume or Suspend and Handoff; the **Claude** submenu (Compact, Clear Context, Switch Model, Show Cost, Commands), shown when the session runs here and is idle; Rename, Unlock Title, and Set Status; Update Now, Recheck, and Flag; Open Repo; Move to Workspace; the **Pixel Guy** submenu; and Remove or Kill.
 
 ### Statuses
-- **Set status** (Session sidebar, or **Set Status…** in the palette for the selected rows) marks a session or terminal with a status. **Clear Status** removes it.
+- **Set Status…** (right-click a session, or **Set Status…** in the palette for the selected rows) marks a session or terminal with a status. **Clear Status** removes it.
 - With no status set, the Session sidebar shows the status the analyzer derived, marked as automatic. A status you set wins.
 - The defaults are Todo, Triage, In Progress, Blocked, AI Review, Human Review, and Ready to Ship. They do not follow Jira, so a status like Triage works.
 - A status with **Ask why** on (Blocked, by default) asks for a reason when you set it. Press Enter to skip. The reason shows in the row's tooltip and on the badge's hover. Setting another status clears it.
@@ -82,7 +82,7 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - The **Repos** view, under Terminals, lists every repo a pinned session or terminal works in. The most recently active repo is on top.
 - Each row shows the branch, commits ahead and behind its upstream, and the count of changed files, like `main · ↑2 ↓1 · 5 changed`. The icon turns amber when there are uncommitted changes.
 - Rows update a second after anything changes in the repo's `.git` folder, and when the window gets focus. Git runs only while the view is open.
-- **Open Repo in Source Control** (the inline icon, **Open repo** in the Session sidebar, or the palette) adds that repo to VS Code's Source Control view, so its graph, changes, and diffs work there. A session that touched more than one repo asks which.
+- **Open Repo in Source Control** (the inline icon, right-click a session, or the palette) adds that repo to VS Code's Source Control view, so its graph, changes, and diffs work there. A session that touched more than one repo asks which.
 - **Open Repo in New Window** and **Copy Repo Path** are on the right-click menu.
 - Expand a repo to see its last 20 commits on the current branch: subject, short hash, and age.
 - A commit a Claude session made shows a green sparkle and the session's name. Overseer knows a session made it when the transcript holds that commit's `git commit` output. It doesn't guess from timing.
@@ -93,10 +93,8 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - The header shows the session's name, state, folder, and branch.
 - **Suspend** or **Resume** sits under the header. A session running in another window offers a fork instead.
 - **Now** shows the analyzer's lines on where the work stands, and when it last updated them. **Work** comes next.
-- **Actions** holds the rest:
-  - **Claude**: Compact, Clear, Model, Cost, and Run command. They send `/compact`, `/clear`, `/model`, `/cost`, or one of your saved prompts. They show only for a session running in this window, and they wait until it is idle.
-  - **Session**: Update, Recheck, Open repo, Set status, and Rename.
-- **Run command** prompts come from the `overseer.sessionCommands` setting, as `{name, prompt}` entries, like "Latest reviews are in on the PR. Pull them and evaluate." A `{ticket link}` in a prompt asks for that value first.
+- Other actions are on the session's right-click menu in the tree. The **Claude** submenu holds Compact, Clear Context, Switch Model, Show Cost, and Commands. They send `/compact`, `/clear`, `/model`, `/cost`, or one of your saved prompts, and show only for a session running in this window while it is idle.
+- **Commands…** prompts come from the `overseer.sessionCommands` setting, as `{name, prompt}` entries, like "Latest reviews are in on the PR. Pull them and evaluate." A `{ticket link}` in a prompt asks for that value first.
 
 ### Office
 - The **Office** view, below Session, gives every session in the sidebar a pixel guy. The session's id picks his looks, so he stays the same guy across reloads.
