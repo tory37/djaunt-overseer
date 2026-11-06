@@ -44,9 +44,10 @@ const GLOBE_SCRIPT = `
   }
 
   function strokePath(points, spin, tilt, radius, color, lineWidth, near, far) {
-    context.strokeStyle = color;
+    context.strokeStyle = typeof color === "function" ? color(points[0][1]) : color;
     context.lineWidth = lineWidth;
     for (let index = 1; index < points.length; index++) {
+      if (typeof color === "function") context.strokeStyle = color((points[index - 1][1] + points[index][1]) / 2);
       const [ax, ay, az] = project(rotate(points[index - 1], spin, tilt), radius);
       const [bx, by, bz] = project(rotate(points[index], spin, tilt), radius);
       context.globalAlpha = depthAlpha((az + bz) / 2, near, far);
@@ -84,6 +85,23 @@ const GLOBE_SCRIPT = `
   let nextArcAt = 0;
   let lastReadoutAt = 0;
   let phaseIndex = 0;
+
+  // Every so often the scan ring sweeps the globe once and repaints it, as it passes, the next color of a spectrum.
+  const SWEEP_SECONDS = 2.8;
+  let sweep = { start: -1, from: 0, to: 0, downward: false };
+  let nextSweepAt = 6;
+  let tintIndex = 0;
+
+  // When a sweep ends the globe bursts. The shock ring recolors each logo as it passes, and the Djaunt view bursts too.
+  const BURST_SECONDS = 0.8;
+  let shock = { start: -1, sparks: [] };
+  let logoTint = 0;
+  let logoTintAt = () => tints()[0];
+  onTint((index) => {
+    if (sweep.start >= 0 || shock.start >= 0) return;
+    tintIndex = index;
+    logoTint = index;
+  });
 
   const LOGOS = ${JSON.stringify(ORBIT_LOGOS)};
   const LOGO_SIZE = 0.55;
@@ -157,7 +175,7 @@ const GLOBE_SCRIPT = `
     const originY = height / 2 - center[1] * radius * perspective;
     const screenX = (x, y, z) => originX + scale * (x * across[0] - y * up[0] + z * normal[0]);
     const screenY = (x, y, z) => originY - scale * (x * across[1] - y * up[1] + z * normal[1]);
-    const base = rgbOf(palette.primary);
+    const base = rgbOf(logoTintAt(Math.hypot(originX - width / 2, originY - height / 2)).dot);
     const distance = 0.7 + 0.3 * clamp01((center[2] / flyer.orbitRadius + 1) / 2);
     const half = LOGO_THICKNESS / 2;
     const nearZ = normal[2] >= 0 ? half : -half;
@@ -326,15 +344,43 @@ const GLOBE_SCRIPT = `
     const revealAge = hacking ? event.age - HACK_REVEAL_SECONDS : -1;
     const hitFlicker = defending && event.beat === 0 && seconds - state.lastHitAt < 0.12;
     const hackLight = shade(rgbOf(palette.matrix), 1.7);
+    if (event === null && sweep.start < 0 && shock.start < 0 && seconds >= nextSweepAt) {
+      sweep = { start: seconds, from: tintIndex, to: (tintIndex + 1) % tints().length, downward: !sweep.downward };
+    }
+    const sweepAge = sweep.start < 0 ? -1 : (seconds - sweep.start) / SWEEP_SECONDS;
+    if (sweepAge >= 1) {
+      tintIndex = sweep.to;
+      sweep.start = -1;
+      nextSweepAt = seconds + 20 + Math.random() * 20;
+      shock = { start: seconds, sparks: Array.from({ length: 28 }, () => ({ angle: Math.random() * Math.PI * 2, speed: 0.6 + Math.random() * 0.8 })) };
+      extension.postMessage({ type: "tint", index: tintIndex });
+    }
+    const sweeping = sweep.start >= 0;
+    const scanY = sweeping ? (sweep.downward ? 1 : -1) * Math.cos(Math.PI * sweepAge) * 0.98 : 2;
+    const burstAge = shock.start < 0 ? -1 : (seconds - shock.start) / BURST_SECONDS;
+    if (burstAge >= 1) {
+      shock.start = -1;
+      logoTint = tintIndex;
+    }
+    const bursting = shock.start >= 0;
+    const shockRadius = bursting ? radius * (1 + 1.4 * (1 - Math.pow(1 - burstAge, 3))) : 0;
+    // Events recolor the whole scene, so the globe and logos show the theme's own look under them.
+    const tintList = tints();
+    const restTint = event === null ? tintList[sweeping ? sweep.from : tintIndex] : tintList[0];
+    const sweptTint = event === null && sweeping ? tintList[sweep.to] : restTint;
+    const tintAt = (y) => sweeping && (y - scanY) * (sweep.downward ? 1 : -1) > 0 ? sweptTint : restTint;
+    logoTintAt = (distance) => event !== null ? tintList[0] : tintList[bursting && distance > shockRadius ? logoTint : tintIndex];
+
     const placed = flyers.map((flyer) => placeFlyer(flyer, seconds, tilt)).sort((a, b) => a.center[2] - b.center[2]);
     drawCreatures(seconds, "behind");
     placed.filter((slab) => slab.center[2] < 0).forEach((slab) => drawSolid(slab, radius));
 
-    meridians.concat(parallels).forEach((path) => strokePath(path, spin, tilt, radius, palette.dim, 1, 0.35, 0.06));
+    meridians.concat(parallels).forEach((path) => strokePath(path, spin, tilt, radius, (y) => tintAt(y).line, 1, 0.35, 0.06));
 
-    const scanY = Math.sin(seconds * (Math.PI / 2)) * 0.95;
-    const scanRing = Math.sqrt(1 - scanY * scanY);
-    strokePath(circle(64, (angle) => [Math.cos(angle) * scanRing, scanY, Math.sin(angle) * scanRing]), spin, tilt, radius, palette.accent, 1.5, 0.9, 0.2);
+    if (sweeping && event === null) {
+      const scanRing = Math.sqrt(1 - scanY * scanY);
+      strokePath(circle(64, (angle) => [Math.cos(angle) * scanRing, scanY, Math.sin(angle) * scanRing]), spin, tilt, radius, sweptTint.ring, 1.5, 0.9, 0.2);
+    }
 
     context.font = "bold 10px " + fontFamily;
     context.textAlign = "center";
@@ -357,10 +403,26 @@ const GLOBE_SCRIPT = `
         return;
       }
       context.globalAlpha = depthAlpha(z, nearScan ? 1 : 0.85, 0.12) * (hitFlicker && Math.random() < 0.5 ? 0.2 : 1);
-      context.fillStyle = nearScan ? palette.accent : palette.primary;
+      context.fillStyle = nearScan || (bursting && burstAge < 0.15) ? tintList[tintIndex].ring : tintAt(node[1]).dot;
       const size = (nearScan ? 2.4 : 1.6) * (3 / (3 - z));
       context.fillRect(x - size / 2, y - size / 2, size, size);
     });
+
+    if (bursting && event === null) {
+      const color = tintList[tintIndex].ring;
+      context.globalAlpha = 1 - burstAge;
+      context.strokeStyle = color;
+      context.lineWidth = 2.5 * (1 - burstAge) + 0.5;
+      context.beginPath();
+      context.arc(width / 2, height / 2, shockRadius, 0, Math.PI * 2);
+      context.stroke();
+      context.fillStyle = color;
+      shock.sparks.forEach(({ angle, speed }) => {
+        const reach = radius * (1 + 1.6 * speed * (1 - Math.pow(1 - burstAge, 2)));
+        const size = 2.5 * (1 - burstAge) + 0.5;
+        context.fillRect(width / 2 + Math.cos(angle) * reach - size / 2, height / 2 + Math.sin(angle) * reach - size / 2, size, size);
+      });
+    }
 
     if (seconds >= nextArcAt) {
       const from = nodes[Math.floor(Math.random() * NODE_COUNT)];
@@ -375,7 +437,7 @@ const GLOBE_SCRIPT = `
       const tail = Math.max(0, age * 2 - 1);
       const steps = 24;
       const path = Array.from({ length: steps + 1 }, (_, step) => slerpLifted(arcs[index].from, arcs[index].to, tail + (head - tail) * (step / steps)));
-      strokePath(path, spin, tilt, radius, hacking ? hackLight : palette.primary, hacking ? 2 : 1.25, 0.95, 0.15);
+      strokePath(path, spin, tilt, radius, hacking ? hackLight : restTint.dot, hacking ? 2 : 1.25, 0.95, 0.15);
     }
 
     strokePath(orbit, spin * 0.6, tilt + 0.5, radius, palette.dim, 1, 0.4, 0.08);

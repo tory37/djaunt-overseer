@@ -109,6 +109,13 @@ const DRAGON_SCRIPT = `
     return { ...rest, centerY: ratio / 2, maxHeight: maxHeight * ratio };
   };
 
+  // When Core's globe bursts, a burst from the mark's center paints it the same tint.
+  const TINT_BURST_SECONDS = 0.8;
+  let tintBurst = { start: -1, from: 0, to: 0 };
+  onTint((index, isBurst) => {
+    tintBurst = isBurst ? { start: null, from: tintBurst.to, to: index } : { start: -1, from: index, to: index };
+  });
+
   function draw(seconds, event) {
     const half = Math.min(width, sceneHeight()) * 0.4;
     if (half < 12 || dragon.points.length === 0) return;
@@ -124,6 +131,15 @@ const DRAGON_SCRIPT = `
     const forcedGather = hackGather(event);
     const glitchSeed = Math.floor(seconds * 12);
     const scanX = loop > 2 && loop < 9 ? Math.sin(seconds * 2.2) * 0.9 : 9;
+    if (tintBurst.start === null) tintBurst.start = seconds;
+    const burstAge = tintBurst.start < 0 ? 1 : (seconds - tintBurst.start) / TINT_BURST_SECONDS;
+    if (burstAge >= 1) tintBurst.start = -1;
+    const bursting = burstAge < 1;
+    const front = bursting ? 1.15 * (1 - Math.pow(1 - burstAge, 2)) : 9;
+    // Events recolor the whole scene, so the mark shows the theme's own look under them.
+    const tintList = tints();
+    const oldTint = event === null ? tintList[bursting ? tintBurst.from : tintBurst.to] : tintList[0];
+    const newTint = event === null ? tintList[tintBurst.to] : tintList[0];
 
     dragon.points.forEach((point) => {
       const assemble = easeInOut(clamp01((loop / 2 - point.delay) / (1 - point.delay)));
@@ -144,8 +160,11 @@ const DRAGON_SCRIPT = `
       const perspective = 3 / (3 - rz);
       const screenX = centerX + rx * half * perspective;
       const screenY = centerY - ry * half * perspective;
-      const lit = glitchRow || Math.abs(rx - scanX) < 0.05;
-      context.fillStyle = lit ? palette.accent : point.kind === "side" ? palette.dim : palette.primary;
+      const fromCenter = Math.hypot(rx, ry);
+      const onFront = bursting && Math.abs(fromCenter - front) < 0.08;
+      const tint = !bursting || fromCenter < front ? newTint : oldTint;
+      const lit = glitchRow || onFront || Math.abs(rx - scanX) < 0.05;
+      context.fillStyle = lit ? (onFront ? newTint.ring : tint.ring) : point.kind === "side" ? tint.line : tint.dot;
       context.globalAlpha = depthAlpha(rz, point.kind === "side" ? 0.7 : 1, 0.15) * (glitchRow && Math.random() < 0.3 ? 0.2 : 1);
       const dot = (point.kind === "side" ? 1.4 : 1.8) * perspective;
       context.fillRect(screenX - dot / 2, screenY - dot / 2, dot, dot);
