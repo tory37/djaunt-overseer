@@ -2,7 +2,7 @@
   "name": "djaunt-overseer",
   "displayName": "Overseer",
   "description": "Vertical tabs for Claude CLI sessions: group by ticket, suspend, and resume from any repo.",
-  "version": "0.0.39",
+  "version": "0.0.40",
   "publisher": "djaunt",
   "private": true,
   "license": "UNLICENSED",
@@ -1372,19 +1372,96 @@
           "default": {},
           "markdownDescription": "Your guy's look in the Office. Leave a field out for the default: a blonde ponytail with one side shaved, blue eyes, a thick orange beard, a black muscle shirt, white shorts, and black flip flops. Colors are `#rrggbb`.",
           "properties": {
-            "skin": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "default": "#F2C9A0", "description": "Skin color." },
-            "hair": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "default": "#F2D16B", "description": "Hair color." },
-            "hairStyle": { "type": "string", "enum": ["ponytail", "short", "long", "spiky", "bob", "bald", "mohawk", "bun", "curly"], "default": "ponytail" },
-            "eyes": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "default": "#3D8BFD", "description": "Eye color." },
-            "shirt": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "default": "#2A2A30", "description": "Shirt color." },
-            "sleeveless": { "type": "boolean", "default": true, "description": "Bare arms." },
-            "pants": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "default": "#F4F4F6", "description": "Pants or shorts color." },
-            "shorts": { "type": "boolean", "default": true, "description": "Bare shins." },
-            "shoes": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "default": "#1E1E1E", "description": "Shoe color." },
-            "flipFlops": { "type": "boolean", "default": true, "description": "Bare toes." },
-            "accessory": { "type": "string", "enum": ["fullBeard", "beard", "none", "glasses", "headphones", "cap"], "default": "fullBeard" },
-            "beard": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "default": "#D9772B", "description": "Beard color, when the accessory is a beard or full beard." },
-            "accessoryColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "default": "#1E1E1E", "description": "Accessory color." }
+            "skin": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "default": "#F2C9A0",
+              "description": "Skin color."
+            },
+            "hair": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "default": "#F2D16B",
+              "description": "Hair color."
+            },
+            "hairStyle": {
+              "type": "string",
+              "enum": [
+                "ponytail",
+                "short",
+                "long",
+                "spiky",
+                "bob",
+                "bald",
+                "mohawk",
+                "bun",
+                "curly"
+              ],
+              "default": "ponytail"
+            },
+            "eyes": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "default": "#3D8BFD",
+              "description": "Eye color."
+            },
+            "shirt": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "default": "#2A2A30",
+              "description": "Shirt color."
+            },
+            "sleeveless": {
+              "type": "boolean",
+              "default": true,
+              "description": "Bare arms."
+            },
+            "pants": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "default": "#F4F4F6",
+              "description": "Pants or shorts color."
+            },
+            "shorts": {
+              "type": "boolean",
+              "default": true,
+              "description": "Bare shins."
+            },
+            "shoes": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "default": "#1E1E1E",
+              "description": "Shoe color."
+            },
+            "flipFlops": {
+              "type": "boolean",
+              "default": true,
+              "description": "Bare toes."
+            },
+            "accessory": {
+              "type": "string",
+              "enum": [
+                "fullBeard",
+                "beard",
+                "none",
+                "glasses",
+                "headphones",
+                "cap"
+              ],
+              "default": "fullBeard"
+            },
+            "beard": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "default": "#D9772B",
+              "description": "Beard color, when the accessory is a beard or full beard."
+            },
+            "accessoryColor": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$",
+              "default": "#1E1E1E",
+              "description": "Accessory color."
+            }
           },
           "additionalProperties": false
         }
