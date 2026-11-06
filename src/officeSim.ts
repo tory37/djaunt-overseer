@@ -7,7 +7,7 @@
 // The webview calls syncOffice when the sessions change, syncYou when you come or go, and stepOffice every frame;
 // time is in seconds.
 
-import { findPath, isWalkable, nearestWalkable, OfficeLayout, openFloorTiles, Point, PropKind } from "./officeLayout";
+import { DRINK_PROPS, findPath, isWalkable, nearestWalkable, OfficeLayout, openFloorTiles, Point } from "./officeLayout";
 import type { Facing, Pose } from "./pixelGuy";
 
 export type AgentStatus = "working" | "idle" | "asleep";
@@ -79,8 +79,6 @@ const CODE_CHATTER = ["{ }", "</>", "=>", "[ ]", "0x", "#!", "&&", ";", "//", "+
 export const YOU_AGENT_ID = "you";
 const BREAK_LINES = ["brb", "coffee?", "☕", "stretch", "…", "sup"];
 const BACK_LINES = ["ok ok", "back to it", "♪", "…"];
-
-const DRINK_PROPS: ReadonlySet<PropKind> = new Set<PropKind>(["cooler", "coffee", "vending"]);
 
 const between = (random: Random, low: number, high: number) => low + random() * (high - low);
 

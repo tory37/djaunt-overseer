@@ -1344,11 +1344,21 @@
           "default": "office",
           "enum": [
             "office",
-            "serverRoom"
+            "serverRoom",
+            "forest",
+            "field",
+            "riverbed",
+            "cave",
+            "moon"
           ],
           "enumItemLabels": [
             "Office",
-            "Server Room"
+            "Server Room",
+            "Forest",
+            "Field",
+            "Riverbed",
+            "Cave",
+            "Moon"
           ],
           "markdownDescription": "The Office view's room. Switch it with **Overseer: Switch Office Scene…** or the button on the view."
         },

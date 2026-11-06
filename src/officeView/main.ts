@@ -212,12 +212,16 @@ function drawFloor(layout: OfficeLayout, palette: ScenePalette): void {
     for (let x = 0; x < layout.cols; x++) {
       const left = x * TILE;
       const top = y * TILE;
-      rect(left, top, TILE, TILE, (x + y) % 2 === 0 ? palette.floor : palette.floorAlt);
-      rect(left, top + TILE - 1, TILE, 1, palette.floorLine);
-      if (palette.planks) {
-        rect(left + ((y * 5) % TILE), top, 1, TILE - 1, palette.floorLine);
+      if (palette.floorStyle === "planks" || palette.floorStyle === "tiles") {
+        rect(left, top, TILE, TILE, (x + y) % 2 === 0 ? palette.floor : palette.floorAlt);
+        rect(left, top + TILE - 1, TILE, 1, palette.floorLine);
+        if (palette.floorStyle === "planks") {
+          rect(left + ((y * 5) % TILE), top, 1, TILE - 1, palette.floorLine);
+        } else {
+          rect(left + TILE - 1, top, 1, TILE, palette.floorLine);
+        }
       } else {
-        rect(left + TILE - 1, top, 1, TILE, palette.floorLine);
+        drawGround(left, top, x * 31 + y * 17, palette);
       }
     }
   }
@@ -225,27 +229,117 @@ function drawFloor(layout: OfficeLayout, palette: ScenePalette): void {
   rect(0, TILE, layout.cols * TILE, 2, palette.shadow);
 }
 
-function drawWall(layout: OfficeLayout, palette: ScenePalette, seconds: number): void {
-  rect(0, 0, layout.cols * TILE, TILE, palette.wall);
-  rect(0, TILE - 3, layout.cols * TILE, 3, palette.wallTrim);
-  for (let x = 3; x < layout.cols - 1; x += 5) {
-    if (palette.windows) {
-      drawWindow(x * TILE + 1, 2, palette);
-    } else {
-      drawWallPanel(x * TILE + 1, 2, palette, seconds, x);
+// Outdoor and cave ground: one color with scattered detail, so it doesn't read as tiles.
+function drawGround(left: number, top: number, seed: number, palette: ScenePalette): void {
+  rect(left, top, TILE, TILE, palette.floor);
+  const at = (salt: number) => ({
+    x: left + Math.floor(noise(seed + salt) * (TILE - 2)),
+    y: top + Math.floor(noise(seed * 3 + salt) * (TILE - 2)),
+  });
+  // A patch of the alternate shade, so the ground has some lumps.
+  const patch = at(1);
+  rect(patch.x, patch.y, 5, 3, palette.floorAlt);
+  switch (palette.floorStyle) {
+    case "grass":
+    case "meadow":
+      for (let blade = 0; blade < 4; blade++) {
+        const spot = at(10 + blade);
+        rect(spot.x, spot.y, 1, 2, palette.floorLine);
+        rect(spot.x + 1, spot.y + 1, 1, 1, palette.floorLine);
+      }
+      if (palette.floorStyle === "meadow" && noise(seed + 40) > 0.55) {
+        const flower = at(41);
+        rect(flower.x, flower.y, 1, 1, ["#FFFFFF", "#FFD43B", "#F783AC", "#B197FC"][Math.floor(noise(seed + 42) * 4)]);
+      }
+      return;
+    case "pebbles":
+      for (let pebble = 0; pebble < 3; pebble++) {
+        const spot = at(20 + pebble);
+        rect(spot.x, spot.y, 2, 1, ["#8E8574", "#A39A88", "#7A7264"][pebble]);
+      }
+      return;
+    case "stone": {
+      const crack = at(30);
+      rect(crack.x, crack.y, 3, 1, palette.floorLine);
+      rect(crack.x + 2, crack.y + 1, 2, 1, palette.floorLine);
+      if (noise(seed + 31) > 0.6) {
+        const rock = at(32);
+        rect(rock.x, rock.y, 2, 2, palette.floorLine);
+        rect(rock.x, rock.y, 1, 1, "#5E5752");
+      }
+      return;
+    }
+    case "regolith": {
+      if (noise(seed + 50) > 0.6) {
+        const crater = at(51);
+        rect(crater.x, crater.y, 4, 1, palette.floorLine);
+        rect(crater.x, crater.y + 1, 1, 1, palette.floorLine);
+        rect(crater.x + 1, crater.y + 2, 3, 1, "#BDBDC4");
+      }
+      const dust = at(52);
+      rect(dust.x, dust.y, 1, 1, "#BDBDC4");
+      return;
     }
   }
+}
+
+function drawWall(layout: OfficeLayout, palette: ScenePalette, seconds: number): void {
+  const width = layout.cols * TILE;
+  // Keep the outdoor backdrops' trees and ridges inside the room.
+  context.save();
+  context.beginPath();
+  context.rect(0, 0, width, TILE);
+  context.clip();
+  switch (palette.backdrop) {
+    case "windows":
+    case "panels":
+      rect(0, 0, width, TILE, palette.wall);
+      rect(0, TILE - 3, width, 3, palette.wallTrim);
+      for (let x = 3; x < layout.cols - 1; x += 5) {
+        if (palette.backdrop === "windows") {
+          drawWindow(x * TILE + 1, 2, palette);
+        } else {
+          drawWallPanel(x * TILE + 1, 2, palette, seconds, x);
+        }
+      }
+      break;
+    case "trees":
+      drawTrees(width, palette, seconds);
+      break;
+    case "sky":
+      drawSky(width, palette, seconds);
+      break;
+    case "river":
+      drawRiver(width, palette, seconds);
+      break;
+    case "rock":
+      drawRockWall(width, palette, seconds);
+      break;
+    case "space":
+      drawSpace(width, palette, seconds);
+      break;
+  }
+  context.restore();
   // The lucky cat sits on the ledge between the door and the first window.
   drawLuckyCat(rect, TILE + 8, 1, seconds, new Date(), currentEvent() !== undefined);
   drawDoor(layout.door, palette);
 }
 
-function drawWindow(left: number, top: number, palette: ScenePalette): void {
+function timeOfDay(): { night: boolean; dusk: boolean } {
   const hour = new Date().getHours() + new Date().getMinutes() / 60;
-  const isNight = hour < 6.5 || hour >= 19.5;
-  const isDusk = !isNight && (hour < 8 || hour >= 18);
+  const night = hour < 6.5 || hour >= 19.5;
+  return { night, dusk: !night && (hour < 8 || hour >= 18) };
+}
+
+function skyColor(): string {
+  const { night, dusk } = timeOfDay();
+  return night ? "#1B2340" : dusk ? "#F2A65A" : "#8FD3F4";
+}
+
+function drawWindow(left: number, top: number, palette: ScenePalette): void {
+  const isNight = timeOfDay().night;
   rect(left, top, 14, 10, palette.windowFrame);
-  rect(left + 1, top + 1, 12, 8, isNight ? "#1B2340" : isDusk ? "#F2A65A" : "#8FD3F4");
+  rect(left + 1, top + 1, 12, 8, skyColor());
   if (isNight) {
     rect(left + 3, top + 3, 1, 1, "#FFFFFF");
     rect(left + 9, top + 2, 1, 1, "#FFF6C8");
@@ -268,13 +362,170 @@ function drawWallPanel(left: number, top: number, palette: ScenePalette, seconds
   }
 }
 
+// The forest's back row: trunks under a canopy, a hedge along the bottom, fireflies at night.
+function drawTrees(width: number, palette: ScenePalette, seconds: number): void {
+  const { night } = timeOfDay();
+  rect(0, 0, width, TILE, night ? "#0F1E16" : palette.wall);
+  for (let x = 2; x < width; x += 7) {
+    const shift = Math.floor(noise(x) * 3);
+    rect(x + shift, 5, 2, 9, night ? "#2A1D12" : "#4A3220");
+  }
+  for (let x = -4; x < width; x += 6) {
+    const height = 5 + Math.floor(noise(x * 5) * 4);
+    rect(x, 0, 8, height, night ? "#173322" : "#2F5A2E");
+    rect(x + 2, 0, 4, height - 2, night ? "#1E3F2A" : "#3E6E36");
+  }
+  for (let x = 0; x < width; x += 4) {
+    rect(x, 12 - Math.floor(noise(x * 7) * 2), 4, 4, night ? "#1B3A24" : palette.wallTrim);
+    rect(x + 1, 12, 2, 1, night ? "#24482E" : "#3E7A38");
+  }
+  if (night) {
+    for (let fly = 0; fly < Math.ceil(width / 24); fly++) {
+      const glow = Math.sin(seconds * 2 + fly * 1.7) > 0.2;
+      if (glow) {
+        const x = Math.floor((noise(fly * 9) * width + Math.sin(seconds * 0.5 + fly) * 6 + width) % width);
+        rect(x, 4 + Math.floor(noise(fly * 13) * 8), 1, 1, "#E9F77A");
+      }
+    }
+  }
+}
+
+// The field's back row: open sky by the time of day, drifting clouds, hills, and a fence.
+function drawSky(width: number, palette: ScenePalette, seconds: number): void {
+  const { night } = timeOfDay();
+  rect(0, 0, width, TILE, skyColor());
+  if (night) {
+    for (let star = 0; star < width / 10; star++) {
+      rect(Math.floor(noise(star * 3) * width), Math.floor(noise(star * 7) * 7), 1, 1, "#FFF6C8");
+    }
+  } else {
+    const sunX = width - 30;
+    rect(sunX, 2, 4, 4, "#FFE066");
+    rect(sunX - 1, 3, 6, 2, "#FFE066");
+    for (let cloud = 0; cloud < Math.ceil(width / 70); cloud++) {
+      const x = Math.floor(((seconds * 1.5 + cloud * 70 + noise(cloud) * 30) % (width + 20)) - 10);
+      rect(x, 2 + (cloud % 2) * 2, 9, 2, "#FFFFFF");
+      rect(x + 2, 1 + (cloud % 2) * 2, 4, 1, "#FFFFFF");
+    }
+  }
+  for (let x = 0; x < width; x += 2) {
+    const hill = 8 + Math.round(Math.sin(x / 19) * 1.5 + Math.sin(x / 7) * 0.8);
+    rect(x, hill, 2, TILE - hill, night ? "#2E4A2A" : "#6FA84A");
+  }
+  rect(0, 12, width, 1, palette.wallTrim);
+  rect(0, 14, width, 1, palette.wallTrim);
+  for (let x = 3; x < width; x += 8) {
+    rect(x, 10, 1, 6, palette.wallTrim);
+  }
+}
+
+// The riverbed's back row: the far bank, the river running past, and the stones along the near bank.
+function drawRiver(width: number, palette: ScenePalette, seconds: number): void {
+  rect(0, 0, width, 3, "#5E8F3E");
+  rect(0, 3, width, 10, palette.wall);
+  rect(0, 3, width, 1, "#2F6E9C");
+  for (let ripple = 0; ripple < width / 9; ripple++) {
+    const x = Math.floor((noise(ripple) * width + seconds * (8 + (ripple % 3) * 4)) % width);
+    rect(x, 5 + (ripple % 4) * 2, 3, 1, ripple % 2 === 0 ? "#8FD3F4" : "#5FAEDC");
+  }
+  for (let x = 0; x < width; x += 5) {
+    const rise = Math.floor(noise(x * 3) * 2);
+    rect(x, 12 - rise, 5, 4 + rise, x % 10 === 0 ? palette.wallTrim : "#A39A88");
+    rect(x + 1, 12 - rise, 2, 1, "#C2B9A6");
+  }
+}
+
+// The cave's back row: rough rock, stalactites, and crystals that glow.
+function drawRockWall(width: number, palette: ScenePalette, seconds: number): void {
+  rect(0, 0, width, TILE, palette.wall);
+  for (let x = 0; x < width; x += 5) {
+    rect(x, Math.floor(noise(x) * 10), 4, 3, palette.wallTrim);
+  }
+  for (let x = 4; x < width; x += 11) {
+    const length = 3 + Math.floor(noise(x * 7) * 4);
+    for (let row = 0; row < length; row++) {
+      const half = Math.max(0, 2 - Math.floor((row * 3) / length));
+      rect(x - half, row, half * 2 + 1, 1, "#4A4440");
+    }
+  }
+  for (let x = 30; x < width; x += 37) {
+    const pulse = 0.5 + 0.5 * Math.sin(seconds * 1.5 + x);
+    const color = x % 2 === 0 ? "#B197FC" : "#63E6BE";
+    glow(x + 1, 8, 5, color, 0.15 + pulse * 0.2);
+    rect(x, 6, 1, 5, color);
+    rect(x + 2, 8, 1, 3, color);
+    rect(x - 1, 9, 1, 2, color);
+  }
+  rect(0, TILE - 3, width, 3, "#1E1B19");
+}
+
+// The moon's back row: stars, the Earth, and the grey ridge of the horizon.
+function drawSpace(width: number, palette: ScenePalette, seconds: number): void {
+  rect(0, 0, width, TILE, palette.wall);
+  for (let star = 0; star < width / 6; star++) {
+    const twinkle = noise(star * 5 + Math.floor(seconds * 1.5 + star)) > 0.15;
+    rect(Math.floor(noise(star * 3) * width), Math.floor(noise(star * 7) * 11), 1, 1, twinkle ? "#FFFFFF" : "#555A70");
+  }
+  const earthX = width - 36;
+  rect(earthX + 1, 1, 6, 8, "#2E86DE");
+  rect(earthX, 2, 8, 6, "#2E86DE");
+  rect(earthX + 2, 2, 3, 2, "#4CB944");
+  rect(earthX + 4, 5, 3, 2, "#4CB944");
+  rect(earthX + 1, 4, 2, 1, "#FFFFFF");
+  for (let x = 0; x < width; x += 3) {
+    const ridge = 11 + Math.round(Math.sin(x / 13) * 1.2 + noise(x) * 0.8);
+    rect(x, ridge, 3, TILE - ridge, palette.wallTrim);
+  }
+  rect(0, TILE - 1, width, 1, "#6A6A72");
+}
+
 function drawDoor(door: Point, palette: ScenePalette): void {
   const open = state.agents.some((agent) => Math.abs(agent.x - door.x) + Math.abs(agent.y - door.y) < 1.2);
   const left = door.x * TILE + 2;
-  rect(left, 1, 12, TILE - 1, palette.doorFrame);
-  rect(left + 1, 2, 10, TILE - 2, open ? "#121212" : palette.door);
-  if (!open) {
-    rect(left + 8, 9, 1, 1, "#F1C24B");
+  switch (palette.doorStyle) {
+    case "door":
+      rect(left, 1, 12, TILE - 1, palette.doorFrame);
+      rect(left + 1, 2, 10, TILE - 2, open ? "#121212" : palette.door);
+      if (!open) {
+        rect(left + 8, 9, 1, 1, "#F1C24B");
+      }
+      return;
+    case "trail":
+      // A worn path through the back row, narrowing as it heads off into the distance.
+      for (let row = 0; row < TILE; row++) {
+        const half = 2 + Math.floor((row * 4) / TILE);
+        rect(left + 6 - half - 1, row, half * 2 + 2, 1, palette.doorFrame);
+        rect(left + 6 - half, row, half * 2, 1, palette.door);
+      }
+      rect(left + 4, 5, 1, 1, palette.doorFrame);
+      rect(left + 7, 10, 2, 1, palette.doorFrame);
+      return;
+    case "gate": {
+      rect(left, 6, 1, TILE - 6, palette.doorFrame);
+      rect(left + 11, 6, 1, TILE - 6, palette.doorFrame);
+      rect(left + 1, 7, 10, TILE - 7, skyColor() === "#1B2340" ? "#2E4A2A" : "#6FA84A");
+      const span = open ? 3 : 10;
+      rect(left + 1, 9, span, 1, palette.door);
+      rect(left + 1, 13, span, 1, palette.door);
+      rect(left + span, 9, 1, 5, palette.door);
+      return;
+    }
+    case "tunnel":
+      rect(left - 1, 3, 14, TILE - 3, palette.doorFrame);
+      rect(left + 1, 2, 10, 2, palette.doorFrame);
+      rect(left + 1, 5, 10, TILE - 5, palette.door);
+      rect(left + 2, 4, 8, 1, palette.door);
+      return;
+    case "hatch":
+      rect(left, 2, 12, TILE - 2, palette.doorFrame);
+      rect(left + 1, 3, 10, TILE - 3, open ? "#05060C" : palette.door);
+      if (!open) {
+        rect(left + 4, 5, 4, 3, "#1B2340");
+        rect(left + 4, 5, 1, 1, "#7FD1FF");
+        rect(left + 2, 10, 8, 1, palette.doorFrame);
+      }
+      rect(left + 10, 4, 1, 1, Math.floor(Date.now() / 600) % 2 === 0 ? "#FF6B6B" : "#5C2A2A");
+      return;
   }
 }
 
@@ -564,15 +815,222 @@ function drawProp(prop: Prop, palette: ScenePalette, seconds: number, index: num
     case "couch":
       // The seat; the backrest draws after anyone sitting on it.
       rect(left + 1, top + 4, TILE * 2 - 2, 6, palette.couch);
-      rect(left + 2, top + 5, TILE - 3, 4, palette.couchLight);
-      rect(left + TILE + 1, top + 5, TILE - 3, 4, palette.couchLight);
+      if (palette.couchStyle === "sofa") {
+        rect(left + 2, top + 5, TILE - 3, 4, palette.couchLight);
+        rect(left + TILE + 1, top + 5, TILE - 3, 4, palette.couchLight);
+      } else {
+        rect(left + 2, top + 4, TILE * 2 - 4, 1, palette.couchLight);
+      }
+      return;
+    case "pine":
+      rect(left + 7, top + 9, 2, 7, "#4A3220");
+      for (let row = 0; row < 18; row++) {
+        const half = 1 + Math.floor((row % 6) * 0.9 + row / 4);
+        rect(left + 8 - half, top - 9 + row, half * 2, 1, row % 6 < 2 ? "#3E7A38" : "#2F5A2E");
+      }
+      return;
+    case "campfire": {
+      // Stones, logs, a flickering fire, and a kettle on a tripod for a drink.
+      rect(left + 1, top + 13, 3, 2, "#7A7264");
+      rect(left + 12, top + 13, 3, 2, "#7A7264");
+      rect(left + 3, top + 14, 10, 2, "#8E8574");
+      rect(left + 3, top + 11, 10, 2, "#5B3A21");
+      glow(left + 8, top + 9, 9, "#FFB347", 0.22 + 0.08 * Math.sin(seconds * 9));
+      for (let flame = 0; flame < 4; flame++) {
+        const height = 3 + Math.floor(noise(flame * 7 + Math.floor(seconds * 8)) * 5);
+        rect(left + 4 + flame * 2, top + 11 - height, 2, height, flame % 2 === 0 ? "#F76707" : "#FFD43B");
+      }
+      for (let row = 0; row < 12; row++) {
+        rect(left + 2 + Math.floor(row / 2), top - 1 + row, 1, 1, "#3A2716");
+        rect(left + 13 - Math.floor(row / 2), top - 1 + row, 1, 1, "#3A2716");
+      }
+      rect(left + 8, top, 1, 2, "#3A2716");
+      rect(left + 6, top + 2, 5, 4, "#2B2B33");
+      rect(left + 7, top + 2, 2, 1, "#55556A");
+      return;
+    }
+    case "stump":
+      rect(left + 3, top + 6, 10, 10, "#6B4424");
+      rect(left + 3, top + 4, 10, 3, "#C99A5E");
+      rect(left + 5, top + 5, 6, 1, "#A47A44");
+      rect(left + 4, top + 9, 1, 6, "#4A2E17");
+      rect(left + 10, top + 8, 1, 7, "#4A2E17");
+      return;
+    case "mushroom": {
+      const glows = sceneId === "cave";
+      const cap = glows ? "#63E6BE" : "#E03131";
+      if (glows) {
+        glow(left + 8, top + 7, 8, cap, 0.2 + 0.1 * Math.sin(seconds * 2 + index));
+      }
+      rect(left + 6, top + 8, 4, 8, "#F1EBDD");
+      rect(left + 2, top + 4, 12, 5, cap);
+      rect(left + 4, top + 2, 8, 2, cap);
+      rect(left + 5, top + 4, 2, 2, "#FFFFFF");
+      rect(left + 10, top + 5, 2, 1, "#FFFFFF");
+      rect(left + 8, top + 3, 1, 1, "#FFFFFF");
+      return;
+    }
+    case "hay":
+      rect(left + 1, top + 4, 14, 12, "#D9B44A");
+      rect(left + 1, top + 4, 14, 2, "#EED27A");
+      rect(left + 1, top + 9, 14, 1, "#B8902E");
+      rect(left + 4, top + 4, 1, 12, "#9A6B3E");
+      rect(left + 11, top + 4, 1, 12, "#9A6B3E");
+      return;
+    case "well":
+      rect(left + 2, top + 7, 12, 9, "#8E8574");
+      rect(left + 2, top + 9, 12, 1, "#7A7264");
+      rect(left + 2, top + 12, 12, 1, "#7A7264");
+      rect(left + 3, top + 6, 10, 2, "#1B2A3A");
+      rect(left + 2, top - 6, 1, 13, "#6E4A27");
+      rect(left + 13, top - 6, 1, 13, "#6E4A27");
+      rect(left, top - 8, 16, 2, "#B5562F");
+      rect(left + 2, top - 9, 12, 1, "#B5562F");
+      rect(left + 8, top - 6, 1, 5 + Math.round(Math.sin(seconds) * 1), "#3A2716");
+      rect(left + 7, top - 1 + Math.round(Math.sin(seconds)), 3, 3, "#9A6B3E");
+      return;
+    case "flowers":
+      for (let stem = 0; stem < 4; stem++) {
+        const sway = Math.round(Math.sin(seconds * 1.5 + stem + index) * 0.8);
+        const x = left + 2 + stem * 3;
+        const height = 6 + ((stem * 3 + index) % 4);
+        rect(x, top + 16 - height, 1, height, "#3E7A38");
+        rect(x - 1 + sway, top + 14 - height, 3, 3, ["#F783AC", "#FFD43B", "#FFFFFF", "#B197FC"][(stem + index) % 4]);
+        rect(x + sway, top + 15 - height, 1, 1, "#F59F00");
+      }
+      return;
+    case "scarecrow":
+      rect(left + 7, top - 2, 2, 18, "#6E4A27");
+      rect(left + 1, top + 1, 14, 2, "#6E4A27");
+      rect(left + 4, top, 8, 7, "#C0392B");
+      rect(left + 4, top + 3, 8, 1, "#8E2A1F");
+      rect(left + 1, top + 3, 2, 2, "#EED27A");
+      rect(left + 13, top + 3, 2, 2, "#EED27A");
+      rect(left + 5, top - 6, 6, 5, "#EED27A");
+      rect(left + 6, top - 4, 1, 1, "#2B2B33");
+      rect(left + 9, top - 4, 1, 1, "#2B2B33");
+      rect(left + 3, top - 7, 10, 1, "#9A6B3E");
+      rect(left + 5, top - 9, 6, 2, "#9A6B3E");
+      return;
+    case "reeds":
+      for (let reed = 0; reed < 5; reed++) {
+        const sway = Math.round(Math.sin(seconds * 1.2 + reed * 0.9 + index) * 1);
+        const x = left + 2 + reed * 3;
+        const height = 12 + ((reed * 5 + index) % 7);
+        rect(x, top + 16 - height + 3, 1, height - 3, "#4F7A3A");
+        rect(x + sway, top + 16 - height, 1, 4, "#6E4A2A");
+      }
+      return;
+    case "spring": {
+      // A little pool bubbling up between stones.
+      rect(left + 1, top + 8, 14, 7, "#8E8574");
+      rect(left + 2, top + 9, 12, 5, "#3C8FC4");
+      const ring = Math.floor(seconds * 3) % 4;
+      rect(left + 8 - ring, top + 11, 1 + ring * 2, 1, "#8FD3F4");
+      rect(left + 7, top + 10 - (Math.floor(seconds * 4) % 2), 1, 1, "#CFEFFF");
+      rect(left + 1, top + 14, 3, 2, "#7A7264");
+      rect(left + 11, top + 14, 4, 2, "#7A7264");
+      return;
+    }
+    case "boulder":
+      rect(left + 2, top + 6, 12, 10, "#8E8574");
+      rect(left + 4, top + 4, 8, 2, "#8E8574");
+      rect(left + 4, top + 5, 4, 2, "#B5AD9C");
+      rect(left + 2, top + 13, 12, 3, "#6E6A60");
+      rect(left + 9, top + 4, 3, 1, "#4F7A3A");
+      return;
+    case "stalagmite":
+      for (let row = 0; row < 20; row++) {
+        const half = 1 + Math.floor(row / 3.5);
+        rect(left + 8 - half, top - 4 + row, half * 2, 1, row % 5 === 0 ? "#6A625C" : "#7A716A");
+        rect(left + 8 - half, top - 4 + row, 1, 1, "#5A524D");
+      }
+      rect(left + 7, top - 3, 1, 8, "#958B83");
+      return;
+    case "crystal": {
+      const pulse = 0.5 + 0.5 * Math.sin(seconds * 2 + index);
+      glow(left + 8, top + 5, 10, "#B197FC", 0.12 + pulse * 0.18);
+      rect(left + 6, top - 3, 3, 18, "#9775FA");
+      rect(left + 7, top - 5, 1, 2, "#E5DBFF");
+      rect(left + 2, top + 5, 3, 10, "#63E6BE");
+      rect(left + 3, top + 3, 1, 2, "#C3FAE8");
+      rect(left + 10, top + 2, 3, 13, "#B197FC");
+      rect(left + 11, top, 1, 2, "#E5DBFF");
+      rect(left + 1, top + 14, 14, 2, "#3D3734");
+      return;
+    }
+    case "moonRock":
+      rect(left + 2, top + 8, 12, 8, "#8E8E96");
+      rect(left + 4, top + 6, 7, 2, "#8E8E96");
+      rect(left + 4, top + 7, 3, 2, "#BDBDC4");
+      rect(left + 9, top + 11, 3, 2, "#6E6E78");
+      return;
+    case "oxygen":
+      // A rack of O2 tanks with a gauge, for a drink.
+      rect(left + 1, top - 6, 14, 22, "#6E6E78");
+      for (let tank = 0; tank < 3; tank++) {
+        rect(left + 2 + tank * 4, top - 4, 3, 16, "#F1F1F5");
+        rect(left + 2 + tank * 4, top + 1, 3, 2, "#F08C00");
+      }
+      rect(left + 3, top + 13, 10, 2, "#2B2B33");
+      rect(left + 4, top + 13, 1 + Math.floor(seconds * 2) % 8, 1, "#3DDC6A");
+      return;
+    case "dish": {
+      const turn = Math.round(Math.sin(seconds * 0.4) * 2);
+      rect(left + 7, top + 2, 2, 14, "#B8B8C2");
+      rect(left + 4, top + 13, 8, 3, "#8E8E96");
+      rect(left + 2 + turn, top - 6, 12, 2, "#E4E4EA");
+      rect(left + 3 + turn, top - 4, 10, 2, "#D0D0D8");
+      rect(left + 5 + turn, top - 2, 6, 2, "#B8B8C2");
+      rect(left + 7 + turn, top - 9, 1, 3, "#8E8E96");
+      rect(left + 7 + turn, top - 10, 1, 1, Math.floor(seconds * 1.5) % 2 === 0 ? "#FF6B6B" : "#5C2A2A");
+      return;
+    }
+    case "flag":
+      // No wind on the moon: the rod along the top holds it out.
+      rect(left + 3, top - 8, 1, 24, "#D8D8E0");
+      rect(left + 4, top - 8, 10, 1, "#D8D8E0");
+      rect(left + 4, top - 7, 10, 7, "#F08C00");
+      rect(left + 8, top - 5, 2, 3, "#FFFFFF");
+      rect(left + 7, top - 4, 4, 1, "#FFFFFF");
+      rect(left + 2, top + 14, 3, 2, "#8E8E96");
       return;
   }
+}
+
+// A soft round glow: a few stacked crosses, faintest at the edge.
+function glow(centerX: number, centerY: number, radius: number, color: string, alpha: number): void {
+  context.globalAlpha = alpha / 3;
+  for (let step = 3; step >= 1; step--) {
+    const r = Math.round((radius * step) / 3);
+    const inner = Math.round(r * 0.6);
+    rect(centerX - r, centerY - inner, r * 2, inner * 2, color);
+    rect(centerX - inner, centerY - r, inner * 2, r * 2, color);
+  }
+  context.globalAlpha = 1;
 }
 
 function drawCouchBack(prop: Prop, palette: ScenePalette): void {
   const left = prop.at.x * TILE;
   const top = prop.at.y * TILE;
+  if (palette.couchStyle !== "sofa") {
+    // A log or a stone slab: no back, just its front, and ring ends on a log.
+    rect(left + 1, top + 9, TILE * 2 - 2, 6, shadeColor(palette.couch));
+    rect(left + 1, top + 15, TILE * 2 - 2, 1, palette.shadow);
+    if (palette.couchStyle === "log") {
+      for (let x = 5; x < TILE * 2 - 4; x += 6) {
+        rect(left + x, top + 11, 3, 1, palette.couch);
+      }
+      rect(left, top + 5, 3, 10, palette.couchLight);
+      rect(left + 1, top + 8, 1, 3, palette.couch);
+      rect(left + TILE * 2 - 3, top + 5, 3, 10, palette.couchLight);
+      rect(left + TILE * 2 - 2, top + 8, 1, 3, palette.couch);
+    } else {
+      rect(left + 6, top + 11, 4, 1, palette.couchLight);
+      rect(left + 18, top + 12, 3, 1, palette.couchLight);
+    }
+    return;
+  }
   rect(left, top + 9, TILE * 2, 7, shadeColor(palette.couch));
   rect(left, top + 4, 3, 12, palette.couch);
   rect(left + TILE * 2 - 3, top + 4, 3, 12, palette.couch);

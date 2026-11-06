@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildOfficeLayout, desksNeeded, STATION_DESKS, findPath, isWalkable, MIN_COLS, MIN_DESKS, MIN_ROWS, nearestWalkable, officeSceneId, officeShape } from "../../src/officeLayout";
+import { buildOfficeLayout, DRINK_PROPS, OFFICE_SCENES, desksNeeded, STATION_DESKS, findPath, isWalkable, MIN_COLS, MIN_DESKS, MIN_ROWS, nearestWalkable, officeSceneId, officeShape } from "../../src/officeLayout";
 
 describe("buildOfficeLayout", () => {
   it("joins the middle desk pair into your station when asked", () => {
@@ -39,7 +39,7 @@ describe("buildOfficeLayout", () => {
   });
 
   it("reaches every seat, prop, and couch seat from the door", () => {
-    for (const sceneId of ["office", "serverRoom"] as const) {
+    for (const { id: sceneId } of OFFICE_SCENES) {
       for (const [cols, rows] of [[8, 6], [11, 7], [18, 12], [30, 9]]) {
         const layout = buildOfficeLayout(cols, rows, sceneId);
         const goals = [
@@ -59,9 +59,18 @@ describe("buildOfficeLayout", () => {
     expect(buildOfficeLayout(14, 8, "serverRoom").props.map((prop) => prop.kind)).toContain("rack");
   });
 
+  it("gives every scene something to drink from", () => {
+    for (const { id } of OFFICE_SCENES) {
+      for (const cols of [8, 11, 18]) {
+        expect(buildOfficeLayout(cols, 8, id).props.some((prop) => DRINK_PROPS.has(prop.kind)), `${id} ${cols}`).toBe(true);
+      }
+    }
+  });
+
   it("reads an unknown scene as the office", () => {
     expect(officeSceneId("serverRoom")).toBe("serverRoom");
-    expect(officeSceneId("moon")).toBe("office");
+    expect(officeSceneId("moon")).toBe("moon");
+    expect(officeSceneId("mars")).toBe("office");
     expect(officeSceneId(undefined)).toBe("office");
   });
 });

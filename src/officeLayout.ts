@@ -2,11 +2,16 @@
 // at its left end. Desk blocks repeat down the room: a row of desks in pairs, the seats below them, then an aisle.
 // The bottom row holds the props (cooler, coffee, couch, plants), each with a tile to stand on above it.
 
-export type OfficeSceneId = "office" | "serverRoom";
+export type OfficeSceneId = "office" | "serverRoom" | "forest" | "field" | "riverbed" | "cave" | "moon";
 
 export const OFFICE_SCENES: readonly { id: OfficeSceneId; label: string }[] = [
   { id: "office", label: "Office" },
   { id: "serverRoom", label: "Server Room" },
+  { id: "forest", label: "Forest" },
+  { id: "field", label: "Field" },
+  { id: "riverbed", label: "Riverbed" },
+  { id: "cave", label: "Cave" },
+  { id: "moon", label: "Moon" },
 ];
 
 export function officeSceneId(value: unknown): OfficeSceneId {
@@ -15,7 +20,16 @@ export function officeSceneId(value: unknown): OfficeSceneId {
 
 export type TileKind = "floor" | "wall" | "door" | "desk" | "seat" | "prop" | "couch";
 
-export type PropKind = "plant" | "cooler" | "coffee" | "couch" | "shelf" | "rack" | "vending";
+export type PropKind =
+  | "plant" | "cooler" | "coffee" | "couch" | "shelf" | "rack" | "vending"
+  | "pine" | "campfire" | "stump" | "mushroom"
+  | "hay" | "well" | "flowers" | "scarecrow"
+  | "reeds" | "spring" | "boulder"
+  | "stalagmite" | "crystal"
+  | "moonRock" | "oxygen" | "dish" | "flag";
+
+// Props a guy drinks from. Every scene has one, and the layout never skips them.
+export const DRINK_PROPS: ReadonlySet<PropKind> = new Set<PropKind>(["cooler", "coffee", "vending", "campfire", "well", "spring", "oxygen"]);
 
 export interface Point {
   x: number;
@@ -65,6 +79,11 @@ const WALKABLE: ReadonlySet<TileKind> = new Set<TileKind>(["floor", "door", "sea
 const SCENE_PROPS: Record<OfficeSceneId, { corner: PropKind; middle: PropKind[] }> = {
   office: { corner: "plant", middle: ["cooler", "coffee", "couch", "shelf", "plant"] },
   serverRoom: { corner: "rack", middle: ["vending", "cooler", "couch", "rack", "rack"] },
+  forest: { corner: "pine", middle: ["campfire", "stump", "couch", "mushroom", "pine"] },
+  field: { corner: "hay", middle: ["well", "flowers", "couch", "scarecrow", "flowers"] },
+  riverbed: { corner: "reeds", middle: ["spring", "boulder", "couch", "reeds", "boulder"] },
+  cave: { corner: "stalagmite", middle: ["campfire", "crystal", "couch", "mushroom", "stalagmite"] },
+  moon: { corner: "moonRock", middle: ["oxygen", "dish", "couch", "flag", "moonRock"] },
 };
 
 export function buildOfficeLayout(requestedCols: number, requestedRows: number, sceneId: OfficeSceneId, withStation = false): OfficeLayout {
@@ -112,7 +131,7 @@ export function buildOfficeLayout(requestedCols: number, requestedRows: number, 
       }
     }
     // Leave every other middle tile open so the row doesn't read as a wall of stuff.
-    if (!isCorner && x % 2 === 0 && kind !== "cooler" && kind !== "coffee" && kind !== "vending") {
+    if (!isCorner && x % 2 === 0 && !DRINK_PROPS.has(kind)) {
       continue;
     }
     tiles[propRow][x] = "prop";
