@@ -595,9 +595,19 @@ interface AgentBox {
 }
 
 function agentBox(agent: Agent, seated: boolean): AgentBox {
-  const left = Math.round(agent.x * TILE + (TILE - FRAME_WIDTH) / 2);
+  const left = Math.round((agent.x + stationSlide(agent)) * TILE + (TILE - FRAME_WIDTH) / 2);
   const top = Math.round(agent.y * TILE + TILE - FRAME_HEIGHT - (seated ? SEATED_LIFT : 0));
   return { agent, left, top };
+}
+
+// Your chair sits between two tiles, half a tile right of the seat you walk to, so you ease over to it on the last
+// step instead of jumping when you sit.
+function stationSlide(agent: Agent): number {
+  if (!agent.you) {
+    return 0;
+  }
+  const distance = Math.hypot(agent.x - agent.workSpot.x, agent.y - agent.workSpot.y);
+  return 0.5 * Math.max(0, 1 - distance);
 }
 
 function drawAgent(agent: Agent, seconds: number): AgentBox {
