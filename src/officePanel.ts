@@ -5,6 +5,7 @@ import type { PinnedSession } from "./grouping";
 import type { LiveSessionMonitor } from "./liveSessions";
 import { OFFICE_SCENES, officeSceneId } from "./officeLayout";
 import type { AgentInput } from "./officeSim";
+import { visitorFrequency } from "./officeVisitors";
 import { PixelGuyLook, yourLook } from "./pixelGuy";
 import type { Registry } from "./registry";
 import type { SceneEventDirector } from "./sceneEvents";
@@ -103,7 +104,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     you: PixelGuyLook | null;
     critters: boolean;
     dayNight: boolean;
-    visitors: boolean;
+    visitors: string;
     focusedId: string | null;
   } {
     const agents: AgentInput[] = [];
@@ -135,7 +136,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
       you,
       critters: configuration.get<boolean>(CRITTERS_SETTING, true),
       dayNight: configuration.get<boolean>(DAY_NIGHT_SETTING, true),
-      visitors: configuration.get<boolean>(VISITORS_SETTING, true),
+      visitors: visitorFrequency(configuration.get<unknown>(VISITORS_SETTING)),
       focusedId: this.deps.focusedSessionId() ?? null,
     };
   }

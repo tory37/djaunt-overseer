@@ -7,9 +7,9 @@ import { DAYTIME_SKY, discLit, earthIllumination, lunarSunElevation, mix, SceneL
 import { critterGap, critterLines, critterPoses, CritterRun, critterRunDone, planCritterRun } from "../officeCritters";
 import {
   Agent, AgentInput, agentPose, callYouBack, createOffice, isAtStation, lookToward, officeCounts, reactToCritter, relayoutOffice, stepOffice, syncOffice,
-  syncYou, visitorAgent, visitorArrives, youAgent,
+  syncYou, visitorAgents, visitorArrives, youAgent,
 } from "../officeSim";
-import { personalityOf, planVisit, VisitorKind, visitorGap, visitorReaction } from "../officeVisitors";
+import { personalityOf, planVisit, VisitorFrequency, visitorFrequency, VisitorKind, visitorGap, visitorReaction, visitorSmallTalk } from "../officeVisitors";
 import { YourEvent, YourReaction, yourEventSeconds, yourReaction, roomReaction, YourScreen } from "../officeYou";
 import { Facing, FRAME_HEIGHT, FRAME_WIDTH, pixelGuyFrame, pixelGuyLook, PixelGuyLook, Pose } from "../pixelGuy";
 import { DEFENSE_BEATS, ERROR_BEAT_SECONDS, ERROR_FLASH_SECONDS, EVENT_SECONDS, SCENE_EVENT_KINDS, SceneEventKind } from "../sceneEventSchedule";
@@ -26,7 +26,7 @@ interface OfficeMessage {
   you: PixelGuyLook | null;
   critters?: boolean;
   dayNight?: boolean;
-  visitors?: boolean;
+  visitors?: unknown;
   // The session the Session sidebar shows: his guy wears a crown.
   focusedId?: string | null;
 }
@@ -70,11 +70,14 @@ let sceneEvent: (YourEvent & { start: number }) | undefined;
 let roomReactions: { id: string; text: string; at: number; seconds?: number }[] = [];
 let focusedId: string | undefined;
 
-// Someone from another department: who's visiting now, whether the room has answered him, and when the next one comes.
-let visitorsOn = true;
-let visit: { id: string; kind: VisitorKind; answered: boolean } | undefined;
+// People from other departments: who's visiting, how many of each one's remarks the room has answered, and when the
+// next one comes.
+let visitorsSetting: VisitorFrequency = "normal";
+const visits = new Map<string, { kind: VisitorKind; heard: number }>();
 let visitCount = 0;
-let nextVisitorAt = visitorGap(Math.random, true);
+let nextVisitorAt = visitorGap(Math.random, "normal", true);
+// Guys within this many tiles answer a visitor's small talk; his arrival lines reach the whole room.
+const REMARK_REACH = 4;
 
 const random = Math.random;
 
@@ -156,7 +159,12 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEve
   const nextScene = officeSceneId(data.scene);
   crittersOn = data.critters !== false;
   dayNightOn = data.dayNight !== false;
-  visitorsOn = data.visitors !== false;
+  const nextVisitors = visitorFrequency(data.visitors);
+  if (nextVisitors !== visitorsSetting && nextVisitors !== "off") {
+    // A new frequency takes effect now, not after the old gap runs out.
+    nextVisitorAt = Math.min(nextVisitorAt, state.time + visitorGap(random, nextVisitors, true));
+  }
+  visitorsSetting = nextVisitors;
   focusedId = typeof data.focusedId === "string" ? data.focusedId : undefined;
   if (nextScene !== sceneId) {
     sceneId = nextScene;
@@ -209,39 +217,67 @@ function playRoomReactions(): void {
   }
 }
 
-// Sends in the next visitor when it's time, and once he's said his first line has the room turn and answer him, each
-// guy in his own way.
+// Sends in the next visitor when it's time, and whenever a visitor says something to the room has the room turn and
+// answer him, each guy in his own way: everyone for his arrival lines, just the guys nearby for his small talk.
 function stepVisitors(): void {
-  const visitor = visitorAgent(state);
-  if (visitor === undefined) {
-    visit = undefined;
-    if (!visitorsOn || sceneEvent !== undefined || state.time < nextVisitorAt) {
-      return;
+  const here = visitorAgents(state);
+  for (const id of [...visits.keys()]) {
+    if (!here.some((agent) => agent.id === id)) {
+      visits.delete(id);
     }
-    nextVisitorAt = state.time + visitorGap(random);
-    // Nobody to talk to.
-    if (state.agents.length === 0) {
-      return;
+  }
+  for (const visitor of here) {
+    const known = visits.get(visitor.id);
+    const remarks = visitor.visitor?.remarks ?? 0;
+    if (known === undefined || remarks <= known.heard) {
+      continue;
     }
-    const plan = planVisit(random);
-    const seed = `visitor|${plan.kind.id}|${visitCount++ % 4}`;
-    const look = pixelGuyLook(seed);
-    lookCache.set(seed, { ...look, shirt: plan.kind.shirt, pants: plan.kind.pants, accessory: plan.kind.accessory ?? look.accessory });
-    if (visitorArrives(state, { id: `${seed}|${visitCount}`, seed, title: plan.kind.title, lines: plan.lines }, random) !== undefined) {
-      visit = { id: `${seed}|${visitCount}`, kind: plan.kind, answered: false };
-    }
+    const arriving = known.heard === 0;
+    known.heard = remarks;
+    answerVisitor(visitor, known.kind, arriving);
+  }
+  if (visitorsSetting === "off" || sceneEvent !== undefined || state.time < nextVisitorAt) {
     return;
   }
-  if (visit === undefined || visit.answered || (visitor.visitor?.spoken ?? 0) < 1) {
+  nextVisitorAt = state.time + visitorGap(random, visitorsSetting);
+  // Nobody to talk to.
+  if (!state.agents.some((agent) => agent.visitor === undefined)) {
     return;
   }
-  visit.answered = true;
+  const plan = planVisit(random);
+  visitCount += 1;
+  const seed = `visitor|${plan.kind.id}|${visitCount % 6}`;
+  const id = `${seed}|${visitCount}`;
+  const look = pixelGuyLook(seed);
+  lookCache.set(seed, { ...look, shirt: plan.kind.shirt, pants: plan.kind.pants, accessory: plan.kind.accessory ?? look.accessory });
+  const arrived = visitorArrives(state, {
+    id,
+    seed,
+    title: plan.kind.title,
+    lines: plan.lines,
+    boss: plan.kind.boss,
+    smallTalk: visitorSmallTalk(plan.kind),
+    farewell: plan.farewell,
+    stay: plan.stay,
+  }, random);
+  if (arrived !== undefined) {
+    visits.set(id, { kind: plan.kind, heard: 0 });
+  }
+}
+
+function answerVisitor(visitor: Agent, kind: VisitorKind, wholeRoom: boolean): void {
   for (const agent of state.agents) {
-    if (agent === visitor || agent.leaving) {
+    if (agent === visitor || agent.leaving || agent.bubble !== undefined) {
+      continue;
+    }
+    if (!wholeRoom && Math.hypot(agent.x - visitor.x, agent.y - visitor.y) > REMARK_REACH) {
       continue;
     }
     lookToward(state, agent, visitor, 3);
-    const text = visitorReaction(personalityOf(agent.seed), visit.kind.boss, agent.status === "asleep", random);
+    // Other visitors don't answer to the room's personalities; they just nod along now and then.
+    const text = agent.visitor !== undefined
+      ? (random() < 0.3 ? "mhm" : undefined)
+      : visitorReaction(personalityOf(agent.seed), kind.boss, agent.status === "asleep", random);
     if (text !== undefined) {
       roomReactions.push({ id: agent.id, text, at: state.time + 0.9 + random() * 1.8, seconds: 2 });
     }
@@ -1291,7 +1327,7 @@ function drawAgent(agent: Agent, seconds: number): AgentBox {
   context.globalAlpha = agent.leaving && agent.visitor === undefined ? 0.7 : 1;
   context.drawImage(sprite(agent.seed, pose.pose, pose.facing, pose.frame), box.left, box.top + bob);
   context.globalAlpha = 1;
-  const tie = agent.visitor === undefined ? undefined : visit?.kind.tie;
+  const tie = agent.visitor === undefined ? undefined : visits.get(agent.id)?.kind.tie;
   if (tie !== undefined && pose.facing === "down") {
     drawTie(box.left, box.top + bob, tie);
   }
@@ -1354,21 +1390,63 @@ function drawYou(station: Station, reaction: YourReaction): { left: number; top:
 // Long lines wrap; the bubble grows upward so its tail stays over the guy.
 const BUBBLE_WRAP = 96;
 
-function drawBubble(box: { left: number; top: number }, text: string, palette: ScenePalette, bubbleTop = box.top - 11): void {
+interface Bubble {
+  lines: string[];
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  // Where the tail points: the middle of the guy, just above his head.
+  tailX: number;
+  tailY: number;
+}
+
+function layoutBubble(box: { left: number; top: number }, text: string, bubbleTop = box.top - 11): Bubble {
   context.font = "7px monospace";
   const lines = wrapText(text, Math.min(BUBBLE_WRAP, state.layout.cols * TILE - 8));
   const textWidth = Math.max(...lines.map((line) => Math.ceil(context.measureText(line).width)));
-  const bubbleWidth = textWidth + 6;
-  const bubbleHeight = 9 + (lines.length - 1) * 7;
-  const top = bubbleTop - (lines.length - 1) * 7;
+  const width = textWidth + 6;
+  const height = 9 + (lines.length - 1) * 7;
   // Long lines stay inside the room; the tail stays over the guy.
-  const bubbleLeft = Math.max(1, Math.min(state.layout.cols * TILE - bubbleWidth - 1, Math.round(box.left + FRAME_WIDTH / 2 - bubbleWidth / 2)));
-  rect(bubbleLeft, top, bubbleWidth, bubbleHeight, palette.bubbleEdge);
-  rect(bubbleLeft + 1, top + 1, bubbleWidth - 2, bubbleHeight - 2, palette.bubble);
-  rect(box.left + FRAME_WIDTH / 2 - 1, bubbleTop + 9, 2, 1, palette.bubbleEdge);
+  const left = Math.max(1, Math.min(state.layout.cols * TILE - width - 1, Math.round(box.left + FRAME_WIDTH / 2 - width / 2)));
+  return { lines, left, top: bubbleTop - (lines.length - 1) * 7, width, height, tailX: box.left + FRAME_WIDTH / 2 - 1, tailY: bubbleTop + 9 };
+}
+
+// Lifts bubbles out of each other's way, the lowest guy's staying put, so a busy room stays readable.
+function spreadBubbles(bubbles: Bubble[]): void {
+  const placed: Bubble[] = [];
+  for (const bubble of [...bubbles].sort((first, second) => second.tailY - first.tailY)) {
+    for (let tries = 0; tries < 8; tries++) {
+      const hit = placed.find((other) =>
+        bubble.left < other.left + other.width + 1 && other.left < bubble.left + bubble.width + 1 &&
+        bubble.top < other.top + other.height + 1 && other.top < bubble.top + bubble.height + 1,
+      );
+      if (hit === undefined || hit.top - bubble.height - 1 < 1) {
+        break;
+      }
+      bubble.top = hit.top - bubble.height - 1;
+    }
+    placed.push(bubble);
+  }
+}
+
+// A lifted bubble trails a thin line down to its guy, under the other bubbles.
+function paintBubbleStem(bubble: Bubble, palette: ScenePalette): void {
+  const stem = bubble.tailY - (bubble.top + bubble.height);
+  if (stem > 0) {
+    rect(Math.round(bubble.tailX), bubble.top + bubble.height, 1, stem, palette.bubbleEdge);
+  }
+}
+
+function paintBubble(bubble: Bubble, palette: ScenePalette): void {
+  const { lines, left, top, width, height } = bubble;
+  rect(left, top, width, height, palette.bubbleEdge);
+  rect(left + 1, top + 1, width - 2, height - 2, palette.bubble);
+  rect(bubble.tailX, bubble.tailY, 2, 1, palette.bubbleEdge);
+  context.font = "7px monospace";
   context.fillStyle = palette.bubbleText;
   context.textBaseline = "top";
-  lines.forEach((line, index) => context.fillText(line, bubbleLeft + 3, top + 1.5 + index * 7));
+  lines.forEach((line, index) => context.fillText(line, left + 3, top + 1.5 + index * 7));
 }
 
 function wrapText(text: string, maxWidth: number): string[] {
@@ -1509,6 +1587,7 @@ function draw(seconds: number): void {
   drawLighting(layout, owners, atStation || event !== undefined, seconds);
   drawFireflies(layout.cols * TILE, seconds);
 
+  const bubbles: Bubble[] = [];
   boxes.forEach((box) => {
     if (box.agent.mode === "sleep" && box.agent.path.length === 0 && box.agent.bubble === undefined) {
       drawSnore(box, seconds, palette);
@@ -1518,7 +1597,7 @@ function draw(seconds: number): void {
       drawCrown(box, seconds);
     }
     if (box.agent.bubble !== undefined) {
-      drawBubble(box, box.agent.bubble.text, palette, box.top - (crowned ? 14 : 11));
+      bubbles.push(layoutBubble(box, box.agent.bubble.text, box.top - (crowned ? 14 : 11)));
     }
   });
   youArea = youBox;
@@ -1527,8 +1606,11 @@ function draw(seconds: number): void {
   if (finalYouBox !== undefined && yourBubble !== undefined) {
     // Above the monitors, so it never covers the screens.
     const monitorsTop = station === undefined ? finalYouBox.top : station.desk.y * TILE - 2;
-    drawBubble(finalYouBox, yourBubble, palette, Math.min(finalYouBox.top, monitorsTop) - 11);
+    bubbles.push(layoutBubble(finalYouBox, yourBubble, Math.min(finalYouBox.top, monitorsTop) - 11));
   }
+  spreadBubbles(bubbles);
+  bubbles.forEach((bubble) => paintBubbleStem(bubble, palette));
+  bubbles.forEach((bubble) => paintBubble(bubble, palette));
   drawEventTint(event, layout);
   const hovered = boxes.find((box) => box.agent.id === hoveredId);
   if (hovered !== undefined) {

@@ -4,11 +4,14 @@
 // his desk and falls asleep on it. A session that leaves the sidebar walks out the door.
 // You're in the room too, at your station: you work, take a break now and then to wander, grab a coffee, or shoot
 // the breeze with someone (idle, or busy at his desk), and run back to your desk when a scene event hits.
-// Now and then someone from another department visits: walks in, says his lines to the room, and walks out.
+// Now and then someone from another department visits: walks in and says his lines to the room. Some walk right back
+// out; others hang around like an idle guy (chats, coffee, the couch, looming over a busy guy's desk) and make small
+// talk, then say bye and go.
 // The webview calls syncOffice when the sessions change, syncYou when you come or go, and stepOffice every frame;
 // time is in seconds.
 
 import { DRINK_PROPS, findPath, isWalkable, nearestWalkable, OfficeLayout, openFloorTiles, Point } from "./officeLayout";
+import { MAX_VISITORS, personalityOf, visitorReaction } from "./officeVisitors";
 import type { Facing, Pose } from "./pixelGuy";
 
 export type AgentStatus = "working" | "idle" | "asleep";
@@ -63,8 +66,23 @@ export interface Agent {
   nextBreakAt: number;
   // Stopped to watch a critter go by: faces it and stands still until then.
   watch: { facing: Facing; until: number } | undefined;
-  // A visitor from another department, not a session: his lines and how many he's said.
-  visitor: { lines: readonly string[]; spoken: number } | undefined;
+  // A visitor from another department, not a session.
+  visitor: VisitorState | undefined;
+}
+
+export interface VisitorState {
+  // His arrival lines, and how many he's said.
+  lines: readonly string[];
+  spoken: number;
+  boss: boolean;
+  smallTalk: readonly string[];
+  farewell: string | undefined;
+  // Seconds to hang around after his lines, and when that runs out once he's started.
+  stay: number;
+  stayUntil: number;
+  nextRemarkAt: number;
+  // Every line he's said to the room, arrival lines and small talk alike, so the view can have the room answer.
+  remarks: number;
 }
 
 export interface VisitorInput {
@@ -72,6 +90,11 @@ export interface VisitorInput {
   seed: string;
   title: string;
   lines: readonly string[];
+  boss?: boolean;
+  smallTalk?: readonly string[];
+  farewell?: string;
+  // Seconds to hang around after his lines; 0 or missing walks right back out.
+  stay?: number;
 }
 
 export interface OfficeState {
@@ -196,10 +219,10 @@ export function isAtStation(agent: Agent): boolean {
   return agent.status === "working" && agent.path.length === 0 && isAt(agent, agent.workSpot);
 }
 
-// Someone from another department walks in from the door and heads for the middle of the room. Only one at a time;
-// returns undefined when one is already here or there's nowhere to stand.
+// Someone from another department walks in from the door and heads for the middle of the room. Returns undefined
+// when the room already has MAX_VISITORS or there's nowhere to stand.
 export function visitorArrives(state: OfficeState, input: VisitorInput, random: Random): Agent | undefined {
-  if (state.agents.some((agent) => agent.visitor !== undefined) || input.lines.length === 0) {
+  if (visitorAgents(state).length >= MAX_VISITORS || input.lines.length === 0) {
     return undefined;
   }
   const { cols, rows } = state.layout;
@@ -212,15 +235,30 @@ export function visitorArrives(state: OfficeState, input: VisitorInput, random: 
   }
   const agent: Agent = {
     ...newAgent(state, { id: input.id, seed: input.seed, status: "working", title: input.title }, random),
-    visitor: { lines: input.lines, spoken: 0 },
+    visitor: {
+      lines: input.lines,
+      spoken: 0,
+      boss: input.boss ?? false,
+      smallTalk: input.smallTalk ?? [],
+      farewell: input.farewell,
+      stay: Math.max(0, input.stay ?? 0),
+      stayUntil: 0,
+      nextRemarkAt: FOREVER,
+      remarks: 0,
+    },
   };
   state.agents.push(agent);
   goTo(state, agent, spots[Math.floor(random() * spots.length)], { kind: "address" }, false, random);
   return agent;
 }
 
-export function visitorAgent(state: OfficeState): Agent | undefined {
-  return state.agents.find((agent) => agent.visitor !== undefined);
+export function visitorAgents(state: OfficeState): Agent[] {
+  return state.agents.filter((agent) => agent.visitor !== undefined);
+}
+
+// Still on his way in or saying his arrival lines.
+function isAddressing(agent: Agent): boolean {
+  return agent.visitor !== undefined && agent.goal?.kind === "address";
 }
 
 // Turns a standing idle guy to look at a point (a visitor, say) for a moment. Seated and busy guys stay put.
@@ -234,8 +272,8 @@ export function lookToward(state: OfficeState, agent: Agent, at: { x: number; y:
   agent.watch = { facing, until: state.time + seconds };
 }
 
-// Says the visitor's next line, or sends him out once he's said them all.
-function stepVisitor(state: OfficeState, agent: Agent): void {
+// Says the visitor's next arrival line. Once he's said them all he hangs around, or walks out if he isn't staying.
+function stepVisitor(state: OfficeState, agent: Agent, random: Random): void {
   const visit = agent.visitor;
   if (visit === undefined) {
     return;
@@ -249,15 +287,53 @@ function stepVisitor(state: OfficeState, agent: Agent): void {
     return;
   }
   if (visit.spoken >= visit.lines.length) {
-    leave(state, agent);
+    if (visit.stay <= 0) {
+      leave(state, agent);
+      return;
+    }
+    // Settles in: from here on he's an idle guy who isn't a session.
+    visit.stayUntil = state.time + visit.stay;
+    visit.nextRemarkAt = state.time + between(random, 15, 35);
+    agent.status = "idle";
+    agent.goal = undefined;
+    setMode(state, agent, "loiter", between(random, 0.5, 1.5));
     return;
   }
   const line = visit.lines[visit.spoken];
   visit.spoken += 1;
-  // Longer lines stay up longer.
-  const seconds = Math.min(4.5, 2.2 + line.length * 0.05);
+  visit.remarks += 1;
+  const seconds = lineSeconds(line);
   say(state, agent, line, seconds);
   agent.nextBubbleAt = state.time + seconds + 0.9;
+}
+
+// A visitor hanging around pipes up now and then with something to the room, when he isn't busy talking.
+function stepHangout(state: OfficeState, agent: Agent, random: Random): void {
+  const visit = agent.visitor;
+  if (visit === undefined || state.time < visit.nextRemarkAt || visit.smallTalk.length === 0) {
+    return;
+  }
+  visit.nextRemarkAt = state.time + between(random, 25, 60);
+  if (agent.bubble !== undefined || agent.mode === "chat" || agent.mode === "wait") {
+    return;
+  }
+  const line = visit.smallTalk[Math.floor(random() * visit.smallTalk.length)];
+  visit.remarks += 1;
+  say(state, agent, line, lineSeconds(line));
+}
+
+// A visitor done hanging around says bye and heads out.
+function visitorLeaves(state: OfficeState, agent: Agent): void {
+  const farewell = agent.visitor?.farewell;
+  if (farewell !== undefined && agent.visitor?.stayUntil !== 0) {
+    say(state, agent, farewell, 2);
+  }
+  leave(state, agent);
+}
+
+// Longer lines stay up longer.
+function lineSeconds(line: string): number {
+  return Math.min(4.5, 2.2 + line.length * 0.05);
 }
 
 // A scene event: drop what you're doing and run back to your desk.
@@ -316,9 +392,10 @@ export function relayoutOffice(state: OfficeState, layout: OfficeLayout, random:
   }
   assignWorkSpots(state);
   for (const agent of state.agents) {
-    if (agent.leaving || agent.visitor !== undefined) {
+    if (agent.leaving) {
       leave(state, agent);
-    } else {
+    } else if (!isAddressing(agent)) {
+      // A visitor mid-speech keeps talking from where he stands; one still walking in gives up (stepVisitor).
       decide(state, agent, random);
     }
   }
@@ -340,9 +417,12 @@ export function stepOffice(state: OfficeState, seconds: number, random: Random):
     if (agent.you) {
       stepYou(state, agent, random);
     }
-    if (agent.visitor !== undefined && agent.path.length === 0) {
-      stepVisitor(state, agent);
+    if (isAddressing(agent) && agent.path.length === 0) {
+      stepVisitor(state, agent, random);
       continue;
+    }
+    if (agent.visitor !== undefined && !agent.leaving && agent.path.length === 0) {
+      stepHangout(state, agent, random);
     }
     if (agent.path.length > 0) {
       move(agent, dt);
@@ -358,8 +438,10 @@ export function stepOffice(state: OfficeState, seconds: number, random: Random):
     if (agent.mode === "chat" && state.time >= agent.nextBubbleAt) {
       // At a busy guy's desk, he answers over his shoulder about half the time.
       const speaker = visited !== undefined && visited.bubble === undefined && random() < 0.45 ? visited : agent;
-      say(state, speaker, chatter(random), between(random, 1, 1.8));
-      agent.nextBubbleAt = state.time + between(random, 1.6, 3.4);
+      const listener = speaker === agent ? visited ?? chatPartnerOf(state, agent) : agent;
+      const line = chatLine(speaker, listener, random);
+      say(state, speaker, line, line.length > 4 ? lineSeconds(line) : between(random, 1, 1.8));
+      agent.nextBubbleAt = state.time + between(random, 1.6, 3.4) + (line.length > 4 ? 1.2 : 0);
     }
     if (agent.mode === "type" && state.time >= agent.nextBubbleAt) {
       if (random() < 0.35) {
@@ -553,8 +635,17 @@ function onStatusChange(state: OfficeState, agent: Agent, random: Random): void 
 
 function decide(state: OfficeState, agent: Agent, random: Random): void {
   agent.running = false;
-  if (agent.leaving || agent.visitor !== undefined) {
+  if (agent.leaving) {
     leave(state, agent);
+    return;
+  }
+  if (agent.visitor !== undefined) {
+    if (isAddressing(agent) || state.time >= agent.visitor.stayUntil) {
+      visitorLeaves(state, agent);
+      return;
+    }
+    endChat(state, agent);
+    pickIdleActivity(state, agent, random);
     return;
   }
   if (agent.status === "working") {
@@ -601,14 +692,15 @@ function pickIdleActivity(state: OfficeState, agent: Agent, random: Random): voi
   if (partners.length > 0) {
     options.push({ weight: agent.you ? 6 : 3, run: () => startChat(state, agent, partners[Math.floor(random() * partners.length)], random) });
   }
-  if (agent.you) {
+  if (agent.you || agent.visitor !== undefined) {
     const visits = state.agents
       .filter((other) => other !== agent && other.status === "working" && other.deskIndex !== undefined && other.mode === "type" && other.path.length === 0)
       .map((other) => ({ other, spot: { x: other.workSpot.x, y: other.workSpot.y + 1 } }))
       .filter(({ spot }) => state.layout.tiles[spot.y]?.[spot.x] === "floor" && !isTargeted(state, agent, spot));
     if (visits.length > 0) {
+      // Bosses love to loom.
       options.push({
-        weight: 6,
+        weight: agent.you ? 6 : agent.visitor?.boss === true ? 4 : 2,
         run: () => {
           const { other, spot } = visits[Math.floor(random() * visits.length)];
           goTo(state, agent, spot, { kind: "visit", agentId: other.id }, false, random);
@@ -843,6 +935,18 @@ function endChat(state: OfficeState, agent: Agent): void {
 
 function say(state: OfficeState, agent: Agent, text: string, seconds: number): void {
   agent.bubble = { text, until: state.time + seconds };
+}
+
+// A chat line: a visitor makes small talk, a guy talking to a visitor answers in character, everyone else chatters.
+function chatLine(speaker: Agent, listener: Agent | undefined, random: Random): string {
+  const talk = speaker.visitor?.smallTalk ?? [];
+  if (talk.length > 0 && random() < 0.6) {
+    return talk[Math.floor(random() * talk.length)];
+  }
+  if (speaker.visitor === undefined && listener?.visitor !== undefined && random() < 0.6) {
+    return visitorReaction(personalityOf(speaker.seed), listener.visitor.boss, false, random) ?? chatter(random);
+  }
+  return chatter(random);
 }
 
 function chatter(random: Random): string {
