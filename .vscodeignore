@@ -4,6 +4,7 @@ node_modules/**
 .vscode/**
 *.mjs
 tsconfig.json
+tsconfig.webview.json
 **/*.map
 .agents/**
 docs/**

@@ -32,6 +32,8 @@ import { SessionPreview } from "./sessionPreview";
 import { SESSION_PANEL_VIEW_ID, SessionPanelProvider } from "./sessionPanel";
 import { CORE_PANEL_VIEW_ID, CorePanelProvider } from "./corePanel";
 import { DRAGON_PANEL_VIEW_ID, DragonPanelProvider } from "./dragonPanel";
+import { OFFICE_PANEL_VIEW_ID, OfficePanelProvider, registerOfficeCommands } from "./officePanel";
+import { PortraitIcons } from "./portraitIcons";
 import { registerSceneEventCommands, SceneEventDirector } from "./sceneEvents";
 import { registerTabSpotlightSync } from "./tabSpotlightSync";
 import { SessionTreeProvider } from "./tree";
@@ -68,8 +70,11 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   const analyzerTrigger = new AnalyzerTrigger({ liveMonitor, analyzer: sessionAnalyzer, findSessionMeta: findIndexedSession, log });
   const compactMonitor = new CompactMonitor(claudeHome, log);
+  const portraitIcons = new PortraitIcons(context.extension);
   const createSectionTree = (section: SessionSection, viewId: string) => {
-    const provider = new SessionTreeProvider(section, sessionIndex, liveMonitor, registry, compactMonitor, () => sessionAnalyzer.analyzerTitles());
+    const provider = new SessionTreeProvider(
+      section, sessionIndex, liveMonitor, registry, compactMonitor, () => sessionAnalyzer.analyzerTitles(), portraitIcons,
+    );
     const view = vscode.window.createTreeView(viewId, {
       treeDataProvider: provider,
       dragAndDropController: provider,
@@ -175,6 +180,13 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
   const sceneEvents = new SceneEventDirector();
+  const officePanelProvider = new OfficePanelProvider({
+    extensionUri: context.extensionUri,
+    liveMonitor,
+    registry,
+    pinnedSessions,
+    sessionTitle,
+  });
   const sessionPanelProvider = new SessionPanelProvider({
     extensionUri: context.extensionUri,
     registry,
@@ -243,8 +255,20 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(CORE_PANEL_VIEW_ID, new CorePanelProvider(sceneEvents)),
     vscode.window.registerWebviewViewProvider(DRAGON_PANEL_VIEW_ID, new DragonPanelProvider(sceneEvents)),
     ...registerSceneEventCommands(sceneEvents),
+    portraitIcons,
+    portraitIcons.onDidChange(() => {
+      treeProvider.refresh();
+      terminalTreeProvider.refresh();
+    }),
+    officePanelProvider,
+    vscode.window.registerWebviewViewProvider(OFFICE_PANEL_VIEW_ID, officePanelProvider, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
+    ...registerOfficeCommands(registry),
+    sessionIndex.onDidChange(() => officePanelProvider.refreshTitles()),
     compactMonitor.onDidChange(refreshTree),
     sessionAnalyzer.onDidChangeTitles(() => {
+      officePanelProvider.refreshTitles();
       treeProvider.refresh();
       terminalTreeProvider.refresh();
       repoTreeProvider.refresh();

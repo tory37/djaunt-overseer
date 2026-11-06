@@ -314,6 +314,20 @@ describe("Registry", () => {
     expect(registry.workspaceSnapshot("default").liveSessionIds).toEqual(["new"]);
   });
 
+  it("keeps the pixel guy with the row when it moves", async () => {
+    const registry = new Registry(memoryStore());
+    await registry.pin("old");
+    await registry.pin("rerolled");
+    await registry.setAvatarSeed("rerolled", "lucky");
+
+    await registry.moveSession("old", "new");
+    await registry.moveSession("rerolled", "next");
+
+    expect(registry.avatarSeed("new")).toBe("old");
+    expect(registry.avatarSeed("next")).toBe("lucky");
+    expect(registry.avatarSeed("rerolled")).toBe("rerolled");
+  });
+
   it("keeps a Default row in Default when it moves", async () => {
     const registry = new Registry(memoryStore());
     await registry.pin("old");

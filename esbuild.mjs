@@ -14,6 +14,17 @@ const buildOptions = {
   sourcemap: true,
 };
 
+// The Office webview runs in the browser, so it is its own bundle.
+const officeViewOptions = {
+  entryPoints: ["src/officeView/main.ts"],
+  bundle: true,
+  outfile: "dist/officeView.js",
+  format: "iife",
+  platform: "browser",
+  target: "es2022",
+  sourcemap: true,
+};
+
 // The settings panel previews session icons with the Codicon font, so the font ships in media/.
 const CODICON_SOURCE_DIR = "node_modules/@vscode/codicons/dist";
 const CODICON_TARGET_DIR = "media/codicons";
@@ -23,8 +34,10 @@ for (const codiconFile of ["codicon.css", "codicon.ttf"]) {
 }
 
 if (isWatchMode) {
-  const context = await esbuild.context(buildOptions);
-  await context.watch();
+  for (const options of [buildOptions, officeViewOptions]) {
+    const context = await esbuild.context(options);
+    await context.watch();
+  }
 } else {
-  await esbuild.build(buildOptions);
+  await Promise.all([esbuild.build(buildOptions), esbuild.build(officeViewOptions)]);
 }

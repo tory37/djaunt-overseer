@@ -49,6 +49,7 @@ const ACTIVE_WORKSPACE_KEY = "overseer.activeWorkspaceId";
 const SESSION_WORKSPACE_KEY = "overseer.workspaceOfSession";
 const GROUP_WORKSPACE_KEY = "overseer.workspaceOfGroup";
 const WORKSPACE_SNAPSHOTS_KEY = "overseer.workspaceSnapshots";
+const AVATAR_SEEDS_KEY = "overseer.avatarSeeds";
 
 export type LinkMark = "pinned" | "removed";
 export type LinkMarks = Record<string, LinkMark>;
@@ -192,6 +193,19 @@ export class Registry {
 
   async setLabel(sessionId: string, label: string): Promise<void> {
     await this.write(LABELS_KEY, { ...this.labels(), [sessionId]: label });
+  }
+
+  // The seed for a session's pixel guy: its id, unless the user re-rolled him. A seed follows the row on /clear.
+  avatarSeed(sessionId: string): string {
+    return this.avatarSeeds()[sessionId] ?? sessionId;
+  }
+
+  async setAvatarSeed(sessionId: string, seed: string): Promise<void> {
+    await this.write(AVATAR_SEEDS_KEY, { ...this.avatarSeeds(), [sessionId]: seed });
+  }
+
+  private avatarSeeds(): Record<string, string> {
+    return this.store.get<Record<string, string>>(AVATAR_SEEDS_KEY) ?? {};
   }
 
   // A locked title is the user's label; an unlocked one gives way to the analyzer's title.
@@ -435,6 +449,8 @@ export class Registry {
       await this.write(SESSION_STATUS_KEY, moveEntry(this.sessionStatusIds(), fromSessionId, toSessionId));
       await this.write(SESSION_STATUS_REASON_KEY, moveEntry(this.sessionStatusReasons(), fromSessionId, toSessionId));
       await this.write(SESSION_WORKSPACE_KEY, moveEntry(this.sessionWorkspaces(), fromSessionId, toSessionId));
+      const { [fromSessionId]: _movedSeed, ...otherSeeds } = this.avatarSeeds();
+      await this.write(AVATAR_SEEDS_KEY, { ...otherSeeds, [toSessionId]: this.avatarSeed(fromSessionId) });
       const movedSnapshots = Object.fromEntries(
         Object.entries(this.workspaceSnapshots()).map(([workspaceId, snapshot]) => [
           workspaceId,
@@ -461,6 +477,7 @@ export class Registry {
     await this.write(WORKSTREAM_EDITS_KEY, withoutForgotten(this.allWorkstreamEdits()));
     await this.write(SESSION_STATUS_KEY, withoutForgotten(this.sessionStatusIds()));
     await this.write(SESSION_STATUS_REASON_KEY, withoutForgotten(this.sessionStatusReasons()));
+    await this.write(AVATAR_SEEDS_KEY, withoutForgotten(this.avatarSeeds()));
   }
 
   private async write(key: string, value: unknown): Promise<void> {

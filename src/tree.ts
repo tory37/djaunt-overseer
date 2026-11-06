@@ -13,6 +13,7 @@ import { CompactMonitor } from "./compactMonitor";
 import { SessionIndex } from "./sessionIndex";
 import { sessionStatusFor, sessionStatusUri } from "./sessionStatusView";
 import { MarkedStatus } from "./sessionStatuses";
+import type { PortraitIcons } from "./portraitIcons";
 import { hiddenLabelTicketKeys } from "./sessionTitle";
 import { findSessionTerminal } from "./terminals";
 
@@ -50,6 +51,7 @@ export class SessionTreeProvider
     private readonly registry: Registry,
     private readonly compactMonitor: CompactMonitor,
     private readonly analyzerTitles: () => Record<string, string>,
+    private readonly portraits: PortraitIcons,
   ) {}
 
   refresh(): void {
@@ -80,11 +82,16 @@ export class SessionTreeProvider
     if (node.pinned.terminal !== undefined) {
       return terminalTreeItem(node.pinned, node.pinned.terminal, status);
     }
+    const sessionId = node.pinned.sessionId;
+    const portrait = this.portraits.isEnabled()
+      ? (state: SessionIconState) => this.portraits.icon(this.registry.avatarSeed(sessionId), state)
+      : undefined;
     return sessionTreeItem(
       node.pinned,
-      this.liveMonitor.get(node.pinned.sessionId),
-      this.compactMonitor.isCompacting(node.pinned.sessionId),
+      this.liveMonitor.get(sessionId),
+      this.compactMonitor.isCompacting(sessionId),
       status,
+      portrait,
     );
   }
 
@@ -241,6 +248,8 @@ function sessionState(sessionId: string, liveSession: LiveSession | undefined): 
   return liveSession === undefined ? "suspended" : "elsewhere";
 }
 
+type PortraitIcon = (state: SessionIconState) => vscode.Uri;
+
 function sessionStateIcon(state: SessionIconState): vscode.ThemeIcon {
   const configuredName = vscode.workspace.getConfiguration("overseer.sessionIcons").get<string>(state);
   return new vscode.ThemeIcon(sessionIconName(state, configuredName), new vscode.ThemeColor(sessionIconSpec(state).colorId));
@@ -251,8 +260,11 @@ function sessionTreeItem(
   liveSession: LiveSession | undefined,
   isCompacting: boolean,
   status: MarkedStatus | undefined,
+  portrait: PortraitIcon | undefined,
 ): vscode.TreeItem {
   const state = sessionState(pinned.sessionId, liveSession);
+  // With portraits on, the row shows the session's pixel guy and the state is the badge in his corner.
+  const stateIcon = (iconState: SessionIconState) => portrait?.(iconState) ?? sessionStateIcon(iconState);
   // The menu still follows the running state; only the icon and tooltip say compacting.
   const iconState: SessionIconState = isCompacting && liveSession !== undefined ? "compacting" : state;
   const treeItem = new vscode.TreeItem(pinnedSessionTitle(pinned), vscode.TreeItemCollapsibleState.None);
@@ -260,11 +272,11 @@ function sessionTreeItem(
   treeItem.resourceUri = sessionStatusUri(pinned.sessionId);
   treeItem.description = sessionDescription(pinned);
   treeItem.tooltip = sessionTooltip(pinned, sessionIconSpec(iconState).label, status);
-  treeItem.iconPath = sessionStateIcon(iconState);
+  treeItem.iconPath = stateIcon(iconState);
   treeItem.contextValue = pinned.isTitleLocked === true ? `session.${state}.titleLocked` : `session.${state}`;
   const copyCount = liveSession?.processCount ?? 0;
   if (copyCount > 1) {
-    treeItem.iconPath = sessionStateIcon("duplicate");
+    treeItem.iconPath = stateIcon("duplicate");
     treeItem.description = [`${copyCount} copies running`, treeItem.description].filter(Boolean).join(" · ");
   }
   treeItem.command = { command: "overseer.clickSession", title: "Open", arguments: [pinned.sessionId] };

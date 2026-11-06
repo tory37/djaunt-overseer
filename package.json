@@ -52,6 +52,12 @@
           "type": "webview",
           "id": "overseer.session",
           "name": "Session"
+        },
+        {
+          "type": "webview",
+          "id": "overseer.office",
+          "name": "Office",
+          "when": "config.overseer.views.office"
         }
       ],
       "djauntOverseer": [
@@ -104,6 +110,22 @@
         "title": "Session History",
         "category": "Overseer",
         "icon": "$(history)"
+      },
+      {
+        "command": "overseer.office.switchScene",
+        "title": "Switch Office Scene…",
+        "category": "Overseer",
+        "icon": "$(layout)"
+      },
+      {
+        "command": "overseer.rerollPixelGuy",
+        "title": "Re-roll Pixel Guy",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.resetPixelGuy",
+        "title": "Reset Pixel Guy",
+        "category": "Overseer"
       },
       {
         "command": "overseer.playErrorEvent",
@@ -561,6 +583,11 @@
           "command": "overseer.refreshRepos",
           "when": "view == overseer.repos",
           "group": "navigation@9"
+        },
+        {
+          "command": "overseer.office.switchScene",
+          "when": "view == overseer.office",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
@@ -743,6 +770,16 @@
           "command": "overseer.copyCommitHash",
           "when": "view == overseer.repos && viewItem =~ /^commit/",
           "group": "2_copy@1"
+        },
+        {
+          "command": "overseer.rerollPixelGuy",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./ && config.overseer.office.portraits",
+          "group": "2_manage@8"
+        },
+        {
+          "command": "overseer.resetPixelGuy",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./ && config.overseer.office.portraits",
+          "group": "2_manage@9"
         }
       ],
       "commandPalette": [
@@ -921,6 +958,14 @@
         {
           "command": "overseer.handoffCancel",
           "when": "false"
+        },
+        {
+          "command": "overseer.rerollPixelGuy",
+          "when": "false"
+        },
+        {
+          "command": "overseer.resetPixelGuy",
+          "when": "false"
         }
       ],
       "editor/title": [
@@ -968,6 +1013,11 @@
           "type": "boolean",
           "default": true,
           "description": "Show the Djaunt view above Session. Decorative only."
+        },
+        "overseer.views.office": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Office view below Session: a pixel guy for each live session, working at his desk while the session is busy and wandering the office while it's idle. Click a guy to open his session."
         },
         "overseer.views.ticker": {
           "type": "boolean",
@@ -1288,6 +1338,24 @@
               "prompt"
             ]
           }
+        },
+        "overseer.office.scene": {
+          "type": "string",
+          "default": "office",
+          "enum": [
+            "office",
+            "serverRoom"
+          ],
+          "enumItemLabels": [
+            "Office",
+            "Server Room"
+          ],
+          "markdownDescription": "The Office view's room. Switch it with **Overseer: Switch Office Scene…** or the button on the view."
+        },
+        "overseer.office.portraits": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show each session's pixel guy as its row icon in Sessions and Terminals, with the session's state as a badge in his corner. Turn off to use the `overseer.sessionIcons.*` codicons. Re-roll a guy from the row's menu."
         }
       }
     },
@@ -1716,7 +1784,7 @@
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json",
     "test": "vitest run",
     "package": "npm run build && vsce package --no-dependencies --skip-license",
     "themes": "node scripts/themes.mjs",

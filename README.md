@@ -98,6 +98,13 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
   - **Session**: Update, Recheck, Open repo, Set status, and Rename.
 - **Run command** prompts come from the `overseer.sessionCommands` setting, as `{name, prompt}` entries, like "Latest reviews are in on the PR. Pull them and evaluate." A `{ticket link}` in a prompt asks for that value first.
 
+### Office
+- The **Office** view, below Session, gives every live session in the sidebar a pixel guy. The session's id picks his looks, so he stays the same guy across reloads.
+- While his session is busy he types at his desk. When it goes idle he leans back, then gets up: the water cooler, the coffee machine, the couch, a walk, or a chat with another idle guy. When the session gets busy again he runs back to his desk. A session that ends walks out the door.
+- His portrait is the session's row icon in Sessions and Terminals, with the state as a badge in the corner. It pulses while working; a suspended session's guy is dimmed. **Re-roll Pixel Guy** on a row's menu gives the session a new one, and **Reset Pixel Guy** brings the first one back.
+- Click a guy to open his session. Hover for its name.
+- **Switch Office Scene…** (the button on the view) picks the room: Office or Server Room.
+
 ### Session preview
 - A session with no terminal in this window opens in one reused **Session Preview** tab. Clicking another session replaces it.
 - It shows where the session left off, its last turns, its prompts, the commits and pull requests the transcript shows it made or worked on, and the other repos it touched.
@@ -178,6 +185,9 @@ VS Code's modern UI reads tab colors only from settings, so with an Overseer the
 | `overseer.sessionIcons.suspended` | `debug-pause` | Icon for a suspended session. |
 | `overseer.sessionIcons.duplicate` | `warning` | Icon for a session with more than one copy running. |
 | `overseer.sessionIcons.compacting` | `sync~spin` | Icon for a session that is compacting. |
+| `overseer.office.portraits` | `true` | Show each session's pixel guy as its row icon, with its state as a badge. Off uses the `overseer.sessionIcons.*` codicons. |
+| `overseer.office.scene` | `office` | The Office view's room: `office` or `serverRoom`. |
+| `overseer.views.office` | `true` | Show the Office view. |
 
 The analyzer and Summarize with Haiku run through your `claude` CLI, so they count against your Claude usage. Everything else makes no model calls.
 

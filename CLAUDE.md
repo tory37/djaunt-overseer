@@ -6,8 +6,8 @@ VS Code extension that shows Claude CLI sessions as a sidebar tree in user group
 
 ```bash
 npm test            # vitest unit tests (test/unit)
-npm run typecheck   # tsc --noEmit
-npm run build       # esbuild bundles to dist/extension.js
+npm run typecheck   # tsc --noEmit, plus the Office webview with DOM types
+npm run build       # esbuild bundles to dist/extension.js and dist/officeView.js
 npm run package     # build + .vsix
 npm run logos       # regenerate src/orbitLogos.ts from logos/*.svg and *.png
 npm run theme-lab   # dev only: build theme-lab/lab-data.js, then open theme-lab/index.html
@@ -26,7 +26,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `sessionIndex.ts` | Holds the current index and refreshes it on file changes. |
 | `gitRoots.ts` | Directory to git root, memoized. Worktrees map to the main repo. |
 | `liveParse.ts` / `liveSessions.ts` | `claude agents --json` plus a watch on `~/.claude/sessions` for busy/idle status. |
-| `registry.ts` | globalState: pinned ids, user groups, assignments, labels, title locks, pending sessions, group and session order. One key per field so two windows don't clobber each other. |
+| `registry.ts` | globalState: pinned ids, user groups, assignments, labels, title locks, pending sessions, group and session order, pixel guy seeds. One key per field so two windows don't clobber each other. |
 | `grouping.ts` | Pure: builds the group list. User groups, then Ungrouped, then the saved order on top. |
 | `sessionTitle.ts` | Pure: the shown session title (locked label, analyzer title, label, indexed title) and the label's ticket keys the title hides. Grouping still reads the label. |
 | `reorder.ts` | Pure: drag reorder (`moveBeside`) and saved-order sort. |
@@ -77,6 +77,13 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `orbitLogos.ts` | Generated from `logos/*.svg` and `logos/*.png` by `scripts/orbitLogos.mjs` (`npm run logos`): each logo as flattened polygons. SVG curves are flattened; PNG dark pixels are traced. The Core view extrudes each into a solid. SVGs must have no transforms. |
 | `flyingCreatures.ts` | Scene script for the Core view: a purple western dragon (green belly and horns, fire breath), Moltres (fire trail), Zapdos (sawtooth wings, lightning), and Articuno (long ribbon tail, falling frost). One crosses at a time, every 15-40s, in front of or behind the globe. |
 | `dragonPanel.ts` | Decorative webview above Session: the djaunt dragon (`djauntMark.ts`, copied from djaunt-branding) as a 3D point cloud that assembles, spins, ripples, glitches, and scatters. The hacker ticker strip runs along its bottom (`hackerTicker.ts`); a setting change rebuilds the view. Reads nothing. |
+| `pixelGuy.ts` | Pure: a session's pixel guy. A seed (the session id, or a re-roll in `overseer.avatarSeeds`) picks skin, hair, clothes, and an accessory. Draws outlined 12x18 frames per pose and facing, and the 16x16 portrait SVG with a state badge. |
+| `portraitBadge.ts` | Pure: the portrait badge's hex color (per-theme customization, customization, the active Overseer theme, VS Code's default) and whether it pulses or dims. |
+| `portraitIcons.ts` | The session rows' portraits as data URIs, cached by seed and state, cleared on a theme or color change. `overseer.office.portraits` turns them off for the codicons. |
+| `officeLayout.ts` | Pure: the Office floor plan for a size in tiles (back wall and door, desk pairs with seats below, props along the bottom) per scene, and BFS paths that don't cut across seats. |
+| `officeSim.ts` | Pure: the Office's guys. Busy types at his desk; idle sits back, then goes to a prop, the couch, a walk, or a chat with another idle guy; busy again runs back. An ended session walks out the door. Overflow works from the couch. |
+| `officePanel.ts` | Office webview below Session: sends the live, pinned sessions (id, seed, busy or idle, title), opens a session when its guy is clicked. Switch Scene, Re-roll and Reset Pixel Guy commands. |
+| `officeView/` | The Office webview's own bundle (`dist/officeView.js`, `tsconfig.webview.json` for DOM types): draws the room and sprites back to front, runs `officeSim` each frame, pauses while hidden. |
 | `hackerTicker.ts` | Scene fragment for the Djaunt view: one line of fake hacker status in a strip along the bottom that decrypts in, animates its dots, and scrambles out. During an ERROR, HACK, or DEFENSE event it shows that event's lines. `overseer.views.ticker` turns the strip off. |
 | `sessionSidebarText.ts` | Pure: the Session sidebar's meta line, state sentence, short link status, and row hover text. |
 | `resourceRows.ts` | Pure: sidebar link rows and stale-drag checks. |
@@ -96,7 +103,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 - Send slash commands only when the session is idle. Typed input is lost while Claude is busy.
 - Never resume a session that is live elsewhere. Two processes on one transcript corrupt it. Offer a fork.
 - Session names reach the shell. Quote with `quoteForShell` and strip newlines.
-- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `claudeLaunch`, `handoff`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerEval`, `analyzerFlags`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`, `sessionTitle`, `tabSpotlight`, `groupIcons`, `repoColors`, `sceneEventSchedule`) and test it there. `vscode` can't be imported in unit tests.
+- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `claudeLaunch`, `handoff`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerEval`, `analyzerFlags`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`, `sessionTitle`, `tabSpotlight`, `groupIcons`, `repoColors`, `sceneEventSchedule`, `pixelGuy`, `portraitBadge`, `officeLayout`, `officeSim`) and test it there. `vscode` can't be imported in unit tests.
 - The agent is not told about Overseer. Sessions launch as plain `claude`. The extension derives tracking from transcripts.
 - New commands need an entry in `contributes.commands`, a menu `when` clause, and `"when": "false"` under `commandPalette` if they need a tree node.
 
