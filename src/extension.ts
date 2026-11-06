@@ -30,6 +30,7 @@ import { HistoryPanel } from "./historyPanel";
 import { SessionFocusTracker } from "./sessionFocus";
 import { SessionPreview } from "./sessionPreview";
 import { SESSION_PANEL_VIEW_ID, SessionPanelProvider } from "./sessionPanel";
+import { CORE_PANEL_VIEW_ID, CorePanelProvider } from "./corePanel";
 import { registerTabSpotlightSync } from "./tabSpotlightSync";
 import { SessionTreeProvider } from "./tree";
 import { ShownSessionTitle, shownSessionTitle } from "./sessionTitle";
@@ -235,6 +236,7 @@ export function activate(context: vscode.ExtensionContext): void {
     sessionFocus,
     sessionPanelProvider,
     vscode.window.registerWebviewViewProvider(SESSION_PANEL_VIEW_ID, sessionPanelProvider),
+    vscode.window.registerWebviewViewProvider(CORE_PANEL_VIEW_ID, new CorePanelProvider()),
     compactMonitor.onDidChange(refreshTree),
     sessionAnalyzer.onDidChangeTitles(() => {
       treeProvider.refresh();

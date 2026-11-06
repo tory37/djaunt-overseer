@@ -69,6 +69,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `handoffCommands.ts` | Handoff: asks the idle session for a draft, opens it when written, and the draft tab's Revise, Approve (Start below or Replace), and Cancel buttons. |
 | `sessionFocus.ts` / `sessionFocusState.ts` | The focused session: the active Claude terminal or the preview tab. The state rules are pure. |
 | `sessionPanel.ts` | Secondary Side Bar webview for the focused session: header with the title, a lock icon when locked, and the derived status; the Now lines; resume or suspend; workstreams with Unsorted and Removed, and the tile toolbar. Edits write `overseer.workstreamEdits.v2` and show at once. |
+| `corePanel.ts` | Decorative webview at the bottom of the Overseer sidebar: a spinning lattice globe with fake telemetry. Reads nothing. |
 | `sessionSidebarText.ts` | Pure: the Session sidebar's meta line, state sentence, short link status, and row hover text. |
 | `resourceRows.ts` | Pure: sidebar link rows and stale-drag checks. |
 | `sessionPreview.ts` / `sessionPreviewModel.ts` | One reused editor tab for sessions with no terminal here: summary, last turns, prompts, and the commits and PRs the transcript scan found. Resume replaces it with the terminal. The model is pure. |

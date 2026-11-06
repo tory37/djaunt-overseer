@@ -63,6 +63,12 @@
           "id": "overseer.repos",
           "name": "Repos",
           "when": "config.overseer.views.repos"
+        },
+        {
+          "type": "webview",
+          "id": "overseer.core",
+          "name": "Core",
+          "when": "config.overseer.views.core"
         }
       ]
     },
@@ -911,6 +917,11 @@
           "type": "boolean",
           "default": true,
           "description": "Show the Repos view."
+        },
+        "overseer.views.core": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Core view. Decorative only."
         },
         "overseer.sessionStatuses": {
           "type": "array",
