@@ -103,6 +103,7 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - While his session is busy he types at his desk. When it goes idle he leans back, then gets up: the water cooler, the coffee machine, the couch, a walk, or a chat with another idle guy. When the session gets busy again he runs back to his desk. A suspended session's guy falls asleep on his desk until it resumes. A session that leaves the sidebar walks out the door.
 - His portrait is the session's row icon in Sessions and Terminals, with the state as a badge in the corner. It pulses while working; a suspended session's guy is dimmed. **Re-roll Pixel Guy** on a row's menu gives the session a new one, and **Reset Pixel Guy** brings the first one back.
 - The room has ten desks, plus a couple to spare past your sessions as more open. It takes the shape that shows the most at the biggest zoom.
+- You're in the room too, at the top-right desk under the clock. You type, lean back, and get up for coffee, and you act out the ERROR, HACK, and DEFENSE scene events with the other views: your monitor flashes red, rains green code, or runs the defense bar up to a shield. You jump up, hack like mad, and cheer. The room's screens flash with it, and the others look up. `overseer.office.yourLook` sets your look (a blonde ponytail with a shaved side, blue eyes, a thick orange beard, a black muscle shirt, white shorts, and black flip flops by default); `overseer.office.you` takes you out.
 - Click a guy to open his session. Hover for its name.
 - **Switch Office Scene…** (the button on the view) picks the room: Office or Server Room.
 
@@ -189,6 +190,8 @@ VS Code's modern UI reads tab colors only from settings, so with an Overseer the
 | `overseer.office.portraits` | `true` | Show each session's pixel guy as its row icon, with its state as a badge. Off uses the `overseer.sessionIcons.*` codicons. |
 | `overseer.office.scene` | `office` | The Office view's room: `office` or `serverRoom`. |
 | `overseer.office.sleepers` | `true` | Give suspended sessions a guy too, asleep at his desk. |
+| `overseer.office.you` | `true` | Put you in the Office, at your own desk, reacting to the scene events. |
+| `overseer.office.yourLook` | `{}` | Your guy's look: `skin`, `hair`, `hairStyle`, `eyes`, `beard`, `shirt`, `sleeveless`, `pants`, `shorts`, `shoes`, `flipFlops`, `accessory`, `accessoryColor`. Leave a field out for the default. |
 | `overseer.views.office` | `true` | Show the Office view. |
 
 The analyzer and Summarize with Haiku run through your `claude` CLI, so they count against your Claude usage. Everything else makes no model calls.

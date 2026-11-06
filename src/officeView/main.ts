@@ -1,9 +1,12 @@
 // The Office webview: draws the floor plan and the pixel guys, and runs the simulation every frame. The extension
-// posts the live sessions ({ type: "office" }); a click on a guy posts { type: "open" } back.
+// posts the live sessions ({ type: "office" }); a click on a guy posts { type: "open" } back. You sit at your own
+// desk and act out the scene events ({ type: "sceneEvent" }) with your monitor; the room looks up too.
 
 import { buildOfficeLayout, Desk, desksNeeded, OFFICE_SCENES, officeShape, OfficeLayout, OfficeSceneId, officeSceneId, Point, Prop } from "../officeLayout";
 import { Agent, AgentInput, agentPose, createOffice, officeCounts, relayoutOffice, stepOffice, syncOffice } from "../officeSim";
+import { YourEvent, YourReaction, yourEventSeconds, yourReaction, roomReaction } from "../officeYou";
 import { Facing, FRAME_HEIGHT, FRAME_WIDTH, pixelGuyFrame, pixelGuyLook, PixelGuyLook, Pose } from "../pixelGuy";
+import { DEFENSE_BEATS, ERROR_BEAT_SECONDS, ERROR_FLASH_SECONDS, EVENT_SECONDS, SCENE_EVENT_KINDS, SceneEventKind } from "../sceneEventSchedule";
 import { SCENE_PALETTES, ScenePalette } from "./palettes";
 
 declare function acquireVsCodeApi(): { postMessage(message: unknown): void };
@@ -12,6 +15,13 @@ interface OfficeMessage {
   type: "office";
   scene: string;
   agents: AgentInput[];
+  you: PixelGuyLook | null;
+}
+
+interface SceneEventMessage {
+  type: "sceneEvent";
+  kind: SceneEventKind;
+  variant: number;
 }
 
 const TILE = 16;
@@ -34,17 +44,23 @@ let scale = 1;
 let originX = 0;
 let originY = 0;
 let hoveredId: string | undefined;
+// Your look, under a key of its own in the sprite cache, or undefined when you're not in the room.
+let youKey: string | undefined;
+let youHovered = false;
+let sceneEvent: (YourEvent & { start: number }) | undefined;
+let roomReactions: { id: string; text: string; at: number }[] = [];
 
 const random = Math.random;
 
 // Builds just enough room for the sessions (ten desks at least, more as sessions open), shaped to fit the view, then
 // zooms it as far as the view allows.
 function fitLayout(): void {
-  const shape = officeShape(desksNeeded(latestInputs.length), width, height, TILE);
+  const withStation = youKey !== undefined;
+  const shape = officeShape(desksNeeded(latestInputs.length) + (withStation ? 1 : 0), width, height, TILE);
   const layout = state.layout;
-  if (shape.cols !== layout.cols || shape.rows !== layout.rows || sceneChanged) {
+  if (shape.cols !== layout.cols || shape.rows !== layout.rows || sceneChanged || (layout.station !== undefined) !== withStation) {
     sceneChanged = false;
-    relayoutOffice(state, buildOfficeLayout(shape.cols, shape.rows, sceneId), random);
+    relayoutOffice(state, buildOfficeLayout(shape.cols, shape.rows, sceneId, withStation), random);
   }
   const pixelRatio = window.devicePixelRatio || 1;
   const fit = Math.min(width / (state.layout.cols * TILE), height / (state.layout.rows * TILE));
@@ -67,10 +83,21 @@ new ResizeObserver(() => {
   }
 }).observe(canvas);
 
-window.addEventListener("message", (event: MessageEvent<OfficeMessage>) => {
+window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEventMessage>) => {
   const data = event.data;
+  if (data !== null && typeof data === "object" && data.type === "sceneEvent") {
+    startSceneEvent(data);
+    return;
+  }
   if (data === null || typeof data !== "object" || data.type !== "office" || !Array.isArray(data.agents)) {
     return;
+  }
+  const nextYouKey = data.you === null || typeof data.you !== "object" ? undefined : `you|${JSON.stringify(data.you)}`;
+  if (nextYouKey !== youKey) {
+    youKey = nextYouKey;
+    if (data.you !== null && nextYouKey !== undefined) {
+      lookCache.set(nextYouKey, data.you);
+    }
   }
   const nextScene = officeSceneId(data.scene);
   if (nextScene !== sceneId) {
@@ -92,6 +119,44 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage>) => {
   hasSynced = true;
   sceneLabel.textContent = OFFICE_SCENES.find((scene) => scene.id === sceneId)?.label.toLowerCase() ?? "office";
 });
+
+// A hidden view skips the event, like the other views, so it doesn't play late.
+function startSceneEvent(data: SceneEventMessage): void {
+  if (document.hidden || !SCENE_EVENT_KINDS.includes(data.kind)) {
+    return;
+  }
+  const start = state.time;
+  sceneEvent = { kind: data.kind, variant: Math.floor(Number(data.variant) || 0), age: 0, start };
+  roomReactions = [];
+  for (const agent of state.agents) {
+    const text = agent.status === "asleep" || agent.leaving ? undefined : roomReaction(data.kind, random);
+    if (text !== undefined) {
+      roomReactions.push({ id: agent.id, text, at: start + 0.2 + random() * 0.9 });
+    }
+  }
+}
+
+function playRoomReactions(): void {
+  const due = roomReactions.filter((reaction) => reaction.at <= state.time);
+  roomReactions = roomReactions.filter((reaction) => reaction.at > state.time);
+  for (const reaction of due) {
+    const agent = state.agents.find((candidate) => candidate.id === reaction.id);
+    if (agent !== undefined) {
+      agent.bubble = { text: reaction.text, until: state.time + 1.6 };
+    }
+  }
+}
+
+function currentEvent(): YourEvent | undefined {
+  if (sceneEvent === undefined) {
+    return undefined;
+  }
+  sceneEvent.age = state.time - sceneEvent.start;
+  if (sceneEvent.age >= yourEventSeconds(sceneEvent.kind)) {
+    sceneEvent = undefined;
+  }
+  return sceneEvent;
+}
 
 // ----- Sprites -----
 
@@ -225,7 +290,22 @@ function drawDoor(door: Point, palette: ScenePalette): void {
   }
 }
 
-function drawDesk(desk: Desk, owner: Agent | undefined, palette: ScenePalette, seconds: number, index: number): void {
+// During an event the room's working screens flash with it: red for ERROR, green for HACK, the beat's color for DEFENSE.
+function eventCodeColor(event: YourEvent | undefined): string | undefined {
+  if (event === undefined) {
+    return undefined;
+  }
+  if (event.kind === "error") {
+    return event.age < ERROR_FLASH_SECONDS && Math.floor(event.age / ERROR_BEAT_SECONDS) % 2 === 0 ? "#FF5A4F" : undefined;
+  }
+  if (event.kind === "hack") {
+    return event.age < EVENT_SECONDS.hack ? "#3DDC6A" : undefined;
+  }
+  const beat = DEFENSE_BEATS.filter((start) => event.age >= start).length - 1;
+  return event.age >= EVENT_SECONDS.defense ? undefined : ["#FF5A4F", "#F1C24B", "#F1C24B", "#4FC3F7"][beat];
+}
+
+function drawDesk(desk: Desk, owner: Agent | undefined, palette: ScenePalette, seconds: number, index: number, eventColor: string | undefined): void {
   const left = desk.desk.x * TILE;
   const top = desk.desk.y * TILE;
   // Monitor, facing the seat below.
@@ -238,7 +318,7 @@ function drawDesk(desk: Desk, owner: Agent | undefined, palette: ScenePalette, s
       const scroll = Math.floor(seconds * 4) + line;
       const lineWidth = 2 + Math.floor(noise(index * 31 + scroll) * 6);
       const indent = Math.floor(noise(index * 17 + scroll) * 2);
-      rect(left + 5 + indent, top + 2 + line * 2, Math.min(lineWidth, 6 - indent), 1, palette.code[(scroll + index) % palette.code.length]);
+      rect(left + 5 + indent, top + 2 + line * 2, Math.min(lineWidth, 6 - indent), 1, eventColor ?? palette.code[(scroll + index) % palette.code.length]);
     }
   } else if (present) {
     const bounce = Math.floor(seconds * 2) % 6;
@@ -254,6 +334,91 @@ function drawDesk(desk: Desk, owner: Agent | undefined, palette: ScenePalette, s
   // A mug on some desks.
   if (index % 3 === 1) {
     rect(left + 13, top + 7, 2, 2, palette.mug);
+  }
+}
+
+// Your desk: a wider monitor that shows the event, a mug, and a light strip along the front in the screen's color.
+function drawStation(desk: Desk, reaction: YourReaction, palette: ScenePalette, seconds: number): void {
+  const left = desk.desk.x * TILE;
+  const top = desk.desk.y * TILE;
+  rect(left + 1, top - 1, 14, 9, palette.monitor);
+  const screenLeft = left + 2;
+  const screenTop = top;
+  const glow = drawYourScreen(screenLeft, screenTop, reaction, palette, seconds);
+  rect(left + 7, top + 8, 2, 1, palette.monitor);
+  rect(left, top + 9, TILE, 3, palette.deskTop);
+  rect(left + 3, top + 10, 9, 1, palette.keyboard);
+  rect(left + 13, top + 9, 1, 2, palette.keyboard);
+  rect(left, top + 12, TILE, 4, palette.deskFront);
+  rect(left + 1, top + 12, 1, 4, palette.deskTop);
+  rect(left + TILE - 2, top + 12, 1, 4, palette.deskTop);
+  rect(left + 2, top + 13, TILE - 4, 1, glow);
+  rect(left + 13, top + 7, 2, 2, palette.mug);
+  rect(left + 14, top + 6, 1, 1, "rgba(255,255,255,0.5)");
+}
+
+// Draws the 12x7 screen, and returns the color it casts on the desk's light strip.
+function drawYourScreen(left: number, top: number, reaction: YourReaction, palette: ScenePalette, seconds: number): string {
+  const blink = Math.floor(seconds / ERROR_BEAT_SECONDS) % 2 === 0;
+  const pixels = (rows: string[], color: string, offsetX: number, offsetY: number) => rows.forEach((row, y) => [...row].forEach((cell, x) => {
+    if (cell === "#") {
+      rect(left + offsetX + x, top + offsetY + y, 1, 1, color);
+    }
+  }));
+  switch (reaction.screen) {
+    case "code":
+      rect(left, top, 12, 7, palette.screenOn);
+      for (let line = 0; line < 3; line++) {
+        const scroll = Math.floor(seconds * 5) + line;
+        const indent = Math.floor(noise(scroll * 3.1) * 3);
+        rect(left + 1 + indent, top + 1 + line * 2, 2 + Math.floor(noise(scroll * 7.7) * (8 - indent)), 1, palette.code[scroll % palette.code.length]);
+      }
+      return palette.code[0];
+    case "idle": {
+      rect(left, top, 12, 7, palette.screenIdle);
+      const bounce = Math.floor(seconds * 2) % 10;
+      rect(left + 1 + bounce, top + 3 + (bounce % 2), 1, 1, palette.code[0]);
+      return palette.screenIdle;
+    }
+    case "error":
+      rect(left, top, 12, 7, blink ? "#B3261E" : "#2A0A0A");
+      pixels(["#...#", ".#.#.", "..#..", ".#.#.", "#...#"], blink ? "#FFFFFF" : "#FF5A4F", 4, 1);
+      return "#FF5A4F";
+    case "alert":
+      rect(left, top, 12, 7, blink ? "#B3261E" : "#1A0505");
+      pixels(["#", "#", "#", ".", "#"], "#FFFFFF", 6, 1);
+      rect(left, top, 12, 1, "#FF5A4F");
+      rect(left, top + 6, 12, 1, "#FF5A4F");
+      return "#FF5A4F";
+    case "matrix":
+      rect(left, top, 12, 7, "#020A04");
+      for (let column = 0; column < 12; column++) {
+        const head = Math.floor(seconds * (6 + noise(column) * 8) + noise(column * 9) * 7) % 10;
+        for (let trail = 0; trail < 4; trail++) {
+          const y = head - trail;
+          if (y >= 0 && y < 7) {
+            rect(left + column, top + y, 1, 1, trail === 0 ? "#B6FFC8" : trail === 1 ? "#3DDC6A" : "#14692E");
+          }
+        }
+      }
+      return "#3DDC6A";
+    case "granted":
+      rect(left, top, 12, 7, "#06260F");
+      pixels([".###.", "#####", "#.#.#", "#####", ".#.#."], blink ? "#3DDC6A" : "#B6FFC8", 4, 1);
+      return "#3DDC6A";
+    case "progress": {
+      rect(left, top, 12, 7, "#231A04");
+      rect(left + 1, top + 3, 10, 3, "#F1C24B");
+      rect(left + 2, top + 4, 8, 1, "#231A04");
+      rect(left + 2, top + 4, Math.round((reaction.progress / 100) * 8), 1, "#FFE08A");
+      rect(left + 1, top + 1, blink ? 6 : 4, 1, "#F1C24B");
+      return "#F1C24B";
+    }
+    case "shield":
+      rect(left, top, 12, 7, "#071B2C");
+      pixels(["#####", "#####", "#####", ".###.", "..#.."], "#4FC3F7", 4, 1);
+      rect(left + 6, top + 2, 1, 2, "#FFFFFF");
+      return "#4FC3F7";
   }
 }
 
@@ -380,11 +545,26 @@ function drawAgent(agent: Agent, seconds: number): AgentBox {
   return box;
 }
 
-function drawBubble(box: AgentBox, text: string, palette: ScenePalette): void {
+function drawYou(desk: Desk, reaction: YourReaction): { left: number; top: number } {
+  const left = Math.round(desk.seat.x * TILE + (TILE - FRAME_WIDTH) / 2);
+  const top = Math.round(desk.seat.y * TILE + TILE - FRAME_HEIGHT - (reaction.seated ? SEATED_LIFT : 0) - reaction.hop);
+  if (!reaction.seated) {
+    context.globalAlpha = 0.25;
+    rect(left + 2, desk.seat.y * TILE + TILE - 2, FRAME_WIDTH - 4, 2, "#000");
+    context.globalAlpha = 1;
+  }
+  if (youKey !== undefined) {
+    context.drawImage(sprite(youKey, reaction.pose, reaction.facing, reaction.frame), left, top);
+  }
+  return { left, top };
+}
+
+function drawBubble(box: { left: number; top: number }, text: string, palette: ScenePalette): void {
   context.font = "7px monospace";
   const textWidth = Math.ceil(context.measureText(text).width);
   const bubbleWidth = textWidth + 6;
-  const bubbleLeft = Math.round(box.left + FRAME_WIDTH / 2 - bubbleWidth / 2);
+  // Long lines stay inside the room; the tail stays over the guy.
+  const bubbleLeft = Math.max(1, Math.min(state.layout.cols * TILE - bubbleWidth - 1, Math.round(box.left + FRAME_WIDTH / 2 - bubbleWidth / 2)));
   const bubbleTop = box.top - 11;
   rect(bubbleLeft, bubbleTop, bubbleWidth, 9, palette.bubbleEdge);
   rect(bubbleLeft + 1, bubbleTop + 1, bubbleWidth - 2, 7, palette.bubble);
@@ -421,18 +601,51 @@ function drawNameTag(box: AgentBox, palette: ScenePalette): void {
   context.fillText(text, tagLeft + 2, tagTop + 1.5);
 }
 
+// A wash over the room while an event plays, like the other views' recolor but lighter.
+function drawEventTint(event: YourEvent | undefined, layout: OfficeLayout): void {
+  if (event === undefined) {
+    return;
+  }
+  let color: string | undefined;
+  let alpha = 0;
+  if (event.kind === "error" && event.age < ERROR_FLASH_SECONDS) {
+    color = "#FF2A1F";
+    alpha = Math.floor(event.age / ERROR_BEAT_SECONDS) % 2 === 0 ? 0.16 : 0.06;
+  } else if (event.kind === "hack" && event.age < EVENT_SECONDS.hack) {
+    color = "#3DDC6A";
+    alpha = 0.08 * Math.min(1, event.age / 0.6, (EVENT_SECONDS.hack - event.age) / 0.6);
+  } else if (event.kind === "defense" && event.age < EVENT_SECONDS.defense) {
+    const beat = DEFENSE_BEATS.filter((start) => event.age >= start).length - 1;
+    const beatAge = event.age - DEFENSE_BEATS[beat];
+    color = ["#FF2A1F", "#F1C24B", "#F1C24B", "#4FC3F7"][beat];
+    alpha = beat === 0 ? 0.06 + 0.08 * (0.5 + 0.5 * Math.sin(event.age * 14)) : beat === 3 ? 0.3 * Math.max(0, 1 - beatAge / 0.6) : 0.05;
+  }
+  if (color === undefined || alpha <= 0) {
+    return;
+  }
+  context.globalAlpha = alpha;
+  rect(0, 0, layout.cols * TILE, layout.rows * TILE, color);
+  context.globalAlpha = 1;
+}
+
 // ----- Frame -----
 
 let boxes: AgentBox[] = [];
+let youArea: { left: number; top: number } | undefined;
 
 function draw(seconds: number): void {
   const pixelRatio = window.devicePixelRatio || 1;
   context.setTransform(1, 0, 0, 1, 0, 0);
   context.clearRect(0, 0, canvas.width, canvas.height);
-  context.setTransform(pixelRatio * scale, 0, 0, pixelRatio * scale, pixelRatio * originX, pixelRatio * originY);
+  const event = currentEvent();
+  const station = state.layout.station;
+  const reaction = yourReaction(event, seconds);
+  const shake = reaction.shake * (Math.floor(seconds * 30) % 2 === 0 ? 1 : -1) * scale;
+  context.setTransform(pixelRatio * scale, 0, 0, pixelRatio * scale, pixelRatio * (originX + shake), pixelRatio * originY);
   context.imageSmoothingEnabled = false;
   const palette = SCENE_PALETTES[sceneId];
   const layout = state.layout;
+  const eventColor = eventCodeColor(event);
   drawFloor(layout, palette);
   drawWall(layout, palette, seconds);
 
@@ -445,7 +658,7 @@ function draw(seconds: number): void {
   });
   const layers: { depth: number; paint: () => void }[] = [];
   layout.desks.forEach((desk, index) => {
-    layers.push({ depth: desk.desk.y + 0.4, paint: () => drawDesk(desk, owners.get(index), palette, seconds, index) });
+    layers.push({ depth: desk.desk.y + 0.4, paint: () => drawDesk(desk, owners.get(index), palette, seconds, index, eventColor) });
     layers.push({ depth: desk.seat.y + 0.7, paint: () => drawChairBack(desk.seat, palette) });
   });
   layout.props.forEach((prop, index) => {
@@ -454,6 +667,12 @@ function draw(seconds: number): void {
       layers.push({ depth: prop.at.y + 0.7, paint: () => drawCouchBack(prop, palette) });
     }
   });
+  let youBox: { left: number; top: number } | undefined;
+  if (station !== undefined && youKey !== undefined) {
+    layers.push({ depth: station.desk.y + 0.4, paint: () => drawStation(station, reaction, palette, seconds) });
+    layers.push({ depth: station.seat.y + 0.7, paint: () => drawChairBack(station.seat, palette) });
+    layers.push({ depth: station.seat.y + 0.5, paint: () => { youBox = drawYou(station, reaction); } });
+  }
   const nextBoxes: AgentBox[] = [];
   state.agents.forEach((agent) => {
     layers.push({ depth: agent.y + 0.5, paint: () => nextBoxes.push(drawAgent(agent, seconds)) });
@@ -469,6 +688,12 @@ function draw(seconds: number): void {
       drawBubble(box, box.agent.bubble.text, palette);
     }
   });
+  youArea = youBox;
+  const finalYouBox = youBox as { left: number; top: number } | undefined;
+  if (finalYouBox !== undefined && reaction.bubble !== undefined) {
+    drawBubble(finalYouBox, reaction.bubble, palette);
+  }
+  drawEventTint(event, layout);
   const hovered = boxes.find((box) => box.agent.id === hoveredId);
   if (hovered !== undefined) {
     drawNameTag(hovered, palette);
@@ -486,6 +711,7 @@ function loop(now: number): void {
   const seconds = now / 1000;
   if (lastTime !== undefined) {
     stepOffice(state, seconds - lastTime, random);
+    playRoomReactions();
   }
   lastTime = seconds;
   if (width > 0 && height > 0) {
@@ -514,10 +740,26 @@ function agentAt(clientX: number, clientY: number): Agent | undefined {
   )?.agent;
 }
 
+function isOverYou(clientX: number, clientY: number): boolean {
+  if (youArea === undefined) {
+    return false;
+  }
+  const bounds = canvas.getBoundingClientRect();
+  const roomX = (clientX - bounds.left - originX) / scale;
+  const roomY = (clientY - bounds.top - originY) / scale;
+  return roomX >= youArea.left && roomX < youArea.left + FRAME_WIDTH && roomY >= youArea.top && roomY < youArea.top + FRAME_HEIGHT;
+}
+
 canvas.addEventListener("mousemove", (event) => {
   const agent = agentAt(event.clientX, event.clientY);
   hoveredId = agent?.id;
+  youHovered = agent === undefined && isOverYou(event.clientX, event.clientY);
   canvas.style.cursor = agent === undefined ? "default" : "pointer";
+  if (youHovered) {
+    tooltip.hidden = false;
+    tooltip.textContent = sceneEvent === undefined ? "you · on watch" : `you · ${sceneEvent.kind}!`;
+    return;
+  }
   if (agent === undefined) {
     tooltip.hidden = true;
     return;
@@ -528,6 +770,7 @@ canvas.addEventListener("mousemove", (event) => {
 
 canvas.addEventListener("mouseleave", () => {
   hoveredId = undefined;
+  youHovered = false;
   tooltip.hidden = true;
 });
 

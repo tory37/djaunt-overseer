@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { buildOfficeLayout, desksNeeded, findPath, isWalkable, MIN_COLS, MIN_DESKS, MIN_ROWS, nearestWalkable, officeSceneId, officeShape } from "../../src/officeLayout";
 
 describe("buildOfficeLayout", () => {
+  it("sets the top row's last desk aside as your station when asked", () => {
+    const plain = buildOfficeLayout(13, 8, "office");
+    const withStation = buildOfficeLayout(13, 8, "office", true);
+    expect(plain.station).toBeUndefined();
+    expect(withStation.desks).toHaveLength(plain.desks.length - 1);
+    expect(withStation.station).toEqual(plain.desks.filter((desk) => desk.desk.y === 1).pop());
+    expect(withStation.tiles[withStation.station!.seat.y][withStation.station!.seat.x]).toBe("seat");
+  });
+
   it("never goes below the minimum size", () => {
     const layout = buildOfficeLayout(2, 2, "office");
     expect(layout.cols).toBe(MIN_COLS);

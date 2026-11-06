@@ -1,6 +1,14 @@
 import * as crypto from "crypto";
 import type * as vscode from "vscode";
-import { DEFENSE_SCRIPTS, HACK_PHRASES } from "./sceneEventSchedule";
+import {
+  DEFENSE_BEATS,
+  DEFENSE_SCRIPTS,
+  ERROR_BEAT_SECONDS,
+  ERROR_FLASH_SECONDS,
+  EVENT_SECONDS,
+  HACK_PHRASES,
+  HACK_REVEAL_SECONDS,
+} from "./sceneEventSchedule";
 
 // The shared shell for the decorative canvas views. The scene script gets canvas, context, width, height,
 // palette, color shading, and the 3D helpers, and must define draw(seconds, event). The loop pauses while the view is
@@ -104,12 +112,12 @@ ${readoutsHtml}
 
   const HACK_PHRASES = ${JSON.stringify(HACK_PHRASES)};
   const DEFENSE_SCRIPTS = ${JSON.stringify(DEFENSE_SCRIPTS)};
-  const EVENT_SECONDS = { error: 3.3, hack: 5.5, defense: 7.6 };
-  const ERROR_FLASH_SECONDS = 2.5;
-  const ERROR_BEAT_SECONDS = 0.25;
-  const HACK_REVEAL_SECONDS = 2.6;
+  const EVENT_SECONDS = ${JSON.stringify(EVENT_SECONDS)};
+  const ERROR_FLASH_SECONDS = ${ERROR_FLASH_SECONDS};
+  const ERROR_BEAT_SECONDS = ${ERROR_BEAT_SECONDS};
+  const HACK_REVEAL_SECONDS = ${HACK_REVEAL_SECONDS};
   // DEFENSE beats start here: incoming, blocking, almost there, safe.
-  const DEFENSE_BEATS = [0, 1.8, 3.8, 5.4];
+  const DEFENSE_BEATS = ${JSON.stringify(DEFENSE_BEATS)};
   const MATRIX_GLYPHS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜ0123456789";
   const MATRIX_CELL = 12;
   const fontFamily = [getComputedStyle(document.documentElement).getPropertyValue("--vscode-editor-font-family").trim(), "monospace"].filter(Boolean).join(", ");

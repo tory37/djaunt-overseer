@@ -34,6 +34,14 @@ export const DEFENSE_SCRIPTS: readonly (readonly [string, string, string, string
   ["DDOS INBOUND", "SPINNING UP THE FIREWALL", "IT'S HOLDING!!", "ATTACK REPELLED", "SYSTEMS GREEN"],
 ];
 
+// How long each event plays, and its beats. Every view keeps these times, so they all hit the same beat together.
+export const EVENT_SECONDS: Record<SceneEventKind, number> = { error: 3.3, hack: 5.5, defense: 7.6 };
+export const ERROR_FLASH_SECONDS = 2.5;
+export const ERROR_BEAT_SECONDS = 0.25;
+export const HACK_REVEAL_SECONDS = 2.6;
+// DEFENSE beats start here: incoming, blocking, almost there, safe.
+export const DEFENSE_BEATS: readonly number[] = [0, 1.8, 3.8, 5.4];
+
 const VARIANT_COUNT: Record<SceneEventKind, number> = {
   error: 1,
   hack: HACK_PHRASES.length,

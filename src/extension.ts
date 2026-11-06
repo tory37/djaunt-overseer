@@ -186,6 +186,7 @@ export function activate(context: vscode.ExtensionContext): void {
     registry,
     pinnedSessions,
     sessionTitle,
+    sceneEvents,
   });
   const sessionPanelProvider = new SessionPanelProvider({
     extensionUri: context.extensionUri,

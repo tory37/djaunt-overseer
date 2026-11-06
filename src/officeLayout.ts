@@ -41,6 +41,8 @@ export interface OfficeLayout {
   tiles: TileKind[][];
   door: Point;
   desks: Desk[];
+  // Your own desk: the top row's last, under the clock. Sessions never get it. Undefined when you're not in the room.
+  station: Desk | undefined;
   props: Prop[];
   couchSeats: Point[];
 }
@@ -56,7 +58,7 @@ const SCENE_PROPS: Record<OfficeSceneId, { corner: PropKind; middle: PropKind[] 
   serverRoom: { corner: "rack", middle: ["vending", "cooler", "couch", "rack", "rack"] },
 };
 
-export function buildOfficeLayout(requestedCols: number, requestedRows: number, sceneId: OfficeSceneId): OfficeLayout {
+export function buildOfficeLayout(requestedCols: number, requestedRows: number, sceneId: OfficeSceneId, withStation = false): OfficeLayout {
   const cols = Math.max(MIN_COLS, Math.floor(requestedCols));
   const rows = Math.max(MIN_ROWS, Math.floor(requestedRows));
   const tiles: TileKind[][] = Array.from({ length: rows }, (_, y) =>
@@ -76,6 +78,11 @@ export function buildOfficeLayout(requestedCols: number, requestedRows: number, 
       tiles[deskRow + 1][x] = "seat";
       desks.push({ desk: { x, y: deskRow }, seat: { x, y: deskRow + 1 } });
     }
+  }
+
+  const station = withStation ? desks.filter((desk) => desk.desk.y === 1).pop() : undefined;
+  if (station !== undefined) {
+    desks.splice(desks.indexOf(station), 1);
   }
 
   const props: Prop[] = [];
@@ -106,7 +113,7 @@ export function buildOfficeLayout(requestedCols: number, requestedRows: number, 
     props.push({ kind, at: { x, y: propRow }, stand: { x, y: propRow - 1 } });
   }
 
-  return { cols, rows, tiles, door, desks, props, couchSeats };
+  return { cols, rows, tiles, door, desks, station, props, couchSeats };
 }
 
 export const MIN_DESKS = 10;

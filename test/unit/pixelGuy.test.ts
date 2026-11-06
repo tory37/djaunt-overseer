@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   FRAME_HEIGHT,
   FRAME_WIDTH,
+  DEFAULT_YOUR_LOOK,
   hashSeed,
+  mixHex,
   pixelGuyFrame,
   pixelGuyLook,
   portraitSvg,
   POSE_FRAMES,
   Pose,
   shadeHex,
+  yourLook,
 } from "../../src/pixelGuy";
 
 const POSES = Object.keys(POSE_FRAMES) as Pose[];
@@ -99,5 +102,60 @@ describe("shadeHex", () => {
     expect(shadeHex("#808080", 0.5)).toBe("#404040");
     expect(shadeHex("#F0F0F0", 2)).toBe("#FFFFFF");
     expect(shadeHex("not a color", 0.5)).toBe("not a color");
+  });
+});
+
+describe("your guy", () => {
+  it("draws every pose and facing", () => {
+    for (const pose of POSES) {
+      for (const facing of ["down", "up", "left", "right"] as const) {
+        const grid = pixelGuyFrame(DEFAULT_YOUR_LOOK, pose, facing, 0);
+        expect(grid).toHaveLength(FRAME_HEIGHT);
+        expect(grid.flat().filter((color) => color !== null).length).toBeGreaterThan(40);
+      }
+    }
+  });
+
+  it("has blue eyes, a beard, bare arms and shins, and toes in his flip flops", () => {
+    const look = DEFAULT_YOUR_LOOK;
+    const front = pixelGuyFrame(look, "stand", "down", 0);
+    const colors = front.flat();
+    expect(colors).toContain(look.eyes);
+    expect(colors).toContain(look.beard);
+    // Arms at the sides are skin, the shins below the shorts too, and the middle of each flip flop.
+    expect(front[9][2]).toBe(look.skin);
+    expect(front[15][4]).toBe(look.skin);
+    expect(front[16][4]).toBe(look.skin);
+    const dressed = pixelGuyFrame({ ...look, sleeveless: false, shorts: false, flipFlops: false }, "stand", "down", 0);
+    expect(dressed[9][2]).toBe(look.shirt);
+    expect(dressed[15][4]).toBe(look.pants);
+    expect(dressed[16][4]).toBe(look.shoes);
+  });
+
+  it("shows the ponytail down the back, and the shaved side", () => {
+    const back = pixelGuyFrame(DEFAULT_YOUR_LOOK, "stand", "up", 0);
+    expect(back[7][5]).toBe(DEFAULT_YOUR_LOOK.hair);
+    expect(back.flat()).toContain(mixHex(DEFAULT_YOUR_LOOK.skin, DEFAULT_YOUR_LOOK.hair, 0.4));
+  });
+
+  it("reads the setting a field at a time, skipping bad values", () => {
+    expect(yourLook(undefined)).toEqual(DEFAULT_YOUR_LOOK);
+    const look = yourLook({ hair: "#123456", hairStyle: "mohawk", shorts: false, eyes: "blue", accessory: "hat", skin: 7 });
+    expect(look).toEqual({ ...DEFAULT_YOUR_LOOK, hair: "#123456", hairStyle: "mohawk", shorts: false });
+  });
+
+  it("never hands a ponytail or full beard to a random guy", () => {
+    for (let seed = 0; seed < 300; seed++) {
+      const look = pixelGuyLook(`guy-${seed}`);
+      expect(look.hairStyle).not.toBe("ponytail");
+      expect(look.accessory).not.toBe("fullBeard");
+    }
+  });
+});
+
+describe("mixHex", () => {
+  it("blends two colors", () => {
+    expect(mixHex("#000000", "#FFFFFF", 0.5)).toBe("#808080");
+    expect(mixHex("bad", "#FFFFFF", 0.5)).toBe("bad");
   });
 });

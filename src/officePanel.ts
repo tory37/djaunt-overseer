@@ -5,11 +5,15 @@ import type { PinnedSession } from "./grouping";
 import type { LiveSessionMonitor } from "./liveSessions";
 import { OFFICE_SCENES, officeSceneId } from "./officeLayout";
 import type { AgentInput } from "./officeSim";
+import { PixelGuyLook, yourLook } from "./pixelGuy";
 import type { Registry } from "./registry";
+import type { SceneEventDirector } from "./sceneEvents";
 
 export const OFFICE_PANEL_VIEW_ID = "overseer.office";
 const SCENE_SETTING = "overseer.office.scene";
 const SLEEPERS_SETTING = "overseer.office.sleepers";
+const YOU_SETTING = "overseer.office.you";
+const YOUR_LOOK_SETTING = "overseer.office.yourLook";
 
 export interface OfficePanelDeps {
   extensionUri: vscode.Uri;
@@ -17,11 +21,13 @@ export interface OfficePanelDeps {
   registry: Registry;
   pinnedSessions: () => PinnedSession[];
   sessionTitle: (sessionId: string) => string;
+  sceneEvents: SceneEventDirector;
 }
 
 // The Office view: a pixel guy for every session in the sidebar, working at his desk while the session is busy,
 // wandering the room while it's idle, and asleep at his desk while it's suspended. The simulation runs in the webview (src/officeView); this side sends it the
-// live sessions whenever they change and opens a session when its guy is clicked.
+// live sessions whenever they change and opens a session when its guy is clicked. You have a desk too, and act out the
+// scene events the director plays on every decorative view.
 export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private readonly webviews = new Set<vscode.Webview>();
   private readonly listeners: vscode.Disposable[];
@@ -31,7 +37,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
       deps.liveMonitor.onDidChange(() => this.postAll()),
       deps.registry.onDidChange(() => this.postAll()),
       vscode.workspace.onDidChangeConfiguration((change) => {
-        if (change.affectsConfiguration(SCENE_SETTING) || change.affectsConfiguration(SLEEPERS_SETTING)) {
+        if ([SCENE_SETTING, SLEEPERS_SETTING, YOU_SETTING, YOUR_LOOK_SETTING].some((setting) => change.affectsConfiguration(setting))) {
           this.postAll();
         }
       }),
@@ -46,6 +52,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     // Reinstalling the same version keeps the same URL, so the build time busts the webview's cached copy.
     webview.html = officeHtml(webview, webview.asWebviewUri(scriptUri).with({ query: `v=${scriptStamp(scriptUri)}` }));
     this.webviews.add(webview);
+    this.deps.sceneEvents.attach(webviewView);
     const messageListener = webview.onDidReceiveMessage((message: unknown) => this.handleMessage(webview, message));
     webviewView.onDidDispose(() => {
       this.webviews.delete(webview);
@@ -82,7 +89,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     this.webviews.forEach((webview) => void webview.postMessage(message));
   }
 
-  private message(): { type: "office"; scene: string; agents: AgentInput[] } {
+  private message(): { type: "office"; scene: string; agents: AgentInput[]; you: PixelGuyLook | null } {
     const agents: AgentInput[] = [];
     const seen = new Set<string>();
     const showSleepers = vscode.workspace.getConfiguration().get<boolean>(SLEEPERS_SETTING, true);
@@ -103,7 +110,9 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
         title: this.deps.sessionTitle(pinned.sessionId),
       });
     }
-    return { type: "office", scene: currentScene(), agents };
+    const configuration = vscode.workspace.getConfiguration();
+    const you = configuration.get<boolean>(YOU_SETTING, true) ? yourLook(configuration.get<unknown>(YOUR_LOOK_SETTING)) : null;
+    return { type: "office", scene: currentScene(), agents, you };
   }
 }
 

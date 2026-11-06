@@ -2,8 +2,10 @@
 // the same session always gets the same guy. Frames are small grids of colors that the Office view draws, and the
 // portrait is an SVG for the session row with a state badge in its corner.
 
-export type HairStyle = "short" | "long" | "spiky" | "bob" | "bald" | "mohawk" | "bun" | "curly";
-export type Accessory = "none" | "glasses" | "headphones" | "cap" | "beard";
+// Ponytail (with one side shaved) is only for your own guy; random guys never get it.
+export type HairStyle = "short" | "long" | "spiky" | "bob" | "bald" | "mohawk" | "bun" | "curly" | "ponytail";
+// The full beard is only for your own guy, like the ponytail.
+export type Accessory = "none" | "glasses" | "headphones" | "cap" | "beard" | "fullBeard";
 export type Facing = "down" | "up" | "left" | "right";
 export type Pose = "stand" | "walk" | "type" | "sit" | "stretch" | "drink" | "talk" | "sleep";
 
@@ -16,6 +18,12 @@ export interface PixelGuyLook {
   shoes: string;
   accessory: Accessory;
   accessoryColor: string;
+  // Optional details, used by your own guy: eye and beard colors, bare arms, bare shins, and bare toes.
+  eyes?: string;
+  beard?: string;
+  sleeveless?: boolean;
+  shorts?: boolean;
+  flipFlops?: boolean;
 }
 
 // A frame: rows of CSS colors, or null where the pixel is empty. Every frame is FRAME_WIDTH by FRAME_HEIGHT.
@@ -94,9 +102,23 @@ export function shadeHex(hex: string, factor: number): string {
   return "#" + channels.map((channel) => channel.toString(16).padStart(2, "0")).join("").toUpperCase();
 }
 
+// A blend of two #rrggbb colors: 0 is all the first, 1 all the second.
+export function mixHex(first: string, second: string, amount: number): string {
+  const parse = (hex: string) => {
+    const match = /^#([0-9a-f]{6})$/i.exec(hex);
+    return match === null ? undefined : [16, 8, 0].map((shift) => (parseInt(match[1], 16) >> shift) & 255);
+  };
+  const from = parse(first);
+  const to = parse(second);
+  if (from === undefined || to === undefined) {
+    return first;
+  }
+  return "#" + from.map((channel, index) => Math.round(channel + (to[index] - channel) * amount).toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
 type PaletteKey =
   | "skin" | "skinShade" | "hair" | "eye" | "mouth" | "shirt" | "shirtShade" | "pants" | "pantsShade" | "shoes"
-  | "accessory" | "accessoryLight" | "cup";
+  | "accessory" | "accessoryLight" | "cup" | "sleeve" | "sleeveShade" | "stubble" | "beard" | "hairTie";
 
 class Canvas {
   readonly cells: (PaletteKey | null)[][] = Array.from({ length: INNER_HEIGHT }, () => Array<PaletteKey | null>(INNER_WIDTH).fill(null));
@@ -134,6 +156,7 @@ export function pixelGuyFrame(look: PixelGuyLook, pose: Pose, facing: Facing, fr
   } else {
     canvas = drawFront(look, pose, step, facing === "up");
   }
+  dressed(canvas, look, pose, facing);
   if (pose === "sleep") {
     canvas = slumped(canvas, step);
   }
@@ -170,6 +193,37 @@ function drawFront(look: PixelGuyLook, pose: Pose, step: number, isBack: boolean
   return canvas;
 }
 
+const isSeatedPose = (pose: Pose) => pose === "type" || pose === "sit" || pose === "sleep";
+
+// Shorts bare the shins, and flip flops bare the toes: the middle of each shoe from the front, its tip from the side.
+function dressed(canvas: Canvas, look: PixelGuyLook, pose: Pose, facing: Facing): void {
+  const seated = isSeatedPose(pose);
+  canvas.cells.forEach((row, y) => row.forEach((key, x) => {
+    if (look.shorts === true && !seated && y >= 14 && (key === "pants" || key === "pantsShade")) {
+      canvas.set(x, y, key === "pants" ? "skin" : "skinShade");
+    }
+  }));
+  if (look.flipFlops !== true || seated) {
+    return;
+  }
+  const side = facing === "left" || facing === "right";
+  canvas.cells.forEach((row, y) => {
+    let runStart = -1;
+    for (let x = 0; x <= row.length; x++) {
+      const isShoe = x < row.length && row[x] === "shoes";
+      if (isShoe && runStart < 0) {
+        runStart = x;
+      } else if (!isShoe && runStart >= 0) {
+        // Side by side, the two feet make one run; each three pixels is a foot.
+        for (let foot = runStart; foot + 3 <= x; foot += 3) {
+          canvas.set(side ? (facing === "right" ? foot + 2 : foot) : foot + 1, y, "skin");
+        }
+        runStart = -1;
+      }
+    }
+  });
+}
+
 // Head down on folded arms: the head drops onto the shoulders, one more pixel on the out-breath.
 function slumped(canvas: Canvas, step: number): Canvas {
   const drop = 2 + step;
@@ -188,7 +242,7 @@ function slumped(canvas: Canvas, step: number): Canvas {
 }
 
 function drawFrontLegs(canvas: Canvas, pose: Pose, step: number): void {
-  if (pose === "type" || pose === "sit" || pose === "sleep") {
+  if (isSeatedPose(pose)) {
     // Seated: knees forward, so the legs look short.
     canvas.rect(2, 13, 3, 1, "pantsShade");
     canvas.rect(5, 13, 3, 1, "pantsShade");
@@ -206,38 +260,38 @@ function drawFrontLegs(canvas: Canvas, pose: Pose, step: number): void {
 
 function drawFrontArms(canvas: Canvas, pose: Pose, step: number, isBack: boolean): void {
   if (pose === "stretch") {
-    canvas.rect(1, 2, 1, 6, "shirt");
-    canvas.rect(8, 2, 1, 6, "shirt");
+    canvas.rect(1, 2, 1, 6, "sleeve");
+    canvas.rect(8, 2, 1, 6, "sleeve");
     canvas.set(1, 1, "skin");
     canvas.set(8, 1, "skin");
     return;
   }
   if (pose === "sleep") {
     // Arms folded on the desk under the head.
-    canvas.rect(1, 7, 8, 2, "shirt");
-    canvas.rect(2, 8, 6, 1, "shirtShade");
+    canvas.rect(1, 7, 8, 2, "sleeve");
+    canvas.rect(2, 8, 6, 1, "sleeveShade");
     canvas.set(1, 9, "skin");
     canvas.set(8, 9, "skin");
     return;
   }
   if (pose === "type") {
     // Elbows out, hands on the keys, one hand up at a time.
-    canvas.rect(1, 7, 1, 3, "shirt");
-    canvas.rect(8, 7, 1, 3, "shirt");
+    canvas.rect(1, 7, 1, 3, "sleeve");
+    canvas.rect(8, 7, 1, 3, "sleeve");
     canvas.set(isBack ? 1 : 2, step === 0 ? 9 : 10, "skin");
     canvas.set(isBack ? 8 : 7, step === 1 ? 9 : 10, "skin");
     return;
   }
   if (pose === "drink" && !isBack) {
-    canvas.rect(1, 7, 1, 4, "shirt");
+    canvas.rect(1, 7, 1, 4, "sleeve");
     canvas.set(1, 11, "skin");
-    canvas.rect(8, 7, 1, 1, "shirt");
+    canvas.rect(8, 7, 1, 1, "sleeve");
     canvas.set(8, 6, "skin");
     return;
   }
   const swing = pose === "walk" ? (step === 1 ? -1 : step === 3 ? 1 : 0) : 0;
-  canvas.rect(1, 7, 1, 4 + Math.min(0, swing), "shirt");
-  canvas.rect(8, 7, 1, 4 - Math.max(0, swing), "shirt");
+  canvas.rect(1, 7, 1, 4 + Math.min(0, swing), "sleeve");
+  canvas.rect(8, 7, 1, 4 - Math.max(0, swing), "sleeve");
   canvas.set(1, 11 + Math.min(0, swing), "skin");
   canvas.set(8, 11 - Math.max(0, swing), "skin");
 }
@@ -285,6 +339,14 @@ function drawFrontHair(canvas: Canvas, style: HairStyle): void {
       canvas.set(2, 2, "hair");
       canvas.set(7, 2, "hair");
       return;
+    case "ponytail":
+      // Swept over to the right, the left side shaved, the tail showing past the right ear.
+      canvas.rect(3, 0, 5, 1, "hair");
+      canvas.rect(3, 1, 5, 1, "hair");
+      canvas.set(7, 2, "hair");
+      canvas.rect(2, 1, 1, 3, "stubble");
+      canvas.rect(8, 2, 1, 4, "hair");
+      return;
     case "curly":
       canvas.rect(2, 0, 6, 1, "hair");
       canvas.rect(1, 1, 8, 1, "hair");
@@ -302,6 +364,15 @@ function drawBackHair(canvas: Canvas, style: HairStyle): void {
   }
   if (style === "mohawk") {
     canvas.rect(4, 0, 2, 6, "hair");
+    return;
+  }
+  if (style === "ponytail") {
+    canvas.rect(3, 0, 4, 1, "hair");
+    canvas.rect(3, 1, 5, 3, "hair");
+    canvas.rect(2, 1, 1, 4, "stubble");
+    canvas.rect(4, 4, 2, 1, "hairTie");
+    canvas.rect(4, 5, 2, 3, "hair");
+    canvas.set(5, 8, "hair");
     return;
   }
   canvas.rect(2, 1, 6, style === "short" || style === "spiky" ? 4 : 5, "hair");
@@ -346,11 +417,21 @@ function drawFrontAccessory(canvas: Canvas, accessory: Accessory, isBack: boolea
       return;
     case "beard":
       if (!isBack) {
-        canvas.rect(3, 6, 4, 1, "hair");
-        canvas.set(2, 5, "hair");
-        canvas.set(7, 5, "hair");
-        canvas.set(3, 5, "hair");
-        canvas.set(6, 5, "hair");
+        canvas.rect(3, 6, 4, 1, "beard");
+        canvas.set(2, 5, "beard");
+        canvas.set(7, 5, "beard");
+        canvas.set(3, 5, "beard");
+        canvas.set(6, 5, "beard");
+      }
+      return;
+    case "fullBeard":
+      if (!isBack) {
+        // Sideburns, the whole jaw, and down onto the chest, with the mouth showing through.
+        canvas.rect(2, 3, 1, 3, "beard");
+        canvas.rect(7, 3, 1, 3, "beard");
+        canvas.rect(2, 5, 6, 2, "beard");
+        canvas.rect(3, 7, 4, 1, "beard");
+        canvas.rect(4, 5, 2, 1, "mouth");
       }
       return;
     case "none":
@@ -393,8 +474,8 @@ function drawSideLegs(canvas: Canvas, pose: Pose, step: number): void {
 
 function drawSideArm(canvas: Canvas, pose: Pose, step: number): void {
   const reach = pose === "walk" ? (step === 1 ? 1 : step === 3 ? -1 : 0) : 0;
-  canvas.rect(4, 7, 2, 3, "shirtShade");
-  canvas.set(4 + Math.max(0, reach) + (reach < 0 ? -1 : 0), 10, "shirtShade");
+  canvas.rect(4, 7, 2, 3, "sleeveShade");
+  canvas.set(4 + Math.max(0, reach) + (reach < 0 ? -1 : 0), 10, "sleeveShade");
   canvas.set(5 + reach, 11, "skin");
 }
 
@@ -436,6 +517,16 @@ function drawSideHair(canvas: Canvas, style: HairStyle): void {
       canvas.rect(2, 1, 6, 1, "hair");
       canvas.rect(2, 2, 2, 2, "hair");
       return;
+    case "ponytail":
+      // Hair pulled back to a tie, the tail hanging down the back of the neck, the side above the ear shaved.
+      canvas.rect(3, 0, 4, 1, "hair");
+      canvas.rect(2, 1, 6, 1, "hair");
+      canvas.rect(3, 2, 2, 2, "stubble");
+      canvas.set(2, 2, "hairTie");
+      canvas.rect(1, 2, 1, 1, "hair");
+      canvas.rect(1, 3, 1, 4, "hair");
+      canvas.set(2, 3, "hair");
+      return;
   }
 }
 
@@ -455,8 +546,15 @@ function drawSideAccessory(canvas: Canvas, accessory: Accessory): void {
       canvas.rect(7, 2, 2, 1, "accessoryLight");
       return;
     case "beard":
-      canvas.rect(5, 6, 3, 1, "hair");
-      canvas.set(7, 5, "hair");
+      canvas.rect(5, 6, 3, 1, "beard");
+      canvas.set(7, 5, "beard");
+      return;
+    case "fullBeard":
+      canvas.rect(4, 3, 1, 3, "beard");
+      canvas.rect(4, 5, 4, 2, "beard");
+      canvas.set(8, 5, "beard");
+      canvas.rect(5, 7, 2, 1, "beard");
+      canvas.set(7, 5, "mouth");
       return;
     case "none":
       return;
@@ -468,7 +566,7 @@ function colorize(canvas: Canvas, look: PixelGuyLook): PixelGrid {
     skin: look.skin,
     skinShade: shadeHex(look.skin, 0.82),
     hair: look.hair,
-    eye: EYE,
+    eye: look.eyes ?? EYE,
     mouth: MOUTH,
     shirt: look.shirt,
     shirtShade: shadeHex(look.shirt, 0.78),
@@ -478,6 +576,11 @@ function colorize(canvas: Canvas, look: PixelGuyLook): PixelGrid {
     accessory: look.accessoryColor,
     accessoryLight: shadeHex(look.accessoryColor, 1.3),
     cup: CUP,
+    sleeve: look.sleeveless === true ? look.skin : look.shirt,
+    sleeveShade: look.sleeveless === true ? shadeHex(look.skin, 0.82) : shadeHex(look.shirt, 0.78),
+    stubble: mixHex(look.skin, look.hair, 0.4),
+    beard: look.beard ?? look.hair,
+    hairTie: shadeHex(look.hair, 0.6),
   };
   return canvas.cells.map((row) => row.map((key) => (key === null ? null : colors[key])));
 }
@@ -537,4 +640,53 @@ function badgeMarkup(badge: PortraitBadge): string {
     : "";
   return `<circle cx="12.5" cy="12.5" r="3" fill="${OUTLINE}" shape-rendering="geometricPrecision"/>` +
     `<circle cx="12.5" cy="12.5" r="2" fill="${badge.color}" shape-rendering="geometricPrecision">${pulse}</circle>`;
+}
+
+// Your own guy in the Office. `overseer.office.yourLook` overrides any of these.
+export const DEFAULT_YOUR_LOOK: PixelGuyLook = {
+  skin: "#F2C9A0",
+  hair: "#F2D16B",
+  hairStyle: "ponytail",
+  shirt: "#2A2A30",
+  pants: "#F4F4F6",
+  shoes: "#1E1E1E",
+  accessory: "fullBeard",
+  accessoryColor: "#1E1E1E",
+  eyes: "#3D8BFD",
+  beard: "#D9772B",
+  sleeveless: true,
+  shorts: true,
+  flipFlops: true,
+};
+
+const ALL_HAIR_STYLES: readonly HairStyle[] = [...HAIR_STYLES, "ponytail"];
+const ALL_ACCESSORIES: readonly Accessory[] = ["none", "glasses", "headphones", "cap", "beard", "fullBeard"];
+const COLOR_FIELDS = ["skin", "hair", "shirt", "pants", "shoes", "accessoryColor", "eyes", "beard"] as const;
+const FLAG_FIELDS = ["sleeveless", "shorts", "flipFlops"] as const;
+
+// The setting over the default, a field at a time. A field that isn't a #rrggbb color, a known style, or a boolean is skipped.
+export function yourLook(setting: unknown): PixelGuyLook {
+  const look: PixelGuyLook = { ...DEFAULT_YOUR_LOOK };
+  if (typeof setting !== "object" || setting === null) {
+    return look;
+  }
+  const fields = setting as Record<string, unknown>;
+  for (const field of COLOR_FIELDS) {
+    const value = fields[field];
+    if (typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)) {
+      look[field] = value;
+    }
+  }
+  for (const field of FLAG_FIELDS) {
+    if (typeof fields[field] === "boolean") {
+      look[field] = fields[field] as boolean;
+    }
+  }
+  if (ALL_HAIR_STYLES.includes(fields.hairStyle as HairStyle)) {
+    look.hairStyle = fields.hairStyle as HairStyle;
+  }
+  if (ALL_ACCESSORIES.includes(fields.accessory as Accessory)) {
+    look.accessory = fields.accessory as Accessory;
+  }
+  return look;
 }
