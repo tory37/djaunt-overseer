@@ -1,4 +1,5 @@
 import * as crypto from "crypto";
+import * as fs from "fs";
 import * as vscode from "vscode";
 import type { PinnedSession } from "./grouping";
 import type { LiveSessionMonitor } from "./liveSessions";
@@ -41,7 +42,9 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     const webview = webviewView.webview;
     const distUri = vscode.Uri.joinPath(this.deps.extensionUri, "dist");
     webview.options = { enableScripts: true, localResourceRoots: [distUri] };
-    webview.html = officeHtml(webview, webview.asWebviewUri(vscode.Uri.joinPath(distUri, "officeView.js")));
+    const scriptUri = vscode.Uri.joinPath(distUri, "officeView.js");
+    // Reinstalling the same version keeps the same URL, so the build time busts the webview's cached copy.
+    webview.html = officeHtml(webview, webview.asWebviewUri(scriptUri).with({ query: `v=${scriptStamp(scriptUri)}` }));
     this.webviews.add(webview);
     const messageListener = webview.onDidReceiveMessage((message: unknown) => this.handleMessage(webview, message));
     webviewView.onDidDispose(() => {
@@ -101,6 +104,14 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
       });
     }
     return { type: "office", scene: currentScene(), agents };
+  }
+}
+
+function scriptStamp(scriptUri: vscode.Uri): string {
+  try {
+    return String(Math.floor(fs.statSync(scriptUri.fsPath).mtimeMs));
+  } catch {
+    return String(Date.now());
   }
 }
 
