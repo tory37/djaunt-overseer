@@ -118,21 +118,11 @@ type PanelMessage =
   | { type: "setWorkstreamDone"; id: string; done: boolean }
   | { type: "action"; action: string };
 
-// Each sidebar action runs the same command as the tree's context menu, given the session ID.
+// The sidebar's own buttons run the tree's commands, given the session ID. The rest live on the session row's right-click menu.
 const ACTION_COMMANDS: Record<string, string> = {
   suspend: "overseer.suspendSession",
-  compact: "overseer.compactSession",
-  clear: "overseer.clearSession",
-  model: "overseer.switchModel",
-  cost: "overseer.costSession",
-  command: "overseer.runSessionCommand",
-  handoff: "overseer.handoffSession",
   analyze: "overseer.analyzeSession",
   recheckAnalysis: "overseer.recheckSession",
-  flag: "overseer.flagMissedUpdate",
-  openRepo: "overseer.openRepoInScm",
-  status: "overseer.setSessionStatus",
-  rename: "overseer.renameSession",
 };
 
 // Shows the focused session's workstreams, beside it in the Secondary Side Bar.
@@ -635,28 +625,12 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .menu-item .codicon { flex-shrink: 0; font-size: var(--icon-size); }
   .menu-heading { margin: 0; padding: var(--s1) var(--s2) 2px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
   .menu-separator { height: 1px; margin: var(--s1) 0; background: var(--vscode-menu-separatorBackground, var(--vscode-menu-border)); }
-  .toolbar {
-    flex-shrink: 0;
-    padding: var(--s2);
-    border-top: 1px solid var(--hairline);
-    background: var(--vscode-sideBarSectionHeader-background, var(--vscode-editorWidget-background));
-  }
-  .group-label { margin: 0; padding: 2px var(--s2) var(--s1); font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-  .group-hint { margin-left: var(--s1); font-family: var(--vscode-font-family); font-size: 11px; letter-spacing: normal; text-transform: none; color: var(--vscode-disabledForeground); }
-  .tile-grid { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; margin-bottom: var(--s2); }
-  .tile-grid:last-child { margin-bottom: 0; }
-  .tile { container-type: inline-size; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: var(--s1) 0; border-radius: 4px; color: var(--vscode-icon-foreground); transition: background-color 80ms linear, color 80ms linear; }
-  .tile:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); color: var(--vscode-textLink-activeForeground); }
-  .tile:disabled { opacity: 0.5; cursor: default; }
-  .tile .codicon { font-size: var(--s4); }
-  .tile span:last-child { max-width: 100%; padding: 0 2px; box-sizing: border-box; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  @container (max-width: 43px) { .tile span:last-child { display: none; } }
   .empty { padding: var(--s4); font-size: 13px; line-height: 20px; text-align: center; color: var(--muted); }
   .empty p { margin: var(--s1) 0 0; }
   .empty .lead { margin-top: var(--s2); color: var(--vscode-foreground); }
   .empty .codicon { font-size: var(--s4); }
   @media (prefers-reduced-motion: reduce) {
-    .link-row, .ws-header, .button, .icon-button, .tile, .chevron .codicon, .disclosure .codicon { transition: none; }
+    .link-row, .ws-header, .button, .icon-button, .chevron .codicon, .disclosure .codicon { transition: none; }
   }
 </style>
 </head>
@@ -673,23 +647,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   const REFERENCE_KIND_HEADINGS = { ticket: "Tickets", pr: "PRs", artifact: "Artifacts", commit: "Commits" };
   const MENU_MARGIN_PX = 4;
   const MENU_GAP_PX = 2;
-  const CLAUDE_ACTIONS = [
-    ["compact", "fold", "Compact", "Compact"],
-    ["clear", "clear-all", "Clear", "Clear"],
-    ["model", "sparkle", "Model", "Model"],
-    ["cost", "graph", "Cost", "Cost"],
-    ["command", "terminal", "Run…", "Run command"],
-    ["handoff", "export", "Handoff…", "Hand off to a new session"],
-  ];
-  const SESSION_ACTIONS = [
-    ["analyze", "sync", "Update", "Update now"],
-    ["recheckAnalysis", "layers", "Recheck", "Recheck from scratch"],
-    ["openRepo", "source-control", "Repo", "Open repo"],
-    ["status", "tag", "Status", "Set status"],
-    ["rename", "edit", "Rename", "Rename"],
-    ["flag", "flag", "Flag", "Flag: this didn't update"],
-  ];
-  const ACTIONS_WITHOUT_TRANSCRIPT = new Set(["rename", "status", "flag"]);
   const MISSING_LABELS = { ticket: "Summary loads from Jira", pr: "Title loads from GitHub", artifact: "", commit: "" };
   let panelState = undefined;
   let openMenuId = undefined;
@@ -1331,39 +1288,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     return section;
   }
 
-  function actionTile([action, iconName, shortLabel, fullLabel], disabledReason) {
-    const tile = textButton("tile", iconName, shortLabel, () => runAction(action));
-    tile.disabled = disabledReason !== undefined;
-    tile.title = disabledReason ?? fullLabel;
-    tile.setAttribute("aria-label", fullLabel);
-    return tile;
-  }
-
-  function tileGrid(actions, disabledReasonFor) {
-    const grid = element("div", "tile-grid");
-    grid.append(...actions.map((action) => actionTile(action, disabledReasonFor(action[0]))));
-    return grid;
-  }
-
-  function toolbar(session) {
-    const footer = element("footer", "toolbar");
-    const isLive = session.runKind === "idle" || session.runKind === "busy";
-    if (isLive) {
-      const isBusy = session.runKind === "busy";
-      const busyReason = isBusy ? "Wait until Claude is idle. Typed input is lost while it works." : undefined;
-      const claudeLabel = element("p", "group-label", "Claude");
-      if (isBusy) {
-        claudeLabel.append(element("span", "group-hint", "waits until idle"));
-      }
-      footer.append(claudeLabel, tileGrid(CLAUDE_ACTIONS, () => busyReason));
-    }
-    footer.append(
-      element("p", "group-label", "Session"),
-      tileGrid(SESSION_ACTIONS, (action) => (session.hasTranscript || ACTIONS_WITHOUT_TRANSCRIPT.has(action) ? undefined : "No transcript yet")),
-    );
-    return footer;
-  }
-
   // Each render rebuilds the scroll container, so its offset is carried over while the same session stays shown.
   function render() {
     const root = document.getElementById("root");
@@ -1389,7 +1313,6 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
     }
     const work = panelState.work;
     scroll.append(...[sessionHeader(session), whereSection(work), nextStep(session), workSection(session, work)].filter(Boolean));
-    root.append(toolbar(session));
     if (session.sessionId === previousSessionId) {
       scroll.scrollTop = previousScrollTop;
     }

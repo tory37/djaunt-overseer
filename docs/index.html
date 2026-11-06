@@ -514,8 +514,6 @@
                     />
                     {details.where.length > 0 && <NowSection lines={details.where} updatedAgo={details.lastActive ?? '1h ago'} />}
                     <WorkSection key={session.id} details={details} />
-                    <div className="mt-auto pt-3" />
-                    <SidebarActions showClaude={session.state === 'running'} />
                 </div>
             );
         };
@@ -918,34 +916,6 @@
             </div>
         );
 
-        const SIDEBAR_ACTION_GROUPS = [
-            { label: 'Claude', actions: [['Minimize2', 'Compact'], ['Eraser', 'Clear'], ['Cpu', 'Model'], ['Coins', 'Cost'], ['SquareTerminal', 'Run command']] },
-            { label: 'Session', actions: [['RefreshCw', 'Update'], ['Layers', 'Recheck'], ['FolderGit2', 'Open repo'], ['Tag', 'Set status'], ['Pencil', 'Rename']] },
-        ];
-        const SHORT_ACTION_LABELS = { 'Run command': 'Run…', 'Open repo': 'Repo', 'Set status': 'Status' };
-
-        const SidebarActions = ({ highlighted, showClaude = true }) => (
-            <div className="border-t border-line bg-raised px-2 pt-2 pb-2.5">
-                {SIDEBAR_ACTION_GROUPS.filter((group) => showClaude || group.label !== 'Claude').map((group) => (
-                    <div key={group.label}>
-                        <div className="px-2 pt-0.5 pb-1 text-[10px] uppercase tracking-label text-muted">{group.label}</div>
-                        <div className="grid grid-cols-5 gap-0.5 mb-1.5">
-                            {group.actions.map(([iconName, label]) => (
-                                <span
-                                    key={label}
-                                    title={label}
-                                    className={`flex flex-col items-center gap-[3px] pt-1.5 pb-[5px] ${label === highlighted ? 'text-accent' : 'text-bone hover:text-accent'} transition-colors duration-200 ease-dj`}
-                                >
-                                    <Icon name={iconName} className="w-4 h-4" />
-                                    <span className="max-w-full truncate text-[10px]">{SHORT_ACTION_LABELS[label] ?? label}</span>
-                                </span>
-                            ))}
-                        </div>
-                    </div>
-                ))}
-            </div>
-        );
-
         const SessionSidebarVisual = () => (
             <div className="font-mono text-xs border border-line bg-surface">
                 <div className="pt-3.5 px-4">
@@ -965,7 +935,6 @@
                 />
                 <NowSection lines={['web-app#412 is approved and waits on CI.', 'Next: merge it.']} updatedAgo="3m ago" />
                 <div className="h-4" />
-                <SidebarActions />
             </div>
         );
 
@@ -1325,7 +1294,7 @@
             { title: 'Search every past session', body: 'Session History opens in an editor tab, like Settings. Search every session by title, prompt, recap, branch, or PR, and filter by repo, age, pinned, or running. The detail pane shows more than All Sessions: recap, prompts, commits, and the PR. Open resumes the session. Delete removes one from your machine for good, and Purge removes every session the filters show. Both list what goes and ask first. Running sessions are never deleted, and Purge skips pinned ones.', Visual: HistoryVisual },
             { title: 'Switch between workspaces', isExperimental: true, body: 'Keep work, side projects, and after-hours sessions apart. Each workspace has its own sessions, terminals, and groups. A switch suspends the running sessions, closes the terminals and file tabs, then brings back what was open in the other workspace. It asks first when Claude is mid-task or a file has unsaved changes. This one is experimental. It works, but it needs more testing.', Visual: WorkspaceVisual },
             { title: 'Suspend a session and resume it later', body: 'When a session waits on a review for days, Suspend sends /exit so the process and its memory are freed. Resume starts the same session again with its full history.', Visual: SuspendVisual },
-            { title: 'Follow the focused session in the Session sidebar', body: 'The Session sidebar sits to the right of the editor and follows the session you focus, terminal or preview. The header shows the state, the repo, the branch, any other repos, and the status. Under it is one main button, Suspend, Resume, or Fork here. Now holds up to three lines on where the work stands, and when Haiku last updated them. Work comes next. The toolbar at the bottom stays in view. Its Claude actions (Compact, Clear, Model, Cost, Run command) appear when the session runs here and is idle. Its Session actions (Update, Recheck, Open repo, Set status, Rename) always show.', Visual: SessionSidebarVisual },
+            { title: 'Follow the focused session in the Session sidebar', body: 'The Session sidebar sits to the right of the editor and follows the session you focus, terminal or preview. The header shows the state, the repo, the branch, any other repos, and the status. Under it is one main button, Suspend, Resume, or Fork here. Now holds up to three lines on where the work stands, and when Haiku last updated them. Work comes next. Actions are on the session's right-click menu in the tree: the Claude submenu (Compact, Clear Context, Switch Model, Show Cost, Commands) when the session runs here and is idle, then Rename, Set Status, Update, Recheck, and Open Repo.', Visual: SessionSidebarVisual },
             { title: 'Peek at a paused session without starting it', body: 'Click a session with no terminal here and it opens in one reused Session Preview tab. The preview shows where the session left off, its last turns, its prompts, and the commits and PRs it made. It reads the transcript and git, so it never starts Claude. Resume replaces the preview with the terminal.', Visual: PreviewVisual },
             { title: 'Track work without telling the agent', body: 'Sessions launch as plain claude. The agent gets no CLI, no skill, and no extra prompt. When a session goes from busy to idle, Overseer waits 30 seconds and checks its gates: at least one new prompt, 10 KB of new transcript or a new link, and 10 minutes since the last pass. Then Haiku reads only the new part of the transcript. It updates the session\'s work and names the session in a few words, by what it is about. Every gate is an overseer.analyzer setting, and you can turn auto off.', Visual: AnalyzerVisual },
             { title: 'See a session\'s work as workstreams', body: 'The Session sidebar sorts a session\'s tickets, PRs, commits, and artifacts into workstreams, by when and why the work happened. Each workstream shows its tickets, then its items: PRs with their state, commits with their subject, and artifacts with a short name. Hover an artifact for its full slug. A QA fix that comes later gets its own workstream, even with no ticket. Done workstreams collapse.', Visual: WorkstreamsVisual },
@@ -1344,7 +1313,7 @@
             { title: 'See which sessions are running', body: 'Status comes from claude agents --json and updates each time a session goes busy or idle. Click a terminal tab and its row in the sidebar is selected, so you can see where you are.', Visual: StatusVisual },
             { title: 'Stop a session from running twice', body: 'Two processes writing to one transcript corrupt it. Overseer marks duplicates and offers to fork a copy instead of resuming a second time.', Visual: DuplicateVisual },
             { title: 'Find a session from any repo it edited', body: 'A session that starts in one repo and edits another lists the extra repos in the Session sidebar and in the row\'s tooltip. Type repo:<name> in All Sessions to find it from the repo it edited.', Visual: ReposVisual },
-            { title: 'Arrange groups and sessions', body: 'Each group has a + button for a new session and a search button to add an existing one. Drag groups and sessions to reorder them. The Claude actions, like Compact and Model, live in the Session sidebar.', Visual: OrganizeVisual },
+            { title: 'Arrange groups and sessions', body: 'Each group has a + button for a new session and a search button to add an existing one. Drag groups and sessions to reorder them. Right-click a session for its actions. Compact, Model, and the other Claude actions are under Claude.', Visual: OrganizeVisual },
         ];
 
         const HOW_IT_WORKS = [

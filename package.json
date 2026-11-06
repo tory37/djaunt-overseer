@@ -537,6 +537,16 @@
         "category": "Overseer"
       }
     ],
+    "submenus": [
+      {
+        "id": "overseer.claude",
+        "label": "Claude"
+      },
+      {
+        "id": "overseer.pixelGuy",
+        "label": "Pixel Guy"
+      }
+    ],
     "menus": {
       "view/title": [
         {
@@ -654,17 +664,37 @@
         {
           "command": "overseer.renameSession",
           "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./",
-          "group": "1_session@3"
+          "group": "3_edit@1"
         },
         {
           "command": "overseer.unlockTitle",
           "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\..*\\.titleLocked$/",
-          "group": "1_session@4"
+          "group": "3_edit@2"
         },
         {
           "command": "overseer.handoffSession",
           "when": "view == overseer.sessions && viewItem =~ /^session\\.(running|working)(\\.|$)/",
-          "group": "1_session@5"
+          "group": "1_session@3"
+        },
+        {
+          "submenu": "overseer.claude",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\.running(\\.|$)/",
+          "group": "2_claude@1"
+        },
+        {
+          "command": "overseer.setSessionStatus",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./",
+          "group": "3_edit@3"
+        },
+        {
+          "command": "overseer.openRepoInScm",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./",
+          "group": "5_open@1"
+        },
+        {
+          "submenu": "overseer.pixelGuy",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./ && config.overseer.office.portraits",
+          "group": "7_look@1"
         },
         {
           "command": "overseer.newSession",
@@ -770,16 +800,6 @@
           "command": "overseer.copyCommitHash",
           "when": "view == overseer.repos && viewItem =~ /^commit/",
           "group": "2_copy@1"
-        },
-        {
-          "command": "overseer.rerollPixelGuy",
-          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./ && config.overseer.office.portraits",
-          "group": "2_manage@8"
-        },
-        {
-          "command": "overseer.resetPixelGuy",
-          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./ && config.overseer.office.portraits",
-          "group": "2_manage@9"
         }
       ],
       "commandPalette": [
@@ -983,6 +1003,38 @@
           "command": "overseer.handoffCancel",
           "when": "resourcePath =~ /overseer\\/handoffs\\/drafts\\/[^\\/]+\\.md$/",
           "group": "navigation@3"
+        }
+      ],
+      "overseer.claude": [
+        {
+          "command": "overseer.compactSession",
+          "group": "1_context@1"
+        },
+        {
+          "command": "overseer.clearSession",
+          "group": "1_context@2"
+        },
+        {
+          "command": "overseer.switchModel",
+          "group": "2_model@1"
+        },
+        {
+          "command": "overseer.costSession",
+          "group": "2_model@2"
+        },
+        {
+          "command": "overseer.runSessionCommand",
+          "group": "3_run@1"
+        }
+      ],
+      "overseer.pixelGuy": [
+        {
+          "command": "overseer.rerollPixelGuy",
+          "group": "1_look@1"
+        },
+        {
+          "command": "overseer.resetPixelGuy",
+          "group": "1_look@2"
         }
       ]
     },
