@@ -2,7 +2,7 @@
   "name": "djaunt-overseer",
   "displayName": "Overseer",
   "description": "Vertical tabs for Claude CLI sessions: group by ticket, suspend, and resume from any repo.",
-  "version": "0.0.43",
+  "version": "0.0.44",
   "publisher": "djaunt",
   "private": true,
   "license": "UNLICENSED",
@@ -1379,7 +1379,13 @@
         },
         "overseer.office.visitors": {
           "type": "string",
-          "enum": ["off", "rare", "normal", "often", "packed"],
+          "enum": [
+            "off",
+            "rare",
+            "normal",
+            "often",
+            "packed"
+          ],
           "enumDescriptions": [
             "Nobody visits.",
             "Someone every 3 to 6 minutes.",
