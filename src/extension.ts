@@ -31,6 +31,8 @@ import { SessionFocusTracker } from "./sessionFocus";
 import { SessionPreview } from "./sessionPreview";
 import { SESSION_PANEL_VIEW_ID, SessionPanelProvider } from "./sessionPanel";
 import { CORE_PANEL_VIEW_ID, CorePanelProvider } from "./corePanel";
+import { DRAGON_PANEL_VIEW_ID, DragonPanelProvider } from "./dragonPanel";
+import { registerSceneEventCommands, SceneEventDirector } from "./sceneEvents";
 import { registerTabSpotlightSync } from "./tabSpotlightSync";
 import { SessionTreeProvider } from "./tree";
 import { ShownSessionTitle, shownSessionTitle } from "./sessionTitle";
@@ -172,6 +174,7 @@ export function activate(context: vscode.ExtensionContext): void {
       sessionPreview.close();
     }
   });
+  const sceneEvents = new SceneEventDirector();
   const sessionPanelProvider = new SessionPanelProvider({
     extensionUri: context.extensionUri,
     registry,
@@ -236,7 +239,10 @@ export function activate(context: vscode.ExtensionContext): void {
     sessionFocus,
     sessionPanelProvider,
     vscode.window.registerWebviewViewProvider(SESSION_PANEL_VIEW_ID, sessionPanelProvider),
-    vscode.window.registerWebviewViewProvider(CORE_PANEL_VIEW_ID, new CorePanelProvider()),
+    sceneEvents,
+    vscode.window.registerWebviewViewProvider(CORE_PANEL_VIEW_ID, new CorePanelProvider(sceneEvents)),
+    vscode.window.registerWebviewViewProvider(DRAGON_PANEL_VIEW_ID, new DragonPanelProvider(sceneEvents)),
+    ...registerSceneEventCommands(sceneEvents),
     compactMonitor.onDidChange(refreshTree),
     sessionAnalyzer.onDidChangeTitles(() => {
       treeProvider.refresh();

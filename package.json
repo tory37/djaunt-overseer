@@ -44,6 +44,12 @@
       "overseerSession": [
         {
           "type": "webview",
+          "id": "overseer.dragon",
+          "name": "Djaunt",
+          "when": "config.overseer.views.dragon"
+        },
+        {
+          "type": "webview",
           "id": "overseer.session",
           "name": "Session"
         }
@@ -98,6 +104,41 @@
         "title": "Session History",
         "category": "Overseer",
         "icon": "$(history)"
+      },
+      {
+        "command": "overseer.playErrorEvent",
+        "title": "Play Error Event",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.playHackEvent",
+        "title": "Play Hack Event",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.playDefenseEvent",
+        "title": "Play Defense Event",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.toggleErrorEvents",
+        "title": "Toggle Error Events",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.toggleHackEvents",
+        "title": "Toggle Hack Events",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.toggleDefenseEvents",
+        "title": "Toggle Defense Events",
+        "category": "Overseer"
+      },
+      {
+        "command": "overseer.setEventFrequency",
+        "title": "Set Event Frequency",
+        "category": "Overseer"
       },
       {
         "command": "overseer.openSessionById",
@@ -923,6 +964,38 @@
           "default": true,
           "description": "Show the Core view. Decorative only."
         },
+        "overseer.views.dragon": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Djaunt view above Session. Decorative only."
+        },
+        "overseer.views.ticker": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the hacker-status strip at the bottom of the Djaunt view. Decorative only."
+        },
+        "overseer.views.errorEvents": {
+          "type": "boolean",
+          "default": true,
+          "description": "Now and then, the Core and Djaunt views flash ERROR together. Decorative only."
+        },
+        "overseer.views.hackEvents": {
+          "type": "boolean",
+          "default": true,
+          "description": "Now and then, the Core and Djaunt views go to matrix rain and announce HACK SUCCEEDED together. Decorative only."
+        },
+        "overseer.views.defenseEvents": {
+          "type": "boolean",
+          "default": true,
+          "description": "Now and then, the Core and Djaunt views fight off an incoming hack together: alert, shields up, almost there, safe. Decorative only."
+        },
+        "overseer.views.eventMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0.5,
+          "maximum": 60,
+          "markdownDescription": "Average minutes between the Core and Djaunt views' scene events (ERROR, HACK, DEFENSE). Each gap is a random 0.6x to 1.6x of this. `0.5` is chaos, `60` is rare. Pick a preset with **Overseer: Set Event Frequency**."
+        },
         "overseer.sessionStatuses": {
           "type": "array",
           "default": [
@@ -1647,6 +1720,7 @@
     "test": "vitest run",
     "package": "npm run build && vsce package --no-dependencies --skip-license",
     "themes": "node scripts/themes.mjs",
+    "logos": "node scripts/orbitLogos.mjs",
     "theme-lab": "node scripts/themeLab.mjs"
   },
   "devDependencies": {

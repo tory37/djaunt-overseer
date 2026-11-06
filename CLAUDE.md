@@ -9,6 +9,7 @@ npm test            # vitest unit tests (test/unit)
 npm run typecheck   # tsc --noEmit
 npm run build       # esbuild bundles to dist/extension.js
 npm run package     # build + .vsix
+npm run logos       # regenerate src/orbitLogos.ts from logos/*.svg and *.png
 npm run theme-lab   # dev only: build theme-lab/lab-data.js, then open theme-lab/index.html
 code --install-extension djaunt-overseer-<version>.vsix --force
 ```
@@ -69,7 +70,14 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `handoffCommands.ts` | Handoff: asks the idle session for a draft, opens it when written, and the draft tab's Revise, Approve (Start below or Replace), and Cancel buttons. |
 | `sessionFocus.ts` / `sessionFocusState.ts` | The focused session: the active Claude terminal or the preview tab. The state rules are pure. |
 | `sessionPanel.ts` | Secondary Side Bar webview for the focused session: header with the title, a lock icon when locked, and the derived status; the Now lines; resume or suspend; workstreams with Unsorted and Removed, and the tile toolbar. Edits write `overseer.workstreamEdits.v2` and show at once. |
-| `corePanel.ts` | Decorative webview at the bottom of the Overseer sidebar: a spinning lattice globe with fake telemetry. Reads nothing. |
+| `decorativeScene.ts` | The shared canvas shell for the decorative views: theme palette, resize, 3D helpers, and a loop that pauses while hidden. Plays scene events: recolors the palette red (ERROR), matrix green (HACK), or by DEFENSE beat (alert, amber, shield blue), shakes, draws matrix rain, big text, and glitch slices, then calls the scene's `drawEvent`. |
+| `sceneEventSchedule.ts` | Pure: the scene event kinds, their settings (`overseer.views.errorEvents`, `hackEvents`, `defenseEvents`), the HACK phrase pairs, the DEFENSE scripts, the pick, and the gap: a random 0.6x-1.6x of `overseer.views.eventMinutes`, plus its presets. |
+| `sceneEvents.ts` | `SceneEventDirector`: posts one ERROR, HACK, or DEFENSE message to every decorative view at once, on the `overseer.views.eventMinutes` schedule, and reschedules when it changes. The Play, Toggle, and Set Event Frequency commands. |
+| `corePanel.ts` | Decorative webview at the bottom of the Overseer sidebar: a spinning lattice globe, solid logos orbiting it, and fake telemetry. Acts out the events: HACK spreads an infection over the globe; DEFENSE sends packets at it and raises a lattice shield. Reads nothing. |
+| `orbitLogos.ts` | Generated from `logos/*.svg` and `logos/*.png` by `scripts/orbitLogos.mjs` (`npm run logos`): each logo as flattened polygons. SVG curves are flattened; PNG dark pixels are traced. The Core view extrudes each into a solid. SVGs must have no transforms. |
+| `flyingCreatures.ts` | Scene script for the Core view: a purple western dragon (green belly and horns, fire breath), Moltres (fire trail), Zapdos (sawtooth wings, lightning), and Articuno (long ribbon tail, falling frost). One crosses at a time, every 15-40s, in front of or behind the globe. |
+| `dragonPanel.ts` | Decorative webview above Session: the djaunt dragon (`djauntMark.ts`, copied from djaunt-branding) as a 3D point cloud that assembles, spins, ripples, glitches, and scatters. The hacker ticker strip runs along its bottom (`hackerTicker.ts`); a setting change rebuilds the view. Reads nothing. |
+| `hackerTicker.ts` | Scene fragment for the Djaunt view: one line of fake hacker status in a strip along the bottom that decrypts in, animates its dots, and scrambles out. During an ERROR, HACK, or DEFENSE event it shows that event's lines. `overseer.views.ticker` turns the strip off. |
 | `sessionSidebarText.ts` | Pure: the Session sidebar's meta line, state sentence, short link status, and row hover text. |
 | `resourceRows.ts` | Pure: sidebar link rows and stale-drag checks. |
 | `sessionPreview.ts` / `sessionPreviewModel.ts` | One reused editor tab for sessions with no terminal here: summary, last turns, prompts, and the commits and PRs the transcript scan found. Resume replaces it with the terminal. The model is pure. |
@@ -88,7 +96,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 - Send slash commands only when the session is idle. Typed input is lost while Claude is busy.
 - Never resume a session that is live elsewhere. Two processes on one transcript corrupt it. Offer a fork.
 - Session names reach the shell. Quote with `quoteForShell` and strip newlines.
-- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `claudeLaunch`, `handoff`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerEval`, `analyzerFlags`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`, `sessionTitle`, `tabSpotlight`, `groupIcons`, `repoColors`) and test it there. `vscode` can't be imported in unit tests.
+- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `claudeLaunch`, `handoff`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerEval`, `analyzerFlags`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`, `sessionTitle`, `tabSpotlight`, `groupIcons`, `repoColors`, `sceneEventSchedule`) and test it there. `vscode` can't be imported in unit tests.
 - The agent is not told about Overseer. Sessions launch as plain `claude`. The extension derives tracking from transcripts.
 - New commands need an entry in `contributes.commands`, a menu `when` clause, and `"when": "false"` under `commandPalette` if they need a tree node.
 
