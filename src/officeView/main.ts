@@ -3,6 +3,7 @@
 // desk and act out the scene events ({ type: "sceneEvent" }) with your monitor; the room looks up too.
 
 import { buildOfficeLayout, Desk, desksNeeded, OFFICE_SCENES, officeShape, OfficeLayout, OfficeSceneId, officeSceneId, Point, Prop, Station, STATION_DESKS } from "../officeLayout";
+import { DAYTIME_SKY, discLit, earthIllumination, lunarSunElevation, mix, SceneLight, sceneLight, SkyState, skyNow } from "../officeDaylight";
 import { critterGap, critterLines, critterPoses, CritterRun, critterRunDone, planCritterRun } from "../officeCritters";
 import { Agent, AgentInput, agentPose, callYouBack, createOffice, isAtStation, officeCounts, reactToCritter, relayoutOffice, stepOffice, syncOffice, syncYou, youAgent } from "../officeSim";
 import { YourEvent, YourReaction, yourEventSeconds, yourReaction, roomReaction, YourScreen } from "../officeYou";
@@ -20,6 +21,7 @@ interface OfficeMessage {
   agents: AgentInput[];
   you: PixelGuyLook | null;
   critters?: boolean;
+  dayNight?: boolean;
 }
 
 interface SceneEventMessage {
@@ -61,6 +63,23 @@ let crittersOn = true;
 let critterRun: CritterRun | undefined;
 let critterWatchers = new Set<string>();
 let nextCritterAt = 5;
+
+// The real sky, worked out again every few seconds, and the light it gives this scene.
+let dayNightOn = true;
+let skyCache: { at: number; sky: SkyState } | undefined;
+let light: SceneLight = sceneLight("office", DAYTIME_SKY);
+let lightMap: HTMLCanvasElement | undefined;
+
+function currentSky(): SkyState {
+  if (!dayNightOn) {
+    return DAYTIME_SKY;
+  }
+  const now = Date.now();
+  if (skyCache === undefined || Math.abs(now - skyCache.at) > 5000) {
+    skyCache = { at: now, sky: skyNow(new Date(now)) };
+  }
+  return skyCache.sky;
+}
 
 // Builds just enough room for the sessions (ten desks at least, more as sessions open), shaped to fit the view, then
 // zooms it as far as the view allows.
@@ -112,6 +131,7 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEve
   }
   const nextScene = officeSceneId(data.scene);
   crittersOn = data.critters !== false;
+  dayNightOn = data.dayNight !== false;
   if (nextScene !== sceneId) {
     sceneId = nextScene;
     sceneChanged = true;
@@ -316,7 +336,7 @@ function drawWall(layout: OfficeLayout, palette: ScenePalette, seconds: number):
       }
       break;
     case "trees":
-      drawTrees(width, palette, seconds);
+      drawTrees(width, palette);
       break;
     case "sky":
       drawSky(width, palette, seconds);
@@ -337,28 +357,19 @@ function drawWall(layout: OfficeLayout, palette: ScenePalette, seconds: number):
   drawDoor(layout.door, palette);
 }
 
-function timeOfDay(): { night: boolean; dusk: boolean } {
-  const hour = new Date().getHours() + new Date().getMinutes() / 60;
-  const night = hour < 6.5 || hour >= 19.5;
-  return { night, dusk: !night && (hour < 8 || hour >= 18) };
-}
-
-function skyColor(): string {
-  const { night, dusk } = timeOfDay();
-  return night ? "#1B2340" : dusk ? "#F2A65A" : "#8FD3F4";
-}
-
 function drawWindow(left: number, top: number, palette: ScenePalette): void {
-  const isNight = timeOfDay().night;
   rect(left, top, 14, 10, palette.windowFrame);
-  rect(left + 1, top + 1, 12, 8, skyColor());
-  if (isNight) {
+  rect(left + 1, top + 1, 12, 8, light.sky);
+  if (light.stars > 0) {
+    context.globalAlpha = light.stars;
     rect(left + 3, top + 3, 1, 1, "#FFFFFF");
     rect(left + 9, top + 2, 1, 1, "#FFF6C8");
     rect(left + 7, top + 6, 1, 1, "#FFFFFF");
-  } else {
-    rect(left + 2, top + 6, 5, 2, "#FFFFFF");
-    rect(left + 3, top + 5, 3, 1, "#FFFFFF");
+    context.globalAlpha = 1;
+  }
+  if (light.stars < 0.8) {
+    rect(left + 2, top + 6, 5, 2, light.cloud);
+    rect(left + 3, top + 5, 3, 1, light.cloud);
   }
   rect(left + 7, top + 1, 1, 8, palette.windowFrame);
   rect(left + 1, top + 5, 12, 1, palette.windowFrame);
@@ -375,59 +386,104 @@ function drawWallPanel(left: number, top: number, palette: ScenePalette, seconds
 }
 
 // The forest's back row: trunks under a canopy, a hedge along the bottom, fireflies at night.
-function drawTrees(width: number, palette: ScenePalette, seconds: number): void {
-  const { night } = timeOfDay();
-  rect(0, 0, width, TILE, night ? "#0F1E16" : palette.wall);
+function drawTrees(width: number, palette: ScenePalette): void {
+  rect(0, 0, width, TILE, palette.wall);
   for (let x = 2; x < width; x += 7) {
     const shift = Math.floor(noise(x) * 3);
-    rect(x + shift, 5, 2, 9, night ? "#2A1D12" : "#4A3220");
+    rect(x + shift, 5, 2, 9, "#4A3220");
   }
   for (let x = -4; x < width; x += 6) {
     const height = 5 + Math.floor(noise(x * 5) * 4);
-    rect(x, 0, 8, height, night ? "#173322" : "#2F5A2E");
-    rect(x + 2, 0, 4, height - 2, night ? "#1E3F2A" : "#3E6E36");
+    rect(x, 0, 8, height, "#2F5A2E");
+    rect(x + 2, 0, 4, height - 2, "#3E6E36");
   }
   for (let x = 0; x < width; x += 4) {
-    rect(x, 12 - Math.floor(noise(x * 7) * 2), 4, 4, night ? "#1B3A24" : palette.wallTrim);
-    rect(x + 1, 12, 2, 1, night ? "#24482E" : "#3E7A38");
+    rect(x, 12 - Math.floor(noise(x * 7) * 2), 4, 4, palette.wallTrim);
+    rect(x + 1, 12, 2, 1, "#3E7A38");
   }
-  if (night) {
-    for (let fly = 0; fly < Math.ceil(width / 24); fly++) {
-      const glow = Math.sin(seconds * 2 + fly * 1.7) > 0.2;
-      if (glow) {
-        const x = Math.floor((noise(fly * 9) * width + Math.sin(seconds * 0.5 + fly) * 6 + width) % width);
-        rect(x, 4 + Math.floor(noise(fly * 13) * 8), 1, 1, "#E9F77A");
-      }
+}
+
+// Fireflies over the forest once it's dark, drawn after the night tint so they glow.
+function drawFireflies(width: number, seconds: number): void {
+  if (sceneId !== "forest" || light.stars < 0.3) {
+    return;
+  }
+  for (let fly = 0; fly < Math.ceil(width / 24); fly++) {
+    const glowing = Math.sin(seconds * 2 + fly * 1.7) > 0.2;
+    if (glowing) {
+      const x = Math.floor((noise(fly * 9) * width + Math.sin(seconds * 0.5 + fly) * 6 + width) % width);
+      rect(x, 4 + Math.floor(noise(fly * 13) * 8), 1, 1, "#E9F77A");
     }
   }
 }
 
-// The field's back row: open sky by the time of day, drifting clouds, hills, and a fence.
+// The field's back row: the sky for the real time of day, the sun and the moon in their places, drifting clouds,
+// hills, and a fence.
 function drawSky(width: number, palette: ScenePalette, seconds: number): void {
-  const { night } = timeOfDay();
-  rect(0, 0, width, TILE, skyColor());
-  if (night) {
+  const sky = currentSky();
+  rect(0, 0, width, TILE, light.sky);
+  if (light.stars > 0) {
+    context.globalAlpha = light.stars;
     for (let star = 0; star < width / 10; star++) {
       rect(Math.floor(noise(star * 3) * width), Math.floor(noise(star * 7) * 7), 1, 1, "#FFF6C8");
     }
-  } else {
-    const sunX = width - 30;
-    rect(sunX, 2, 4, 4, "#FFE066");
-    rect(sunX - 1, 3, 6, 2, "#FFE066");
-    for (let cloud = 0; cloud < Math.ceil(width / 70); cloud++) {
-      const x = Math.floor(((seconds * 1.5 + cloud * 70 + noise(cloud) * 30) % (width + 20)) - 10);
-      rect(x, 2 + (cloud % 2) * 2, 9, 2, "#FFFFFF");
-      rect(x + 2, 1 + (cloud % 2) * 2, 4, 1, "#FFFFFF");
+    context.globalAlpha = 1;
+  }
+  if (sky.moon.elevation > -2 && sky.moon.illumination > 0.03) {
+    drawMoonDisc(skyX(sky.moon.hourAngle, width), skyY(sky.moon.elevation), sky.moon.illumination, sky.moon.phase < 0.5);
+  }
+  if (sky.sun.elevation > -3) {
+    const sunX = skyX(sky.sun.hourAngle, width);
+    const sunY = skyY(sky.sun.elevation);
+    if (sky.sun.elevation < 8) {
+      glow(sunX, sunY, 7, light.sun, 0.25);
     }
+    rect(sunX - 2, sunY - 2, 4, 4, light.sun);
+    rect(sunX - 3, sunY - 1, 6, 2, light.sun);
+  }
+  for (let cloud = 0; cloud < Math.ceil(width / 70); cloud++) {
+    const x = Math.floor(((seconds * 1.5 + cloud * 70 + noise(cloud) * 30) % (width + 20)) - 10);
+    rect(x, 2 + (cloud % 2) * 2, 9, 2, light.cloud);
+    rect(x + 2, 1 + (cloud % 2) * 2, 4, 1, light.cloud);
   }
   for (let x = 0; x < width; x += 2) {
-    const hill = 8 + Math.round(Math.sin(x / 19) * 1.5 + Math.sin(x / 7) * 0.8);
-    rect(x, hill, 2, TILE - hill, night ? "#2E4A2A" : "#6FA84A");
+    const hill = hillTop(x);
+    rect(x, hill, 2, TILE - hill, "#6FA84A");
   }
   rect(0, 12, width, 1, palette.wallTrim);
   rect(0, 14, width, 1, palette.wallTrim);
   for (let x = 3; x < width; x += 8) {
     rect(x, 10, 1, 6, palette.wallTrim);
+  }
+}
+
+function hillTop(x: number): number {
+  return 8 + Math.round(Math.sin(x / 19) * 1.5 + Math.sin(x / 7) * 0.8);
+}
+
+// Where a body sits in the back row's sky: rising on the left, setting on the right, high at noon.
+function skyX(hourAngle: number, width: number): number {
+  return Math.round(width / 2 + (hourAngle / 120) * (width / 2 - 8));
+}
+
+function skyY(elevation: number): number {
+  return Math.max(2, Math.round(8 - (elevation / 55) * 6));
+}
+
+// The moon in its real phase: lit on the right while it waxes, on the left as it wanes.
+function drawMoonDisc(centerX: number, centerY: number, illumination: number, waxing: boolean): void {
+  const lit = light.stars > 0.3 ? "#F4F1DE" : mix(light.sky, "#FFFFFF", 0.65);
+  for (let dy = -3; dy <= 3; dy++) {
+    for (let dx = -3; dx <= 3; dx++) {
+      if (dx * dx + dy * dy > 10) {
+        continue;
+      }
+      if (discLit(dx / 3.2, dy / 3.2, illumination, waxing)) {
+        rect(centerX + dx, centerY + dy, 1, 1, lit);
+      } else if (light.stars > 0.3) {
+        rect(centerX + dx, centerY + dy, 1, 1, mix(light.sky, "#FFFFFF", 0.08));
+      }
+    }
   }
 }
 
@@ -478,17 +534,42 @@ function drawSpace(width: number, palette: ScenePalette, seconds: number): void 
     const twinkle = noise(star * 5 + Math.floor(seconds * 1.5 + star)) > 0.15;
     rect(Math.floor(noise(star * 3) * width), Math.floor(noise(star * 7) * 11), 1, 1, twinkle ? "#FFFFFF" : "#555A70");
   }
+  const phase = currentSky().moon.phase;
+  // A lunar day lasts a month: the sun is up over the near side from first quarter to last.
+  const sunUp = lunarSunElevation(phase);
+  if (sunUp > -4) {
+    const sunX = skyX((phase - 0.5) * 240, width);
+    const sunY = Math.max(2, Math.round(10 - (sunUp / 90) * 8));
+    rect(sunX - 1, sunY - 1, 3, 3, "#FFFFFF");
+    rect(sunX - 2, sunY, 5, 1, "#FFF6E0");
+    rect(sunX, sunY - 2, 1, 5, "#FFF6E0");
+  }
   const earthX = width - 36;
   rect(earthX + 1, 1, 6, 8, "#2E86DE");
   rect(earthX, 2, 8, 6, "#2E86DE");
   rect(earthX + 2, 2, 3, 2, "#4CB944");
   rect(earthX + 4, 5, 3, 2, "#4CB944");
   rect(earthX + 1, 4, 2, 1, "#FFFFFF");
+  // The Earth's night side, opposite the moon's phase: a full Earth over a new moon.
+  context.globalAlpha = 0.82;
+  for (let y = 1; y < 9; y++) {
+    for (let x = earthX; x < earthX + 8; x++) {
+      const inside = (y >= 2 && y < 8) || (x > earthX && x < earthX + 7);
+      if (inside && !discLit((x + 0.5 - (earthX + 4)) / 4, (y + 0.5 - 5) / 4, earthIllumination(phase), phase > 0.5)) {
+        rect(x, y, 1, 1, "#070A18");
+      }
+    }
+  }
+  context.globalAlpha = 1;
   for (let x = 0; x < width; x += 3) {
-    const ridge = 11 + Math.round(Math.sin(x / 13) * 1.2 + noise(x) * 0.8);
+    const ridge = ridgeTop(x);
     rect(x, ridge, 3, TILE - ridge, palette.wallTrim);
   }
   rect(0, TILE - 1, width, 1, "#6A6A72");
+}
+
+function ridgeTop(x: number): number {
+  return 11 + Math.round(Math.sin(x / 13) * 1.2 + noise(x) * 0.8);
 }
 
 function drawDoor(door: Point, palette: ScenePalette): void {
@@ -515,7 +596,7 @@ function drawDoor(door: Point, palette: ScenePalette): void {
     case "gate": {
       rect(left, 6, 1, TILE - 6, palette.doorFrame);
       rect(left + 11, 6, 1, TILE - 6, palette.doorFrame);
-      rect(left + 1, 7, 10, TILE - 7, skyColor() === "#1B2340" ? "#2E4A2A" : "#6FA84A");
+      rect(left + 1, 7, 10, TILE - 7, "#6FA84A");
       const span = open ? 3 : 10;
       rect(left + 1, 9, span, 1, palette.door);
       rect(left + 1, 13, span, 1, palette.door);
@@ -1202,6 +1283,7 @@ function draw(seconds: number): void {
   const palette = SCENE_PALETTES[sceneId];
   const layout = state.layout;
   const eventColor = eventCodeColor(event);
+  light = sceneLight(sceneId, currentSky());
   drawFloor(layout, palette);
   drawWall(layout, palette, seconds);
 
@@ -1244,6 +1326,8 @@ function draw(seconds: number): void {
   }
   layers.sort((first, second) => first.depth - second.depth).forEach((layer) => layer.paint());
   boxes = nextBoxes;
+  drawLighting(layout, owners, atStation || event !== undefined, seconds);
+  drawFireflies(layout.cols * TILE, seconds);
 
   boxes.forEach((box) => {
     if (box.agent.mode === "sleep" && box.agent.path.length === 0 && box.agent.bubble === undefined) {
@@ -1270,6 +1354,115 @@ function draw(seconds: number): void {
   const counts = officeCounts(state);
   const countText = [`${counts.working} working`, `${counts.idle} idle`, ...(counts.asleep > 0 ? [`${counts.asleep} asleep`] : [])];
   statusLabel.textContent = state.agents.length === 0 ? "quiet" : countText.join(" · ");
+}
+
+// Multiplies the room by the scene's light: the ambient tint for the time of day, open sky left as it is, and
+// pools of light around the screens, lamps, and fires. Full daylight skips it.
+function drawLighting(layout: OfficeLayout, owners: Map<number, Agent>, stationOn: boolean, seconds: number): void {
+  if (light.darkness < 0.01) {
+    return;
+  }
+  const roomWidth = layout.cols * TILE;
+  const roomHeight = layout.rows * TILE;
+  lightMap ??= document.createElement("canvas");
+  if (lightMap.width !== roomWidth || lightMap.height !== roomHeight) {
+    lightMap.width = roomWidth;
+    lightMap.height = roomHeight;
+  }
+  const map = lightMap.getContext("2d") as CanvasRenderingContext2D;
+  map.globalCompositeOperation = "source-over";
+  map.fillStyle = light.ambient;
+  map.fillRect(0, 0, roomWidth, roomHeight);
+  map.fillStyle = "#FFFFFF";
+  paintOpenSky(map, layout);
+  map.globalCompositeOperation = "lighter";
+  const strength = Math.min(1, light.darkness / 0.6);
+  const pool = (x: number, y: number, radius: number, color: string, alpha: number) => {
+    const gradient = map.createRadialGradient(x, y, 0, x, y, radius);
+    gradient.addColorStop(0, rgba(color, alpha * strength));
+    gradient.addColorStop(1, rgba(color, 0));
+    map.fillStyle = gradient;
+    map.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+  };
+  layout.desks.forEach((desk, index) => {
+    const owner = owners.get(index);
+    const typing = owner !== undefined && owner.mode === "type" && owner.path.length === 0;
+    const present = owner !== undefined && !owner.leaving && owner.status !== "asleep";
+    if (typing || present) {
+      pool(desk.desk.x * TILE + 8, desk.desk.y * TILE + 5, typing ? 15 : 10, "#8CC8FF", typing ? 0.42 : 0.22);
+    }
+  });
+  const station = layout.station;
+  if (station !== undefined) {
+    const left = station.desk.x * TILE;
+    const top = station.desk.y * TILE;
+    pool(left + 3, top + 8, 14, "#FFD98A", 0.5);
+    if (stationOn) {
+      pool(left + 16, top + 3, 22, "#9AD0FF", 0.45);
+    }
+  }
+  layout.props.forEach((prop, index) => {
+    const left = prop.at.x * TILE;
+    const top = prop.at.y * TILE;
+    switch (prop.kind) {
+      case "campfire":
+        pool(left + 8, top + 9, 38 + Math.sin(seconds * 9) * 2 + noise(Math.floor(seconds * 6) + index) * 3, "#FFB060", 0.85);
+        return;
+      case "vending":
+        pool(left + 6, top, 14, "#A8C0FF", 0.4);
+        return;
+      case "cooler":
+        pool(left + 8, top - 2, 10, "#9ED8F5", 0.35);
+        return;
+      case "coffee":
+        pool(left + 8, top + 8, 9, "#FFB070", 0.3);
+        return;
+      case "oxygen":
+      case "dish":
+        pool(left + 8, top, 10, "#FF8A80", 0.25);
+        return;
+    }
+  });
+  if (layout.door !== undefined && palette().doorStyle === "hatch") {
+    pool(layout.door.x * TILE + 8, 8, 14, "#9AD0FF", 0.4);
+  }
+  map.globalCompositeOperation = "source-over";
+  context.save();
+  context.globalCompositeOperation = "multiply";
+  context.drawImage(lightMap, 0, 0);
+  context.restore();
+}
+
+function palette(): ScenePalette {
+  return SCENE_PALETTES[sceneId];
+}
+
+// Sky that shows in the back row stays its own color: the office windows, the field above the hills, space above
+// the moon's ridge.
+function paintOpenSky(map: CanvasRenderingContext2D, layout: OfficeLayout): void {
+  const roomWidth = layout.cols * TILE;
+  switch (palette().backdrop) {
+    case "windows":
+      for (let x = 3; x < layout.cols - 1; x += 5) {
+        map.fillRect(x * TILE + 2, 3, 12, 8);
+      }
+      return;
+    case "sky":
+      for (let x = 0; x < roomWidth; x += 2) {
+        map.fillRect(x, 0, 2, hillTop(x));
+      }
+      return;
+    case "space":
+      for (let x = 0; x < roomWidth; x += 3) {
+        map.fillRect(x, 0, 3, ridgeTop(x));
+      }
+      return;
+  }
+}
+
+function rgba(hex: string, alpha: number): string {
+  const value = parseInt(hex.slice(1), 16);
+  return `rgba(${(value >> 16) & 255},${(value >> 8) & 255},${value & 255},${Math.max(0, Math.min(1, alpha))})`;
 }
 
 // Starts a troupe when it's due, lets the guys it passes react, and clears it once it's gone.
