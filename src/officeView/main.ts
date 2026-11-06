@@ -7,6 +7,7 @@ import { Agent, AgentInput, agentPose, createOffice, officeCounts, relayoutOffic
 import { YourEvent, YourReaction, yourEventSeconds, yourReaction, roomReaction, YourScreen } from "../officeYou";
 import { Facing, FRAME_HEIGHT, FRAME_WIDTH, pixelGuyFrame, pixelGuyLook, PixelGuyLook, Pose } from "../pixelGuy";
 import { DEFENSE_BEATS, ERROR_BEAT_SECONDS, ERROR_FLASH_SECONDS, EVENT_SECONDS, SCENE_EVENT_KINDS, SceneEventKind } from "../sceneEventSchedule";
+import { drawLuckyCat } from "./luckyCat";
 import { SCENE_PALETTES, ScenePalette } from "./palettes";
 
 declare function acquireVsCodeApi(): { postMessage(message: unknown): void };
@@ -68,7 +69,8 @@ function fitLayout(): void {
   const snapped = Math.floor(fit * pixelRatio) / pixelRatio;
   scale = snapped >= fit * 0.85 ? snapped : fit;
   originX = Math.floor((width - state.layout.cols * TILE * scale) / 2);
-  originY = Math.floor((height - state.layout.rows * TILE * scale) / 2);
+  // Flush to the bottom of the view.
+  originY = Math.floor(height - state.layout.rows * TILE * scale);
 }
 let sceneChanged = false;
 
@@ -231,9 +233,8 @@ function drawWall(layout: OfficeLayout, palette: ScenePalette, seconds: number):
       drawWallPanel(x * TILE + 1, 2, palette, seconds, x);
     }
   }
-  if (layout.cols >= 12) {
-    drawWallClock((layout.cols - 2) * TILE + 4, 3, palette);
-  }
+  // The lucky cat sits on the ledge between the door and the first window.
+  drawLuckyCat(rect, TILE + 8, 1, seconds, new Date(), currentEvent() !== undefined);
   drawDoor(layout.door, palette);
 }
 
@@ -263,21 +264,6 @@ function drawWallPanel(left: number, top: number, palette: ScenePalette, seconds
     rect(left + 2 + led * 2, top + 3, 1, 1, on ? (led % 3 === 0 ? "#F1C24B" : "#3DDC6A") : "#1B2A1F");
     rect(left + 2 + led * 2, top + 6, 1, 1, noise(index * 3 + led * 5 + Math.floor(seconds * 2)) > 0.5 ? "#4FC3F7" : "#132530");
   }
-}
-
-function drawWallClock(left: number, top: number, palette: ScenePalette): void {
-  const now = new Date();
-  rect(left, top, 8, 8, palette.wallTrim);
-  rect(left + 1, top + 1, 6, 6, "#F5F1E6");
-  const centerX = left + 4;
-  const centerY = top + 4;
-  const hand = (fraction: number, length: number) => {
-    const angle = fraction * Math.PI * 2 - Math.PI / 2;
-    rect(Math.round(centerX + Math.cos(angle) * length) - 0.5, Math.round(centerY + Math.sin(angle) * length) - 0.5, 1, 1, "#222");
-  };
-  hand((now.getHours() % 12) / 12, 1.5);
-  hand(now.getMinutes() / 60, 2.5);
-  rect(centerX - 0.5, centerY - 0.5, 1, 1, "#C0392B");
 }
 
 function drawDoor(door: Point, palette: ScenePalette): void {
