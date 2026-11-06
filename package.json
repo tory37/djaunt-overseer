@@ -1377,6 +1377,11 @@
           "default": true,
           "description": "Light the Office by your clock: sunrise, golden hour, sunset, and night, with the sun and the real phase of the moon in the sky. Outdoor scenes get dark at night and screens and fires light up around them; the office keeps its lights on; the server room and the cave never see the sky. On the moon a day lasts a month. Off keeps it daytime."
         },
+        "overseer.office.visitors": {
+          "type": "boolean",
+          "default": true,
+          "description": "Now and then someone from another department (sometimes a manager) walks into the Office, says something, and leaves. Each guy answers in his own way: the suck-up says \"OK BOSS!\", the reasonable ones grumble."
+        },
         "overseer.office.portraits": {
           "type": "boolean",
           "default": true,

@@ -5,7 +5,11 @@
 import { buildOfficeLayout, Desk, desksNeeded, OFFICE_SCENES, officeShape, OfficeLayout, OfficeSceneId, officeSceneId, Point, Prop, Station, STATION_DESKS } from "../officeLayout";
 import { DAYTIME_SKY, discLit, earthIllumination, lunarSunElevation, mix, SceneLight, sceneLight, SkyState, skyNow } from "../officeDaylight";
 import { critterGap, critterLines, critterPoses, CritterRun, critterRunDone, planCritterRun } from "../officeCritters";
-import { Agent, AgentInput, agentPose, callYouBack, createOffice, isAtStation, officeCounts, reactToCritter, relayoutOffice, stepOffice, syncOffice, syncYou, youAgent } from "../officeSim";
+import {
+  Agent, AgentInput, agentPose, callYouBack, createOffice, isAtStation, lookToward, officeCounts, reactToCritter, relayoutOffice, stepOffice, syncOffice,
+  syncYou, visitorAgent, visitorArrives, youAgent,
+} from "../officeSim";
+import { personalityOf, planVisit, VisitorKind, visitorGap, visitorReaction } from "../officeVisitors";
 import { YourEvent, YourReaction, yourEventSeconds, yourReaction, roomReaction, YourScreen } from "../officeYou";
 import { Facing, FRAME_HEIGHT, FRAME_WIDTH, pixelGuyFrame, pixelGuyLook, PixelGuyLook, Pose } from "../pixelGuy";
 import { DEFENSE_BEATS, ERROR_BEAT_SECONDS, ERROR_FLASH_SECONDS, EVENT_SECONDS, SCENE_EVENT_KINDS, SceneEventKind } from "../sceneEventSchedule";
@@ -22,6 +26,15 @@ interface OfficeMessage {
   you: PixelGuyLook | null;
   critters?: boolean;
   dayNight?: boolean;
+  visitors?: boolean;
+  // The session the Session sidebar shows: his guy wears a crown.
+  focusedId?: string | null;
+}
+
+interface TintMessage {
+  type: "tint";
+  index: number;
+  burst?: boolean;
 }
 
 interface SceneEventMessage {
@@ -54,7 +67,14 @@ let hoveredId: string | undefined;
 let youKey: string | undefined;
 let youHovered = false;
 let sceneEvent: (YourEvent & { start: number }) | undefined;
-let roomReactions: { id: string; text: string; at: number }[] = [];
+let roomReactions: { id: string; text: string; at: number; seconds?: number }[] = [];
+let focusedId: string | undefined;
+
+// Someone from another department: who's visiting now, whether the room has answered him, and when the next one comes.
+let visitorsOn = true;
+let visit: { id: string; kind: VisitorKind; answered: boolean } | undefined;
+let visitCount = 0;
+let nextVisitorAt = visitorGap(Math.random, true);
 
 const random = Math.random;
 
@@ -113,10 +133,14 @@ new ResizeObserver(() => {
   }
 }).observe(canvas);
 
-window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEventMessage>) => {
+window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEventMessage | TintMessage>) => {
   const data = event.data;
   if (data !== null && typeof data === "object" && data.type === "sceneEvent") {
     startSceneEvent(data);
+    return;
+  }
+  if (data !== null && typeof data === "object" && data.type === "tint") {
+    setTint(data);
     return;
   }
   if (data === null || typeof data !== "object" || data.type !== "office" || !Array.isArray(data.agents)) {
@@ -132,6 +156,8 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEve
   const nextScene = officeSceneId(data.scene);
   crittersOn = data.critters !== false;
   dayNightOn = data.dayNight !== false;
+  visitorsOn = data.visitors !== false;
+  focusedId = typeof data.focusedId === "string" ? data.focusedId : undefined;
   if (nextScene !== sceneId) {
     sceneId = nextScene;
     sceneChanged = true;
@@ -178,7 +204,46 @@ function playRoomReactions(): void {
   for (const reaction of due) {
     const agent = state.agents.find((candidate) => candidate.id === reaction.id);
     if (agent !== undefined) {
-      agent.bubble = { text: reaction.text, until: state.time + 1.6 };
+      agent.bubble = { text: reaction.text, until: state.time + (reaction.seconds ?? 1.6) };
+    }
+  }
+}
+
+// Sends in the next visitor when it's time, and once he's said his first line has the room turn and answer him, each
+// guy in his own way.
+function stepVisitors(): void {
+  const visitor = visitorAgent(state);
+  if (visitor === undefined) {
+    visit = undefined;
+    if (!visitorsOn || sceneEvent !== undefined || state.time < nextVisitorAt) {
+      return;
+    }
+    nextVisitorAt = state.time + visitorGap(random);
+    // Nobody to talk to.
+    if (state.agents.length === 0) {
+      return;
+    }
+    const plan = planVisit(random);
+    const seed = `visitor|${plan.kind.id}|${visitCount++ % 4}`;
+    const look = pixelGuyLook(seed);
+    lookCache.set(seed, { ...look, shirt: plan.kind.shirt, pants: plan.kind.pants, accessory: plan.kind.accessory ?? look.accessory });
+    if (visitorArrives(state, { id: `${seed}|${visitCount}`, seed, title: plan.kind.title, lines: plan.lines }, random) !== undefined) {
+      visit = { id: `${seed}|${visitCount}`, kind: plan.kind, answered: false };
+    }
+    return;
+  }
+  if (visit === undefined || visit.answered || (visitor.visitor?.spoken ?? 0) < 1) {
+    return;
+  }
+  visit.answered = true;
+  for (const agent of state.agents) {
+    if (agent === visitor || agent.leaving) {
+      continue;
+    }
+    lookToward(state, agent, visitor, 3);
+    const text = visitorReaction(personalityOf(agent.seed), visit.kind.boss, agent.status === "asleep", random);
+    if (text !== undefined) {
+      roomReactions.push({ id: agent.id, text, at: state.time + 0.9 + random() * 1.8, seconds: 2 });
     }
   }
 }
@@ -669,6 +734,58 @@ function drawDesk(desk: Desk, owner: Agent | undefined, palette: ScenePalette, s
   }
 }
 
+// Your second monitor's graph follows Core's tint, like the Djaunt view: the same spectrum, in the same order (the
+// theme's own color, then red to purple from its chart colors), and a burst sweeps the new color in from the left.
+const TINT_SWEEP_SECONDS = 0.8;
+let tintIndex = 0;
+let tintSweep: { from: string; at: number } | undefined;
+let tintList: string[] | undefined;
+new MutationObserver(() => {
+  tintList = undefined;
+}).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+
+function tintColors(): string[] {
+  if (tintList === undefined) {
+    const style = getComputedStyle(document.documentElement);
+    const pick = (fallback: string, ...names: string[]) => names.map((name) => style.getPropertyValue(name).trim()).find(Boolean) || fallback;
+    tintList = [
+      pick("#888", "--vscode-textLink-foreground", "--vscode-focusBorder"),
+      pick("#E0624A", "--vscode-charts-red"),
+      pick("#E08A55", "--vscode-charts-orange"),
+      pick("#F0C24B", "--vscode-charts-yellow"),
+      pick("#5FC27E", "--vscode-charts-green"),
+      pick("#8FD0F5", "--vscode-terminal-ansiBrightCyan"),
+      pick("#4FC3F7", "--vscode-charts-blue", "--vscode-terminal-ansiBrightBlue"),
+      pick("#9A72E0", "--vscode-charts-purple"),
+    ];
+  }
+  return tintList;
+}
+
+function setTint(data: TintMessage): void {
+  if (!Number.isInteger(data.index)) {
+    return;
+  }
+  const count = tintColors().length;
+  const index = ((data.index % count) + count) % count;
+  tintSweep = data.burst === true && !document.hidden && index !== tintIndex ? { from: tintColors()[tintIndex], at: state.time } : undefined;
+  tintIndex = index;
+}
+
+// The graph's color at a column: the new tint left of the sweep, the old one right of it.
+function graphColor(column: number, width: number, seconds: number): string {
+  const color = tintColors()[tintIndex];
+  if (tintSweep === undefined) {
+    return color;
+  }
+  const progress = (seconds - tintSweep.at) / TINT_SWEEP_SECONDS;
+  if (progress >= 1) {
+    tintSweep = undefined;
+    return color;
+  }
+  return column < progress * width ? color : tintSweep.from;
+}
+
 // What your second monitor shows beside the main one: a live graph while you work, the error log, more falling code,
 // a radar sweep while you defend, and an all-clear.
 type SideScreen = "graph" | "log" | "radar" | "ok";
@@ -750,9 +867,9 @@ function paintScreen(
       const shift = Math.floor(seconds * 3);
       for (let x = 0; x < width; x++) {
         const value = Math.floor(noise((shift + x) * 0.37) * (height - 2));
-        rect(left + x, top + height - 2 - value, 1, 1, palette.code[2 % palette.code.length]);
+        rect(left + x, top + height - 2 - value, 1, 1, graphColor(x, width, seconds));
       }
-      return palette.code[2 % palette.code.length];
+      return graphColor(width, width, seconds);
     }
     case "log":
       rect(left, top, width, height, "#1A0505");
@@ -1171,10 +1288,51 @@ function drawAgent(agent: Agent, seconds: number): AgentBox {
     context.globalAlpha = 1;
   }
   const bob = pose.pose === "walk" && pose.frame % 2 === 1 ? -1 : 0;
-  context.globalAlpha = agent.leaving ? 0.7 : 1;
+  context.globalAlpha = agent.leaving && agent.visitor === undefined ? 0.7 : 1;
   context.drawImage(sprite(agent.seed, pose.pose, pose.facing, pose.frame), box.left, box.top + bob);
   context.globalAlpha = 1;
+  const tie = agent.visitor === undefined ? undefined : visit?.kind.tie;
+  if (tie !== undefined && pose.facing === "down") {
+    drawTie(box.left, box.top + bob, tie);
+  }
   return box;
+}
+
+// A boss's tie down the middle of his shirt: a knot, then the blade.
+function drawTie(left: number, top: number, color: string): void {
+  rect(left + 5, top + 8, 2, 1, shadeColor(color));
+  rect(left + 5, top + 9, 2, 2, color);
+  rect(left + 5, top + 11, 1, 1, color);
+}
+
+// The selected session's guy wears a little gold crown.
+const CROWN = ["#..#..#", "##.#.##", "#######", "#######"];
+
+function drawCrown(box: AgentBox, seconds: number): void {
+  const left = box.left + Math.floor((FRAME_WIDTH - 7) / 2);
+  // Sits on his hair, lifting a pixel now and then.
+  const top = box.top - 2 + (Math.floor(seconds * 2) % 2 === 0 ? 0 : -1);
+  // A dark edge so it reads on any floor.
+  CROWN.forEach((row, y) => [...row].forEach((cell, x) => {
+    if (cell === "#") {
+      rect(left + x - 1, top + y, 1, 1, "#5A3A00");
+      rect(left + x + 1, top + y, 1, 1, "#5A3A00");
+      rect(left + x, top + y + 1, 1, 1, "#5A3A00");
+    }
+  }));
+  CROWN.forEach((row, y) => [...row].forEach((cell, x) => {
+    if (cell === "#") {
+      rect(left + x, top + y, 1, 1, y === 2 ? "#FFE48A" : "#F5B82E");
+    }
+  }));
+  rect(left + 3, top + 3, 1, 1, "#E0413A");
+  rect(left + 1, top + 3, 1, 1, "#4FA3F7");
+  rect(left + 5, top + 3, 1, 1, "#4FA3F7");
+  // Now and then a glint off a point.
+  const glint = Math.floor(seconds / 1.5) % 3;
+  if ((seconds % 1.5) < 0.25) {
+    rect(left + glint * 3, top - 1, 1, 1, "#FFFFFF");
+  }
 }
 
 // You sit centered between your station's two seats.
@@ -1193,18 +1351,40 @@ function drawYou(station: Station, reaction: YourReaction): { left: number; top:
 }
 
 // bubbleTop puts the bubble higher than over the guy's head; your bubble sits above your monitors.
+// Long lines wrap; the bubble grows upward so its tail stays over the guy.
+const BUBBLE_WRAP = 96;
+
 function drawBubble(box: { left: number; top: number }, text: string, palette: ScenePalette, bubbleTop = box.top - 11): void {
   context.font = "7px monospace";
-  const textWidth = Math.ceil(context.measureText(text).width);
+  const lines = wrapText(text, Math.min(BUBBLE_WRAP, state.layout.cols * TILE - 8));
+  const textWidth = Math.max(...lines.map((line) => Math.ceil(context.measureText(line).width)));
   const bubbleWidth = textWidth + 6;
+  const bubbleHeight = 9 + (lines.length - 1) * 7;
+  const top = bubbleTop - (lines.length - 1) * 7;
   // Long lines stay inside the room; the tail stays over the guy.
   const bubbleLeft = Math.max(1, Math.min(state.layout.cols * TILE - bubbleWidth - 1, Math.round(box.left + FRAME_WIDTH / 2 - bubbleWidth / 2)));
-  rect(bubbleLeft, bubbleTop, bubbleWidth, 9, palette.bubbleEdge);
-  rect(bubbleLeft + 1, bubbleTop + 1, bubbleWidth - 2, 7, palette.bubble);
+  rect(bubbleLeft, top, bubbleWidth, bubbleHeight, palette.bubbleEdge);
+  rect(bubbleLeft + 1, top + 1, bubbleWidth - 2, bubbleHeight - 2, palette.bubble);
   rect(box.left + FRAME_WIDTH / 2 - 1, bubbleTop + 9, 2, 1, palette.bubbleEdge);
   context.fillStyle = palette.bubbleText;
   context.textBaseline = "top";
-  context.fillText(text, bubbleLeft + 3, bubbleTop + 1.5);
+  lines.forEach((line, index) => context.fillText(line, bubbleLeft + 3, top + 1.5 + index * 7));
+}
+
+function wrapText(text: string, maxWidth: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    const next = line === "" ? word : `${line} ${word}`;
+    if (line !== "" && context.measureText(next).width > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  lines.push(line);
+  return lines;
 }
 
 // Three z's drifting up and fading, each a little bigger than the last.
@@ -1333,8 +1513,12 @@ function draw(seconds: number): void {
     if (box.agent.mode === "sleep" && box.agent.path.length === 0 && box.agent.bubble === undefined) {
       drawSnore(box, seconds, palette);
     }
+    const crowned = box.agent.id === focusedId;
+    if (crowned) {
+      drawCrown(box, seconds);
+    }
     if (box.agent.bubble !== undefined) {
-      drawBubble(box, box.agent.bubble.text, palette);
+      drawBubble(box, box.agent.bubble.text, palette, box.top - (crowned ? 14 : 11));
     }
   });
   youArea = youBox;
@@ -1506,6 +1690,7 @@ function loop(now: number): void {
   const seconds = now / 1000;
   if (lastTime !== undefined) {
     stepOffice(state, seconds - lastTime, random);
+    stepVisitors();
     playRoomReactions();
     stepCritters();
   }
@@ -1551,7 +1736,7 @@ canvas.addEventListener("mousemove", (event) => {
   const agent = hit?.you ? undefined : hit;
   hoveredId = agent?.id;
   youHovered = hit?.you === true || (agent === undefined && isOverYou(event.clientX, event.clientY));
-  canvas.style.cursor = agent === undefined ? "default" : "pointer";
+  canvas.style.cursor = agent === undefined || agent.visitor !== undefined ? "default" : "pointer";
   if (youHovered) {
     tooltip.hidden = false;
     tooltip.textContent = sceneEvent !== undefined ? `you · ${sceneEvent.kind}!` : hit?.you ? "you · on break" : "you · on watch";
@@ -1562,7 +1747,11 @@ canvas.addEventListener("mousemove", (event) => {
     return;
   }
   tooltip.hidden = false;
-  tooltip.textContent = `${agent.title} · ${agent.status === "asleep" ? "suspended" : agent.status}`;
+  if (agent.visitor !== undefined) {
+    tooltip.textContent = `${agent.title} · visiting`;
+    return;
+  }
+  tooltip.textContent = `${agent.title}${agent.id === focusedId ? " · selected" : ""} · ${agent.status === "asleep" ? "suspended" : agent.status}`;
 });
 
 canvas.addEventListener("mouseleave", () => {
@@ -1573,7 +1762,7 @@ canvas.addEventListener("mouseleave", () => {
 
 canvas.addEventListener("click", (event) => {
   const agent = agentAt(event.clientX, event.clientY);
-  if (agent !== undefined && !agent.you) {
+  if (agent !== undefined && !agent.you && agent.visitor === undefined) {
     vscode.postMessage({ type: "open", sessionId: agent.id });
   }
 });
