@@ -187,6 +187,8 @@ export function activate(context: vscode.ExtensionContext): void {
     pinnedSessions,
     sessionTitle,
     sceneEvents,
+    focusedSessionId: () => sessionFocus.focusedSessionId(),
+    onDidChangeFocus: sessionFocus.onDidChange,
   });
   const sessionPanelProvider = new SessionPanelProvider({
     extensionUri: context.extensionUri,

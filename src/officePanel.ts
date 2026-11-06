@@ -5,6 +5,7 @@ import type { PinnedSession } from "./grouping";
 import type { LiveSessionMonitor } from "./liveSessions";
 import { OFFICE_SCENES, officeSceneId } from "./officeLayout";
 import type { AgentInput } from "./officeSim";
+import { visitorFrequency } from "./officeVisitors";
 import { PixelGuyLook, yourLook } from "./pixelGuy";
 import type { Registry } from "./registry";
 import type { SceneEventDirector } from "./sceneEvents";
@@ -15,6 +16,8 @@ const SLEEPERS_SETTING = "overseer.office.sleepers";
 const YOU_SETTING = "overseer.office.you";
 const YOUR_LOOK_SETTING = "overseer.office.yourLook";
 const CRITTERS_SETTING = "overseer.office.critters";
+const DAY_NIGHT_SETTING = "overseer.office.dayNight";
+const VISITORS_SETTING = "overseer.office.visitors";
 
 export interface OfficePanelDeps {
   extensionUri: vscode.Uri;
@@ -23,6 +26,9 @@ export interface OfficePanelDeps {
   pinnedSessions: () => PinnedSession[];
   sessionTitle: (sessionId: string) => string;
   sceneEvents: SceneEventDirector;
+  // The session the Session sidebar shows; its guy wears a crown.
+  focusedSessionId: () => string | undefined;
+  onDidChangeFocus: vscode.Event<void>;
 }
 
 // The Office view: a pixel guy for every session in the sidebar, working at his desk while the session is busy,
@@ -37,8 +43,9 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     this.listeners = [
       deps.liveMonitor.onDidChange(() => this.postAll()),
       deps.registry.onDidChange(() => this.postAll()),
+      deps.onDidChangeFocus(() => this.postAll()),
       vscode.workspace.onDidChangeConfiguration((change) => {
-        if ([SCENE_SETTING, SLEEPERS_SETTING, YOU_SETTING, YOUR_LOOK_SETTING, CRITTERS_SETTING].some((setting) => change.affectsConfiguration(setting))) {
+        if ([SCENE_SETTING, SLEEPERS_SETTING, YOU_SETTING, YOUR_LOOK_SETTING, CRITTERS_SETTING, DAY_NIGHT_SETTING, VISITORS_SETTING].some((setting) => change.affectsConfiguration(setting))) {
           this.postAll();
         }
       }),
@@ -90,7 +97,16 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     this.webviews.forEach((webview) => void webview.postMessage(message));
   }
 
-  private message(): { type: "office"; scene: string; agents: AgentInput[]; you: PixelGuyLook | null; critters: boolean } {
+  private message(): {
+    type: "office";
+    scene: string;
+    agents: AgentInput[];
+    you: PixelGuyLook | null;
+    critters: boolean;
+    dayNight: boolean;
+    visitors: string;
+    focusedId: string | null;
+  } {
     const agents: AgentInput[] = [];
     const seen = new Set<string>();
     const showSleepers = vscode.workspace.getConfiguration().get<boolean>(SLEEPERS_SETTING, true);
@@ -113,7 +129,16 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     }
     const configuration = vscode.workspace.getConfiguration();
     const you = configuration.get<boolean>(YOU_SETTING, true) ? yourLook(configuration.get<unknown>(YOUR_LOOK_SETTING)) : null;
-    return { type: "office", scene: currentScene(), agents, you, critters: configuration.get<boolean>(CRITTERS_SETTING, true) };
+    return {
+      type: "office",
+      scene: currentScene(),
+      agents,
+      you,
+      critters: configuration.get<boolean>(CRITTERS_SETTING, true),
+      dayNight: configuration.get<boolean>(DAY_NIGHT_SETTING, true),
+      visitors: visitorFrequency(configuration.get<unknown>(VISITORS_SETTING)),
+      focusedId: this.deps.focusedSessionId() ?? null,
+    };
   }
 }
 
