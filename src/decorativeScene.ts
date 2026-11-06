@@ -158,6 +158,33 @@ ${readoutsHtml}
     return "rgb(" + start.map((channel, index) => Math.round(channel + (end[index] - channel) * amount)).join(",") + ")";
   }
 
+  // The spectrum Core's sweep repaints the globe with, shared so the Djaunt view matches. Tint 0 is the theme's own
+  // look. The rest run red to purple from the theme's chart colors.
+  let tintCache = { palette: null, list: [] };
+  function tints() {
+    if (tintCache.palette === palette) return tintCache.list;
+    const hues = [palette.primary, palette.fire[2], palette.fire[1], palette.fire[0], palette.scales, palette.ice[1], palette.shield, palette.dragon];
+    const list = hues.map((hue, index) => ({
+      dot: hue,
+      line: index === 0 ? palette.dim : mix(palette.dim, hue, 0.6),
+      ring: index === 0 ? palette.accent : shade(rgbOf(hue), 1.35),
+    }));
+    tintCache = { palette, list };
+    return list;
+  }
+
+  // A tint message: { index, burst }. A burst paints it in, otherwise it shows at once. The extension relays Core's
+  // bursts and answers "ready" with the current tint.
+  const extension = acquireVsCodeApi();
+  const tintListeners = [];
+  const onTint = (listener) => tintListeners.push(listener);
+  window.addEventListener("message", (message) => {
+    const data = message.data;
+    if (!data || data.type !== "tint" || !Number.isInteger(data.index)) return;
+    const index = ((data.index % tints().length) + tints().length) % tints().length;
+    tintListeners.forEach((listener) => listener(index, data.burst === true && !document.hidden));
+  });
+
   // DEFENSE goes red on the alert, amber while the shield holds, then shield blue once safe.
   function eventColor(base, event) {
     if (event.kind === "error") return base.alert;
@@ -259,6 +286,7 @@ ${readoutsHtml}
   }
 
 ${sceneScript}
+  extension.postMessage({ type: "ready" });
 
   let frame = 0;
   function loop(now) {

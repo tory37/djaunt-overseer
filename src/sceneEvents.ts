@@ -15,9 +15,11 @@ import {
 const EVENT_MINUTES_SETTING = "views.eventMinutes";
 
 // Plays the ERROR, HACK, and DEFENSE bits on every decorative view at once, now and then, and on command. A change to
-// the frequency setting reschedules the pending event.
+// the frequency setting reschedules the pending event. Also relays the tint of Core's burst to the other views, and
+// sends the current tint to a view when it loads.
 export class SceneEventDirector implements vscode.Disposable {
   private readonly webviews = new Set<vscode.Webview>();
+  private tintIndex = 0;
   private readonly configListener: vscode.Disposable;
   private timer: ReturnType<typeof setTimeout>;
 
@@ -31,8 +33,13 @@ export class SceneEventDirector implements vscode.Disposable {
   }
 
   attach(webviewView: vscode.WebviewView): void {
-    this.webviews.add(webviewView.webview);
-    webviewView.onDidDispose(() => this.webviews.delete(webviewView.webview));
+    const webview = webviewView.webview;
+    this.webviews.add(webview);
+    const messageListener = webview.onDidReceiveMessage((message: unknown) => this.receive(webview, message));
+    webviewView.onDidDispose(() => {
+      messageListener.dispose();
+      this.webviews.delete(webview);
+    });
   }
 
   play(kind: SceneEventKind): void {
@@ -43,6 +50,21 @@ export class SceneEventDirector implements vscode.Disposable {
   dispose(): void {
     clearTimeout(this.timer);
     this.configListener.dispose();
+  }
+
+  private receive(sender: vscode.Webview, message: unknown): void {
+    if (typeof message !== "object" || message === null) return;
+    const { type, index } = message as { type?: unknown; index?: unknown };
+    if (type === "ready") {
+      void sender.postMessage({ type: "tint", index: this.tintIndex, burst: false });
+      return;
+    }
+    if (type !== "tint" || !Number.isInteger(index)) return;
+    this.tintIndex = index as number;
+    const relayed = { type: "tint", index, burst: true };
+    this.webviews.forEach((webview) => {
+      if (webview !== sender) void webview.postMessage(relayed);
+    });
   }
 
   private schedule(): void {
