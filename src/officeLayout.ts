@@ -28,6 +28,14 @@ export interface Desk {
   seat: Point;
 }
 
+// Two tiles wide: desk is the left desk tile and seat the left seat tile; you sit centered between the two seats.
+export interface Station {
+  desk: Point;
+  seat: Point;
+}
+
+export const STATION_DESKS = 2;
+
 export interface Prop {
   kind: PropKind;
   at: Point;
@@ -41,8 +49,9 @@ export interface OfficeLayout {
   tiles: TileKind[][];
   door: Point;
   desks: Desk[];
-  // Your own desk: the top row's last, under the clock. Sessions never get it. Undefined when you're not in the room.
-  station: Desk | undefined;
+  // Your own station: a desk pair in the middle of the room, joined into one. Sessions never get it. Undefined when
+  // you're not in the room.
+  station: Station | undefined;
   props: Prop[];
   couchSeats: Point[];
 }
@@ -80,10 +89,7 @@ export function buildOfficeLayout(requestedCols: number, requestedRows: number, 
     }
   }
 
-  const station = withStation ? desks.filter((desk) => desk.desk.y === 1).pop() : undefined;
-  if (station !== undefined) {
-    desks.splice(desks.indexOf(station), 1);
-  }
+  const station = withStation ? middleStation(desks, rows) : undefined;
 
   const props: Prop[] = [];
   const couchSeats: Point[] = [];
@@ -116,6 +122,26 @@ export function buildOfficeLayout(requestedCols: number, requestedRows: number, 
   return { cols, rows, tiles, door, desks, station, props, couchSeats };
 }
 
+// Takes the desk pair nearest the middle of the room out of the desks, for your station: the desk row whose desk and
+// seat straddle the room's middle best (the lower one on a tie), and the middle pair (left of center on a tie).
+function middleStation(desks: Desk[], rows: number): Station | undefined {
+  const deskRows = [...new Set(desks.map((desk) => desk.desk.y))];
+  if (deskRows.length === 0) {
+    return undefined;
+  }
+  const offCenter = (y: number) => Math.abs(y + 1 - rows / 2);
+  const row = deskRows.reduce((best, y) => (offCenter(y) <= offCenter(best) ? y : best));
+  const inRow = desks.filter((desk) => desk.desk.y === row);
+  const pairs = inRow.filter((desk, index) => index % 2 === 0 && inRow[index + 1]?.desk.x === desk.desk.x + 1);
+  const left = pairs[Math.floor((pairs.length - 1) / 2)];
+  if (left === undefined) {
+    return undefined;
+  }
+  const leftIndex = desks.indexOf(left);
+  desks.splice(leftIndex, STATION_DESKS);
+  return { desk: left.desk, seat: left.seat };
+}
+
 export const MIN_DESKS = 10;
 // Empty desks kept beyond the sessions, so a new session has a seat without the room changing shape.
 const SPARE_DESKS = 2;
@@ -134,10 +160,11 @@ export function desksNeeded(sessionCount: number): number {
 }
 
 // The room size, in tiles, that holds the desks at the biggest zoom the view allows. A row of p desk pairs is 3p + 1
-// tiles wide; r desk rows are 3r + 2 tiles tall with the wall and the props. Ties go to fewer empty desks.
-export function officeShape(deskCount: number, viewWidth: number, viewHeight: number, tileSize: number): OfficeShape {
+// tiles wide; r desk rows are 3r + 2 tiles tall with the wall and the props. Ties go to fewer empty desks. With
+// oddPairs (your station is in), every row has a middle pair, so the station sits dead center.
+export function officeShape(deskCount: number, viewWidth: number, viewHeight: number, tileSize: number, oddPairs = false): OfficeShape {
   let best: (OfficeShape & { zoom: number }) | undefined;
-  for (let pairs = MIN_PAIRS_PER_ROW; pairs <= MAX_PAIRS_PER_ROW; pairs++) {
+  for (let pairs = MIN_PAIRS_PER_ROW; pairs <= MAX_PAIRS_PER_ROW; pairs += oddPairs ? 2 : 1) {
     const deskRows = Math.max(1, Math.ceil(deskCount / (pairs * 2)));
     const cols = pairs * 3 + 1;
     const rows = Math.max(MIN_ROWS, deskRows * 3 + 2);

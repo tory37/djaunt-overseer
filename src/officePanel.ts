@@ -26,7 +26,7 @@ export interface OfficePanelDeps {
 
 // The Office view: a pixel guy for every session in the sidebar, working at his desk while the session is busy,
 // wandering the room while it's idle, and asleep at his desk while it's suspended. The simulation runs in the webview (src/officeView); this side sends it the
-// live sessions whenever they change and opens a session when its guy is clicked. You have a desk too, and act out the
+// live sessions whenever they change and opens a session when its guy is clicked. You have a station too, and act out the
 // scene events the director plays on every decorative view.
 export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private readonly webviews = new Set<vscode.Webview>();

@@ -1365,7 +1365,7 @@
         "overseer.office.you": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Put you in the Office: your own guy at the top-right desk, who reacts to the ERROR, HACK, and DEFENSE scene events along with his monitor. Set his look with `#overseer.office.yourLook#`."
+          "markdownDescription": "Put you in the Office: your own guy at a two-monitor station in the middle of the room, who reacts to the ERROR, HACK, and DEFENSE scene events along with his monitors. Set his look with `#overseer.office.yourLook#`."
         },
         "overseer.office.yourLook": {
           "type": "object",

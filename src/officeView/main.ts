@@ -2,9 +2,9 @@
 // posts the live sessions ({ type: "office" }); a click on a guy posts { type: "open" } back. You sit at your own
 // desk and act out the scene events ({ type: "sceneEvent" }) with your monitor; the room looks up too.
 
-import { buildOfficeLayout, Desk, desksNeeded, OFFICE_SCENES, officeShape, OfficeLayout, OfficeSceneId, officeSceneId, Point, Prop } from "../officeLayout";
+import { buildOfficeLayout, Desk, desksNeeded, OFFICE_SCENES, officeShape, OfficeLayout, OfficeSceneId, officeSceneId, Point, Prop, Station, STATION_DESKS } from "../officeLayout";
 import { Agent, AgentInput, agentPose, createOffice, officeCounts, relayoutOffice, stepOffice, syncOffice } from "../officeSim";
-import { YourEvent, YourReaction, yourEventSeconds, yourReaction, roomReaction } from "../officeYou";
+import { YourEvent, YourReaction, yourEventSeconds, yourReaction, roomReaction, YourScreen } from "../officeYou";
 import { Facing, FRAME_HEIGHT, FRAME_WIDTH, pixelGuyFrame, pixelGuyLook, PixelGuyLook, Pose } from "../pixelGuy";
 import { DEFENSE_BEATS, ERROR_BEAT_SECONDS, ERROR_FLASH_SECONDS, EVENT_SECONDS, SCENE_EVENT_KINDS, SceneEventKind } from "../sceneEventSchedule";
 import { SCENE_PALETTES, ScenePalette } from "./palettes";
@@ -56,7 +56,7 @@ const random = Math.random;
 // zooms it as far as the view allows.
 function fitLayout(): void {
   const withStation = youKey !== undefined;
-  const shape = officeShape(desksNeeded(latestInputs.length) + (withStation ? 1 : 0), width, height, TILE);
+  const shape = officeShape(desksNeeded(latestInputs.length) + (withStation ? STATION_DESKS : 0), width, height, TILE, withStation);
   const layout = state.layout;
   if (shape.cols !== layout.cols || shape.rows !== layout.rows || sceneChanged || (layout.station !== undefined) !== withStation) {
     sceneChanged = false;
@@ -337,35 +337,117 @@ function drawDesk(desk: Desk, owner: Agent | undefined, palette: ScenePalette, s
   }
 }
 
-// Your desk: a wider monitor that shows the event, a mug, and a light strip along the front in the screen's color.
-function drawStation(desk: Desk, reaction: YourReaction, palette: ScenePalette, seconds: number): void {
-  const left = desk.desk.x * TILE;
-  const top = desk.desk.y * TILE;
-  rect(left + 1, top - 1, 14, 9, palette.monitor);
-  const screenLeft = left + 2;
-  const screenTop = top;
-  const glow = drawYourScreen(screenLeft, screenTop, reaction, palette, seconds);
-  rect(left + 7, top + 8, 2, 1, palette.monitor);
-  rect(left, top + 9, TILE, 3, palette.deskTop);
-  rect(left + 3, top + 10, 9, 1, palette.keyboard);
-  rect(left + 13, top + 9, 1, 2, palette.keyboard);
-  rect(left, top + 12, TILE, 4, palette.deskFront);
-  rect(left + 1, top + 12, 1, 4, palette.deskTop);
-  rect(left + TILE - 2, top + 12, 1, 4, palette.deskTop);
-  rect(left + 2, top + 13, TILE - 4, 1, glow);
-  rect(left + 13, top + 7, 2, 2, palette.mug);
-  rect(left + 14, top + 6, 1, 1, "rgba(255,255,255,0.5)");
+// What your second monitor shows beside the main one: a live graph while you work, the error log, more falling code,
+// a radar sweep while you defend, and an all-clear.
+type SideScreen = "graph" | "log" | "radar" | "ok";
+
+function sideScreen(screen: YourScreen): YourScreen | SideScreen {
+  switch (screen) {
+    case "code":
+    case "idle":
+      return "graph";
+    case "error":
+    case "alert":
+      return "log";
+    case "matrix":
+    case "granted":
+      return "matrix";
+    case "progress":
+      return "radar";
+    case "shield":
+      return "ok";
+  }
 }
 
-// Draws the 12x7 screen, and returns the color it casts on the desk's light strip.
-function drawYourScreen(left: number, top: number, reaction: YourReaction, palette: ScenePalette, seconds: number): string {
+// Your station, two desks wide: two monitors, the keyboard between them, a mug, a lamp, and a light strip along the
+// front in the main screen's color.
+function drawStation(station: Station, reaction: YourReaction, palette: ScenePalette, seconds: number): void {
+  const left = station.desk.x * TILE;
+  const top = station.desk.y * TILE;
+  const width = TILE * STATION_DESKS;
+  // A lamp at the far left, its glow on the desk.
+  rect(left + 1, top + 2, 4, 2, palette.monitor);
+  rect(left + 2, top + 4, 1, 5, palette.monitor);
+  context.globalAlpha = 0.25;
+  rect(left + 1, top + 9, 6, 2, "#FFE7A0");
+  context.globalAlpha = 1;
+  // Main monitor left of center, the second right of it, both turned a little toward the chair.
+  rect(left + 5, top - 2, 14, 9, palette.monitor);
+  const glow = drawYourScreen(left + 6, top - 1, reaction.screen, reaction.progress, palette, seconds);
+  rect(left + 20, top - 1, 11, 8, palette.monitor);
+  drawYourScreen(left + 21, top, sideScreen(reaction.screen), reaction.progress, palette, seconds, 9, 6);
+  rect(left + 11, top + 7, 2, 2, palette.monitor);
+  rect(left + 25, top + 7, 2, 2, palette.monitor);
+  rect(left, top + 9, width, 3, palette.deskTop);
+  rect(left + 11, top + 10, 10, 1, palette.keyboard);
+  rect(left + 23, top + 10, 2, 1, palette.keyboard);
+  rect(left, top + 12, width, 4, palette.deskFront);
+  rect(left + 1, top + 12, 1, 4, palette.deskTop);
+  rect(left + width - 2, top + 12, 1, 4, palette.deskTop);
+  rect(left + 3, top + 13, width - 6, 1, glow);
+  rect(left + 7, top + 9, 2, 2, palette.mug);
+  rect(left + 8, top + 8, 1, 1, "rgba(255,255,255,0.5)");
+}
+
+// Draws a screen (12x7 unless smaller), and returns the color it casts on the desk's light strip.
+function drawYourScreen(
+  left: number, top: number, screen: YourScreen | SideScreen, progress: number, palette: ScenePalette, seconds: number, width = 12, height = 7,
+): string {
+  context.save();
+  context.beginPath();
+  context.rect(left, top, width, height);
+  context.clip();
+  const glow = paintScreen(left, top, screen, progress, palette, seconds, width, height);
+  context.restore();
+  return glow;
+}
+
+function paintScreen(
+  left: number, top: number, screen: YourScreen | SideScreen, progress: number, palette: ScenePalette, seconds: number, width: number, height: number,
+): string {
   const blink = Math.floor(seconds / ERROR_BEAT_SECONDS) % 2 === 0;
   const pixels = (rows: string[], color: string, offsetX: number, offsetY: number) => rows.forEach((row, y) => [...row].forEach((cell, x) => {
     if (cell === "#") {
       rect(left + offsetX + x, top + offsetY + y, 1, 1, color);
     }
   }));
-  switch (reaction.screen) {
+  switch (screen) {
+    case "graph": {
+      rect(left, top, width, height, palette.screenOn);
+      rect(left, top + height - 1, width, 1, palette.screenIdle);
+      const shift = Math.floor(seconds * 3);
+      for (let x = 0; x < width; x++) {
+        const value = Math.floor(noise((shift + x) * 0.37) * (height - 2));
+        rect(left + x, top + height - 2 - value, 1, 1, palette.code[2 % palette.code.length]);
+      }
+      return palette.code[2 % palette.code.length];
+    }
+    case "log":
+      rect(left, top, width, height, "#1A0505");
+      for (let line = 0; line < 3; line++) {
+        const scroll = Math.floor(seconds * 8) + line;
+        rect(left + 1, top + 1 + line * 2, 1 + Math.floor(noise(scroll * 5.3) * (width - 3)), 1, line === 2 && blink ? "#FFFFFF" : "#FF5A4F");
+      }
+      return "#FF5A4F";
+    case "radar": {
+      rect(left, top, width, height, "#04140A");
+      const centerX = left + Math.floor(width / 2);
+      const centerY = top + Math.floor(height / 2);
+      const angle = seconds * 5;
+      for (let reach = 1; reach <= 4; reach++) {
+        rect(Math.round(centerX + Math.cos(angle) * reach), Math.round(centerY + Math.sin(angle) * reach * 0.8), 1, 1, "#3DDC6A");
+      }
+      rect(centerX, centerY, 1, 1, "#B6FFC8");
+      if (Math.floor(seconds * 3) % 2 === 0) {
+        rect(left + 2, top + 1, 1, 1, "#FF5A4F");
+        rect(left + width - 3, top + height - 2, 1, 1, "#FF5A4F");
+      }
+      return "#3DDC6A";
+    }
+    case "ok":
+      rect(left, top, width, height, "#06260F");
+      pixels(["....#", "...#.", "#.#..", ".#..."], "#3DDC6A", Math.floor((width - 5) / 2), 1);
+      return "#3DDC6A";
     case "code":
       rect(left, top, 12, 7, palette.screenOn);
       for (let line = 0; line < 3; line++) {
@@ -410,7 +492,7 @@ function drawYourScreen(left: number, top: number, reaction: YourReaction, palet
       rect(left, top, 12, 7, "#231A04");
       rect(left + 1, top + 3, 10, 3, "#F1C24B");
       rect(left + 2, top + 4, 8, 1, "#231A04");
-      rect(left + 2, top + 4, Math.round((reaction.progress / 100) * 8), 1, "#FFE08A");
+      rect(left + 2, top + 4, Math.round((progress / 100) * 8), 1, "#FFE08A");
       rect(left + 1, top + 1, blink ? 6 : 4, 1, "#F1C24B");
       return "#F1C24B";
     }
@@ -422,8 +504,9 @@ function drawYourScreen(left: number, top: number, reaction: YourReaction, palet
   }
 }
 
-function drawChairBack(seat: Point, palette: ScenePalette): void {
-  const left = seat.x * TILE;
+// shiftX nudges the chair over, to center it under your station.
+function drawChairBack(seat: Point, palette: ScenePalette, shiftX = 0): void {
+  const left = seat.x * TILE + shiftX;
   const top = seat.y * TILE;
   rect(left + 3, top + 6, 10, 6, palette.chair);
   rect(left + 4, top + 7, 8, 1, palette.chairLight);
@@ -545,12 +628,13 @@ function drawAgent(agent: Agent, seconds: number): AgentBox {
   return box;
 }
 
-function drawYou(desk: Desk, reaction: YourReaction): { left: number; top: number } {
-  const left = Math.round(desk.seat.x * TILE + (TILE - FRAME_WIDTH) / 2);
-  const top = Math.round(desk.seat.y * TILE + TILE - FRAME_HEIGHT - (reaction.seated ? SEATED_LIFT : 0) - reaction.hop);
+// You sit centered between your station's two seats.
+function drawYou(station: Station, reaction: YourReaction): { left: number; top: number } {
+  const left = Math.round(station.seat.x * TILE + TILE / 2 + (TILE - FRAME_WIDTH) / 2);
+  const top = Math.round(station.seat.y * TILE + TILE - FRAME_HEIGHT - (reaction.seated ? SEATED_LIFT : 0) - reaction.hop);
   if (!reaction.seated) {
     context.globalAlpha = 0.25;
-    rect(left + 2, desk.seat.y * TILE + TILE - 2, FRAME_WIDTH - 4, 2, "#000");
+    rect(left + 2, station.seat.y * TILE + TILE - 2, FRAME_WIDTH - 4, 2, "#000");
     context.globalAlpha = 1;
   }
   if (youKey !== undefined) {
@@ -559,13 +643,13 @@ function drawYou(desk: Desk, reaction: YourReaction): { left: number; top: numbe
   return { left, top };
 }
 
-function drawBubble(box: { left: number; top: number }, text: string, palette: ScenePalette): void {
+// bubbleTop puts the bubble higher than over the guy's head; your bubble sits above your monitors.
+function drawBubble(box: { left: number; top: number }, text: string, palette: ScenePalette, bubbleTop = box.top - 11): void {
   context.font = "7px monospace";
   const textWidth = Math.ceil(context.measureText(text).width);
   const bubbleWidth = textWidth + 6;
   // Long lines stay inside the room; the tail stays over the guy.
   const bubbleLeft = Math.max(1, Math.min(state.layout.cols * TILE - bubbleWidth - 1, Math.round(box.left + FRAME_WIDTH / 2 - bubbleWidth / 2)));
-  const bubbleTop = box.top - 11;
   rect(bubbleLeft, bubbleTop, bubbleWidth, 9, palette.bubbleEdge);
   rect(bubbleLeft + 1, bubbleTop + 1, bubbleWidth - 2, 7, palette.bubble);
   rect(box.left + FRAME_WIDTH / 2 - 1, bubbleTop + 9, 2, 1, palette.bubbleEdge);
@@ -670,7 +754,7 @@ function draw(seconds: number): void {
   let youBox: { left: number; top: number } | undefined;
   if (station !== undefined && youKey !== undefined) {
     layers.push({ depth: station.desk.y + 0.4, paint: () => drawStation(station, reaction, palette, seconds) });
-    layers.push({ depth: station.seat.y + 0.7, paint: () => drawChairBack(station.seat, palette) });
+    layers.push({ depth: station.seat.y + 0.7, paint: () => drawChairBack(station.seat, palette, TILE / 2) });
     layers.push({ depth: station.seat.y + 0.5, paint: () => { youBox = drawYou(station, reaction); } });
   }
   const nextBoxes: AgentBox[] = [];
@@ -691,7 +775,9 @@ function draw(seconds: number): void {
   youArea = youBox;
   const finalYouBox = youBox as { left: number; top: number } | undefined;
   if (finalYouBox !== undefined && reaction.bubble !== undefined) {
-    drawBubble(finalYouBox, reaction.bubble, palette);
+    // Above the monitors, so it never covers the screens.
+    const monitorsTop = station === undefined ? finalYouBox.top : station.desk.y * TILE - 2;
+    drawBubble(finalYouBox, reaction.bubble, palette, Math.min(finalYouBox.top, monitorsTop) - 11);
   }
   drawEventTint(event, layout);
   const hovered = boxes.find((box) => box.agent.id === hoveredId);
