@@ -9,7 +9,8 @@ const TILE = 16;
 describe("officeCritters", () => {
   it("gives every scene its own troupes", () => {
     for (const scene of OFFICE_SCENES) {
-      expect(SCENE_CRITTERS[scene.id].length).toBeGreaterThan(0);
+      // Five kinds lead a troupe in every scene; chicks and ducklings only tag along.
+      expect(new Set(SCENE_CRITTERS[scene.id].map((troupe) => troupe[0])).size).toBe(5);
     }
     expect(SCENE_CRITTERS.moon.flat()).toContain("alien");
     expect(SCENE_CRITTERS.forest.flat()).toContain("fox");

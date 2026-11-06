@@ -128,6 +128,84 @@ const SPRITES: Record<CritterKind, CritterSprite> = {
       ["..........l..", ".........lll.", "..........l..", ".gggggggggg..", ".ssssssssss..", "wkw..wkw..wkw", ".w....w....w."],
     ],
   },
+  corgi: {
+    colors: { o: "#E0923A", w: "#F6EEE2", k: "#2A1E18" },
+    frames: legs(
+      ["..........o.o.", "..........ooo.", ".ooooooooooko.", ".owwwwwwwwowwk"],
+      ["..k.k....k.k.."],
+      ["...kk.....kk.."],
+    ),
+  },
+  hamster: {
+    colors: { l: "#B8D8F0", h: "#E8B070", k: "#1A1A1A" },
+    frames: [
+      ["..llll..", ".l....l.", "l..hh..l", "l.hhhk.l", "l.hhhh.l", ".l....l.", "..llll.."],
+      ["..llll..", ".l....l.", "l...hh.l", "l..hhhkl", "l..hhhhl", ".l....l.", "..llll.."],
+    ],
+  },
+  spider: {
+    colors: { k: "#1E1A22", r: "#E8404A" },
+    frames: legs(["...kkk...", "k.kkkkk.k", ".kkrkrkk."], ["k.k...k.k"], [".k.k.k.k."]),
+  },
+  drone: {
+    colors: { k: "#2A2C32", g: "#9AA0AA", r: "#E8404A", a: "#5FE08A" },
+    frames: [
+      ["kkk.....kkk", ".g.......g.", ".ggggggggg.", "...grrg...."],
+      [".k.......k.", ".g.......g.", ".ggggggggg.", "...gaag...."],
+    ],
+  },
+  raccoon: {
+    colors: { g: "#8E8A88", d: "#3A3636", w: "#E8E4DE", k: "#141414" },
+    frames: legs(
+      ["..........g.g.", "dg........gggg", "gd.ggggggwdkdw", "dg.gggggggwwwk", "...ggggggggg.."],
+      ["...d.d...d.d.."],
+      ["....dd....dd.."],
+    ),
+  },
+  pig: {
+    colors: { p: "#F0A8B4", n: "#D87888", d: "#C88090", k: "#1A1A1A", t: "#E890A0" },
+    frames: legs([".........pp.", "..ppppppppp.", "t.pppppppkpn", ".tpppppppppn", "..ppppppppp."], ["..d.d...d.d."], ["...dd....dd."]),
+  },
+  butterfly: {
+    colors: { o: "#E87A2E", y: "#F4C848", k: "#2A1E18" },
+    frames: [
+      ["oo...oo", "oyokoyo", "ooykyoo", ".o.k.o."],
+      ["...k...", "..oko..", "..oyo..", "...k..."],
+    ],
+  },
+  otter: {
+    colors: { b: "#6E4A30", l: "#C8A882", k: "#141414" },
+    frames: legs(["..........bbb.", "..bbbbbbbbbklk", "bbbbbbbbbblll."], ["...b..b..b.b.."], ["....bb...bb..."]),
+  },
+  crab: {
+    colors: { r: "#D8483A", k: "#1A1A1A" },
+    frames: legs(["rr.k.k.rr", ".r.k.k.r.", "..rrrrr..", ".rrrrrrr."], ["r.r.r.r.r"], [".r.r.r.r."]),
+  },
+  slime: {
+    colors: { s: "#4ED8B0", l: "#B8FFE8", k: "#103028" },
+    frames: [
+      ["..ssss..", ".slssss.", "ssksskss", "ssssssss"],
+      ["...ss...", "..slss..", ".ssksks.", ".ssssss.", "..ssss.."],
+    ],
+  },
+  moonBunny: {
+    colors: { b: "#E6E2F0", w: "#FFFFFF", k: "#3A2A5A", p: "#C8A8E8" },
+    frames: [
+      [".......b.b", ".......p.b", "......bbbb", "w.bbbbbbkb", "wbbbbbbbbb", "..bb...bb."],
+      [".......b.b", ".......p.b", "......bbbb", "w.bbbbbbkb", "wbbbbbbbbb", ".bb.....bb"],
+    ],
+  },
+  ufo: {
+    colors: { s: "#B8BCC8", c: "#7EE0F0", y: "#F4E06A", d: "#7A7E8A" },
+    frames: [
+      ["....ccc....", "...ccccc...", ".sssssssss.", "sysssysssys", "..ddddddd.."],
+      ["....ccc....", "...ccccc...", ".sssssssss.", "sssysssysss", "..ddddddd.."],
+    ],
+  },
+  astronaut: {
+    colors: { w: "#F2F2F4", v: "#E0A830", g: "#A8ACB4" },
+    frames: legs(["..www..", ".wwvvw.", ".wwvvw.", "gwwwww.", "gwwwwww", ".wwwww."], [".w...w."], ["..w.w.."]),
+  },
 };
 
 // Draws one critter with its feet at (pose.x, pose.y), centered on x. A small shadow stays on the ground under

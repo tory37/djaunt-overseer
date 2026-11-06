@@ -10,7 +10,9 @@ export type CritterKind =
   | "chicken" | "chick" | "sheep"
   | "frog" | "duck" | "duckling" | "turtle"
   | "bat" | "rat" | "beetle"
-  | "alien" | "rover";
+  | "alien" | "rover"
+  | "corgi" | "hamster" | "spider" | "drone" | "raccoon" | "pig" | "butterfly"
+  | "otter" | "crab" | "slime" | "moonBunny" | "ufo" | "astronaut";
 
 // run: a quick two-frame scamper. hop: arcs off the ground. fly: flaps over the room. waddle: a slow side-to-side
 // rock. roll: glides on wheels.
@@ -24,6 +26,8 @@ export interface CritterSpec {
   width: number;
   // Stops once on the way to look around.
   pauses: boolean;
+  // Low-gravity hops: slower and higher.
+  floaty?: boolean;
 }
 
 export const CRITTERS: Record<CritterKind, CritterSpec> = {
@@ -44,19 +48,32 @@ export const CRITTERS: Record<CritterKind, CritterSpec> = {
   bat: { gait: "fly", speed: 38, width: 11, pauses: false },
   rat: { gait: "run", speed: 44, width: 10, pauses: true },
   beetle: { gait: "waddle", speed: 16, width: 6, pauses: false },
-  alien: { gait: "hop", speed: 22, width: 8, pauses: true },
+  alien: { gait: "hop", speed: 22, width: 8, pauses: true, floaty: true },
   rover: { gait: "roll", speed: 18, width: 13, pauses: true },
+  corgi: { gait: "run", speed: 40, width: 14, pauses: true },
+  hamster: { gait: "roll", speed: 26, width: 8, pauses: false },
+  spider: { gait: "run", speed: 34, width: 9, pauses: true },
+  drone: { gait: "fly", speed: 30, width: 11, pauses: false },
+  raccoon: { gait: "run", speed: 32, width: 14, pauses: true },
+  pig: { gait: "waddle", speed: 16, width: 12, pauses: true },
+  butterfly: { gait: "fly", speed: 18, width: 7, pauses: false },
+  otter: { gait: "run", speed: 36, width: 14, pauses: true },
+  crab: { gait: "waddle", speed: 14, width: 9, pauses: true },
+  slime: { gait: "hop", speed: 16, width: 8, pauses: true },
+  moonBunny: { gait: "hop", speed: 20, width: 10, pauses: true, floaty: true },
+  ufo: { gait: "fly", speed: 34, width: 11, pauses: false },
+  astronaut: { gait: "hop", speed: 14, width: 7, pauses: true, floaty: true },
 };
 
 // The troupes each scene picks from. A troupe moves together at its first member's speed, one behind the other.
 export const SCENE_CRITTERS: Record<OfficeSceneId, CritterKind[][]> = {
-  office: [["mouse"], ["mouse"], ["cat"], ["mouse", "cat"], ["robot"]],
-  serverRoom: [["mouse"], ["robot"], ["robot"], ["rat"], ["mouse", "robot"]],
-  forest: [["fox"], ["rabbit"], ["squirrel"], ["hedgehog"], ["rabbit", "fox"], ["squirrel", "squirrel"]],
-  field: [["chicken", "chick", "chick", "chick"], ["sheep"], ["sheep", "sheep"], ["rabbit"], ["chicken"]],
-  riverbed: [["frog"], ["frog", "frog"], ["duck", "duckling", "duckling", "duckling"], ["turtle"]],
-  cave: [["bat"], ["bat", "bat"], ["bat", "bat", "bat"], ["rat"], ["beetle"]],
-  moon: [["alien"], ["alien", "alien"], ["alien", "alien", "alien"], ["rover"], ["rover", "alien"]],
+  office: [["mouse"], ["mouse"], ["cat"], ["mouse", "cat"], ["robot"], ["corgi"], ["hamster"], ["cat", "corgi"]],
+  serverRoom: [["mouse"], ["robot"], ["rat"], ["spider"], ["drone"], ["mouse", "robot"], ["drone", "drone"]],
+  forest: [["fox"], ["rabbit"], ["squirrel"], ["hedgehog"], ["raccoon"], ["rabbit", "fox"], ["squirrel", "squirrel"]],
+  field: [["chicken", "chick", "chick", "chick"], ["sheep"], ["sheep", "sheep"], ["rabbit"], ["pig"], ["butterfly"], ["butterfly", "butterfly"]],
+  riverbed: [["frog"], ["frog", "frog"], ["duck", "duckling", "duckling", "duckling"], ["turtle"], ["otter"], ["crab"], ["crab", "crab"]],
+  cave: [["bat"], ["bat", "bat"], ["bat", "bat", "bat"], ["rat"], ["beetle"], ["spider"], ["slime"], ["slime", "slime"]],
+  moon: [["alien"], ["alien", "alien"], ["alien", "alien", "alien"], ["rover"], ["moonBunny"], ["ufo"], ["astronaut"], ["rover", "astronaut"]],
 };
 
 // Seconds between one troupe leaving and the next one starting.
@@ -176,9 +193,9 @@ export function critterPoses(run: CritterRun, now: number): CritterPose[] {
     let frame = Math.floor(beat * (spec.gait === "run" ? 10 : 5)) % 2;
     if (!still) {
       if (spec.gait === "hop") {
-        const period = kind === "alien" ? 0.9 : 0.45;
+        const period = spec.floaty === true ? 0.9 : kind === "slime" ? 0.6 : 0.45;
         const phase = (beat % period) / period;
-        y -= Math.sin(phase * Math.PI) * (kind === "alien" ? 9 : 5);
+        y -= Math.sin(phase * Math.PI) * (spec.floaty === true ? 9 : kind === "slime" ? 3 : 5);
         frame = phase < 0.85 ? 1 : 0;
       } else if (spec.gait === "fly") {
         y += Math.sin(beat * 3 + index) * 4;
@@ -222,6 +239,19 @@ const KIND_LINES: Record<CritterKind, string[]> = {
   beetle: ["bug!", "shiny"],
   alien: ["hi!", "take me!", "ayy", "o_O"],
   rover: ["rover!", "beep?"],
+  corgi: ["doggo!", "corgi!", "good boy"],
+  hamster: ["go go!", "hammy!", "wheee"],
+  spider: ["eek!", "spider!", "nope"],
+  drone: ["drone?", "bzzz", "o_O"],
+  raccoon: ["trash panda", "bandit!"],
+  pig: ["oink", "piggy!"],
+  butterfly: ["pretty", "~", "ooh"],
+  otter: ["otter!", "sleek"],
+  crab: ["crab!", "snip snip", "pinchy"],
+  slime: ["slime!", "blorp", "ew"],
+  moonBunny: ["moon bun!", "hop hop"],
+  ufo: ["UFO!", "they're here", "o_O"],
+  astronaut: ["hi!", "o7", "space!"],
 };
 
 export function critterLines(kind: CritterKind): string[] {
