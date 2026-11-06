@@ -3,7 +3,7 @@
 // desk and act out the scene events ({ type: "sceneEvent" }) with your monitor; the room looks up too.
 
 import { buildOfficeLayout, Desk, desksNeeded, OFFICE_SCENES, officeShape, OfficeLayout, OfficeSceneId, officeSceneId, Point, Prop, Station, STATION_DESKS } from "../officeLayout";
-import { Agent, AgentInput, agentPose, createOffice, officeCounts, relayoutOffice, stepOffice, syncOffice } from "../officeSim";
+import { Agent, AgentInput, agentPose, callYouBack, createOffice, isAtStation, officeCounts, relayoutOffice, stepOffice, syncOffice, syncYou, youAgent } from "../officeSim";
 import { YourEvent, YourReaction, yourEventSeconds, yourReaction, roomReaction, YourScreen } from "../officeYou";
 import { Facing, FRAME_HEIGHT, FRAME_WIDTH, pixelGuyFrame, pixelGuyLook, PixelGuyLook, Pose } from "../pixelGuy";
 import { DEFENSE_BEATS, ERROR_BEAT_SECONDS, ERROR_FLASH_SECONDS, EVENT_SECONDS, SCENE_EVENT_KINDS, SceneEventKind } from "../sceneEventSchedule";
@@ -118,6 +118,7 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEve
   }
   // The first sync seats everyone where they belong; later ones walk newcomers in from the door.
   syncOffice(state, latestInputs, random, hasSynced ? "door" : "seated");
+  syncYou(state, youKey, random);
   hasSynced = true;
   sceneLabel.textContent = OFFICE_SCENES.find((scene) => scene.id === sceneId)?.label.toLowerCase() ?? "office";
 });
@@ -130,8 +131,9 @@ function startSceneEvent(data: SceneEventMessage): void {
   const start = state.time;
   sceneEvent = { kind: data.kind, variant: Math.floor(Number(data.variant) || 0), age: 0, start };
   roomReactions = [];
+  callYouBack(state, random);
   for (const agent of state.agents) {
-    const text = agent.status === "asleep" || agent.leaving ? undefined : roomReaction(data.kind, random);
+    const text = agent.status === "asleep" || agent.leaving || agent.you ? undefined : roomReaction(data.kind, random);
     if (text !== undefined) {
       roomReactions.push({ id: agent.id, text, at: start + 0.2 + random() * 0.9 });
     }
@@ -709,7 +711,11 @@ function draw(seconds: number): void {
   context.clearRect(0, 0, canvas.width, canvas.height);
   const event = currentEvent();
   const station = state.layout.station;
-  const reaction = yourReaction(event, seconds);
+  const you = youAgent(state);
+  const atStation = you !== undefined && isAtStation(you);
+  // Away from your desk, the station's screen sits on the screensaver unless an event is on it.
+  const deskReaction = yourReaction(event, seconds);
+  const reaction = atStation || event !== undefined ? deskReaction : { ...deskReaction, screen: "idle" as const, shake: 0 };
   const shake = reaction.shake * (Math.floor(seconds * 30) % 2 === 0 ? 1 : -1) * scale;
   context.setTransform(pixelRatio * scale, 0, 0, pixelRatio * scale, pixelRatio * (originX + shake), pixelRatio * originY);
   context.imageSmoothingEnabled = false;
@@ -738,13 +744,18 @@ function draw(seconds: number): void {
     }
   });
   let youBox: { left: number; top: number } | undefined;
-  if (station !== undefined && youKey !== undefined) {
+  if (station !== undefined && you !== undefined) {
     layers.push({ depth: station.desk.y + 0.4, paint: () => drawStation(station, reaction, palette, seconds) });
     layers.push({ depth: station.seat.y + 0.7, paint: () => drawChairBack(station.seat, palette, TILE / 2) });
-    layers.push({ depth: station.seat.y + 0.5, paint: () => { youBox = drawYou(station, reaction); } });
+    if (atStation) {
+      layers.push({ depth: station.seat.y + 0.5, paint: () => { youBox = drawYou(station, reaction); } });
+    }
   }
   const nextBoxes: AgentBox[] = [];
   state.agents.forEach((agent) => {
+    if (agent.you && atStation) {
+      return;
+    }
     layers.push({ depth: agent.y + 0.5, paint: () => nextBoxes.push(drawAgent(agent, seconds)) });
   });
   layers.sort((first, second) => first.depth - second.depth).forEach((layer) => layer.paint());
@@ -760,10 +771,11 @@ function draw(seconds: number): void {
   });
   youArea = youBox;
   const finalYouBox = youBox as { left: number; top: number } | undefined;
-  if (finalYouBox !== undefined && reaction.bubble !== undefined) {
+  const yourBubble = reaction.bubble ?? (you?.bubble?.text);
+  if (finalYouBox !== undefined && yourBubble !== undefined) {
     // Above the monitors, so it never covers the screens.
     const monitorsTop = station === undefined ? finalYouBox.top : station.desk.y * TILE - 2;
-    drawBubble(finalYouBox, reaction.bubble, palette, Math.min(finalYouBox.top, monitorsTop) - 11);
+    drawBubble(finalYouBox, yourBubble, palette, Math.min(finalYouBox.top, monitorsTop) - 11);
   }
   drawEventTint(event, layout);
   const hovered = boxes.find((box) => box.agent.id === hoveredId);
@@ -823,13 +835,14 @@ function isOverYou(clientX: number, clientY: number): boolean {
 }
 
 canvas.addEventListener("mousemove", (event) => {
-  const agent = agentAt(event.clientX, event.clientY);
+  const hit = agentAt(event.clientX, event.clientY);
+  const agent = hit?.you ? undefined : hit;
   hoveredId = agent?.id;
-  youHovered = agent === undefined && isOverYou(event.clientX, event.clientY);
+  youHovered = hit?.you === true || (agent === undefined && isOverYou(event.clientX, event.clientY));
   canvas.style.cursor = agent === undefined ? "default" : "pointer";
   if (youHovered) {
     tooltip.hidden = false;
-    tooltip.textContent = sceneEvent === undefined ? "you · on watch" : `you · ${sceneEvent.kind}!`;
+    tooltip.textContent = sceneEvent !== undefined ? `you · ${sceneEvent.kind}!` : hit?.you ? "you · on break" : "you · on watch";
     return;
   }
   if (agent === undefined) {
@@ -848,7 +861,7 @@ canvas.addEventListener("mouseleave", () => {
 
 canvas.addEventListener("click", (event) => {
   const agent = agentAt(event.clientX, event.clientY);
-  if (agent !== undefined) {
+  if (agent !== undefined && !agent.you) {
     vscode.postMessage({ type: "open", sessionId: agent.id });
   }
 });

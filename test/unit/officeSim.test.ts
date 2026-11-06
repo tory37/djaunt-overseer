@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildOfficeLayout } from "../../src/officeLayout";
-import { Agent, AgentInput, agentPose, createOffice, officeCounts, OfficeState, relayoutOffice, stepOffice, syncOffice } from "../../src/officeSim";
+import { Agent, AgentInput, agentPose, callYouBack, createOffice, isAtStation, officeCounts, OfficeState, relayoutOffice, stepOffice, syncOffice, syncYou, youAgent } from "../../src/officeSim";
 import { seededRandom } from "../../src/pixelGuy";
 
 const input = (id: string, status: AgentInput["status"]): AgentInput => ({ id, seed: id, status, title: `Session ${id}` });
@@ -179,5 +179,72 @@ describe("officeSim", () => {
     }
     const working = state.agents.filter((guy) => guy.status === "working");
     expect(working.every((guy) => guy.mode === "type")).toBe(true);
+  });
+
+  describe("you", () => {
+    const office = (random: () => number) => {
+      const state = createOffice(buildOfficeLayout(15, 11, "office", true));
+      syncOffice(state, [input("a", "working"), input("b", "working")], random, "seated");
+      syncYou(state, "you-look", random);
+      return state;
+    };
+
+    it("starts you typing at your station, not counted with the sessions", () => {
+      const random = seededRandom(21);
+      const state = office(random);
+      const you = youAgent(state) as Agent;
+      expect(you.workSpot).toEqual(state.layout.station?.seat);
+      expect(isAtStation(you)).toBe(true);
+      expect(you.deskIndex).toBeUndefined();
+      expect(officeCounts(state)).toEqual({ working: 2, idle: 0, asleep: 0 });
+      syncOffice(state, [input("a", "working")], random);
+      expect(youAgent(state)).toBeDefined();
+    });
+
+    it("takes a break now and then, visits busy guys, and comes back on his own", () => {
+      const random = seededRandom(22);
+      const state = office(random);
+      const you = youAgent(state) as Agent;
+      let away = 0;
+      let visits = 0;
+      let backAfterBreak = false;
+      for (let step = 0; step < 6000; step++) {
+        stepOffice(state, 0.05, random);
+        if (!isAtStation(you)) {
+          away++;
+        } else if (away > 0) {
+          backAfterBreak = true;
+        }
+        if (you.goal?.kind === "visit" && you.mode === "chat") {
+          visits++;
+        }
+      }
+      expect(away).toBeGreaterThan(0);
+      expect(visits).toBeGreaterThan(0);
+      expect(backAfterBreak).toBe(true);
+    });
+
+    it("runs you back to your desk when an event hits", () => {
+      const random = seededRandom(23);
+      const state = office(random);
+      const you = youAgent(state) as Agent;
+      for (let step = 0; step < 4000 && isAtStation(you); step++) {
+        stepOffice(state, 0.05, random);
+      }
+      run(state, 2, random);
+      expect(isAtStation(you)).toBe(false);
+      callYouBack(state, random);
+      expect(you.status).toBe("working");
+      expect(you.running || isAtStation(you)).toBe(true);
+      run(state, 10, random);
+      expect(isAtStation(you)).toBe(true);
+    });
+
+    it("leaves when you're turned off", () => {
+      const random = seededRandom(24);
+      const state = office(random);
+      syncYou(state, undefined, random);
+      expect(youAgent(state)).toBeUndefined();
+    });
   });
 });
