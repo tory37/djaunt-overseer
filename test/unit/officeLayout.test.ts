@@ -1,14 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { buildOfficeLayout, desksNeeded, findPath, isWalkable, MIN_COLS, MIN_DESKS, MIN_ROWS, nearestWalkable, officeSceneId, officeShape } from "../../src/officeLayout";
+import { buildOfficeLayout, desksNeeded, STATION_DESKS, findPath, isWalkable, MIN_COLS, MIN_DESKS, MIN_ROWS, nearestWalkable, officeSceneId, officeShape } from "../../src/officeLayout";
 
 describe("buildOfficeLayout", () => {
-  it("sets the top row's last desk aside as your station when asked", () => {
-    const plain = buildOfficeLayout(13, 8, "office");
-    const withStation = buildOfficeLayout(13, 8, "office", true);
+  it("joins the middle desk pair into your station when asked", () => {
+    const plain = buildOfficeLayout(16, 11, "office");
+    const withStation = buildOfficeLayout(16, 11, "office", true);
     expect(plain.station).toBeUndefined();
-    expect(withStation.desks).toHaveLength(plain.desks.length - 1);
-    expect(withStation.station).toEqual(plain.desks.filter((desk) => desk.desk.y === 1).pop());
-    expect(withStation.tiles[withStation.station!.seat.y][withStation.station!.seat.x]).toBe("seat");
+    expect(withStation.desks).toHaveLength(plain.desks.length - STATION_DESKS);
+    // Five pairs a row and three desk rows: the third pair of the middle row.
+    expect(withStation.station).toEqual({ desk: { x: 7, y: 4 }, seat: { x: 7, y: 5 } });
+    const { desk, seat } = withStation.station!;
+    expect(withStation.tiles[desk.y].slice(desk.x, desk.x + 2)).toEqual(["desk", "desk"]);
+    expect(withStation.tiles[seat.y].slice(seat.x, seat.x + 2)).toEqual(["seat", "seat"]);
+    expect(withStation.desks.some((other) => other.desk.y === desk.y && Math.abs(other.desk.x - desk.x) <= 1)).toBe(false);
+    // Two desk rows: the lower one is nearer the middle of the room.
+    expect(buildOfficeLayout(16, 8, "office", true).station?.desk.y).toBe(4);
+    expect(buildOfficeLayout(16, 6, "office", true).station?.desk.y).toBe(1);
   });
 
   it("never goes below the minimum size", () => {
@@ -98,6 +105,15 @@ describe("nearestWalkable", () => {
 });
 
 describe("officeShape", () => {
+  it("keeps an odd number of pairs per row when your station is in, so it sits in the middle", () => {
+    for (const [width, height] of [[320, 260], [500, 200], [260, 600], [900, 300]]) {
+      const shape = officeShape(13, width, height, 16, true);
+      expect(((shape.cols - 1) / 3) % 2).toBe(1);
+      const station = buildOfficeLayout(shape.cols, shape.rows, "office", true).station!;
+      expect(station.desk.x + 1).toBe(shape.cols / 2);
+    }
+  });
+
   it("builds at least ten desks, and exactly the desks it promises", () => {
     for (const [width, height] of [[300, 250], [600, 200], [200, 600], [1, 1]]) {
       const shape = officeShape(desksNeeded(0), width, height, 16);

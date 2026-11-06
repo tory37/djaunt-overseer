@@ -1,4 +1,4 @@
-// Pure: your own guy in the Office. He's always in, at his own desk, and acts out the scene events (ERROR, HACK,
+// Pure: your own guy in the Office. He's always in, at his own two-monitor station in the middle of the room, and acts out the scene events (ERROR, HACK,
 // DEFENSE) on the same beats as the other views: his screen changes, he jumps up, types like mad, and cheers.
 // Between events he types, leans back, and gets up for a sip. Time is in seconds.
 
