@@ -1367,6 +1367,11 @@
           "default": true,
           "description": "Give suspended sessions in the sidebar a guy too, asleep at his desk. Off shows only running sessions."
         },
+        "overseer.office.critters": {
+          "type": "boolean",
+          "default": true,
+          "description": "Every so often a few critters for the scene run across the Office: mice in the office, foxes and rabbits in the forest, chickens in the field, ducks and frogs by the river, bats in the cave, little aliens on the moon. Idle guys stop to watch."
+        },
         "overseer.office.portraits": {
           "type": "boolean",
           "default": true,

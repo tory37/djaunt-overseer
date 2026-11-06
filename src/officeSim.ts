@@ -58,6 +58,8 @@ export interface Agent {
   you: boolean;
   // Yours only: when your break starts, or ends while you're on one.
   nextBreakAt: number;
+  // Stopped to watch a critter go by: faces it and stands still until then.
+  watch: { facing: Facing; until: number } | undefined;
 }
 
 export interface OfficeState {
@@ -168,6 +170,7 @@ export function syncYou(state: OfficeState, seed: string | undefined, random: Ra
     workSpot: seat,
     you: true,
     nextBreakAt: state.time + between(random, 25, 60),
+    watch: undefined,
   };
   state.agents.push(agent);
   setMode(state, agent, "type", FOREVER);
@@ -193,6 +196,7 @@ export function callYouBack(state: OfficeState, random: Random): void {
     return;
   }
   endChat(state, agent);
+  agent.watch = undefined;
   agent.status = "working";
   say(state, agent, "!", 1);
   goTo(state, agent, agent.workSpot, { kind: "work" }, true, random);
@@ -252,6 +256,12 @@ export function stepOffice(state: OfficeState, seconds: number, random: Random):
     if (agent.bubble !== undefined && state.time >= agent.bubble.until) {
       agent.bubble = undefined;
     }
+    if (agent.watch !== undefined && (state.time >= agent.watch.until || agent.status !== "idle" || agent.leaving)) {
+      agent.watch = undefined;
+    }
+    if (agent.watch !== undefined) {
+      continue;
+    }
     if (agent.you) {
       stepYou(state, agent, random);
     }
@@ -284,6 +294,36 @@ export function stepOffice(state: OfficeState, seconds: number, random: Random):
   }
 }
 
+const SEATED_MODES: ReadonlySet<AgentMode> = new Set<AgentMode>(["type", "sit", "couch", "stretch", "sleep"]);
+
+// A critter is passing at (x, y) in tiles. Idle guys within reach who haven't reacted to it yet (ids in reacted)
+// stop, turn to look, and say a line; a guy on the couch just says it. Returns who reacted.
+export const CRITTER_REACH = { x: 3, y: 2 };
+
+export function reactToCritter(state: OfficeState, at: { x: number; y: number }, lines: readonly string[], reacted: ReadonlySet<string>, random: Random): string[] {
+  const watchers: string[] = [];
+  for (const agent of state.agents) {
+    if (reacted.has(agent.id) || agent.status !== "idle" || agent.leaving || agent.bubble !== undefined) {
+      continue;
+    }
+    const dx = at.x - agent.x;
+    const dy = at.y - agent.y;
+    if (Math.abs(dx) > CRITTER_REACH.x || Math.abs(dy) > CRITTER_REACH.y) {
+      continue;
+    }
+    watchers.push(agent.id);
+    if (random() < 0.25) {
+      continue;
+    }
+    say(state, agent, lines[Math.floor(random() * lines.length) % lines.length], 1.6);
+    if (!SEATED_MODES.has(agent.mode)) {
+      const facing: Facing = Math.abs(dx) >= Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
+      agent.watch = { facing, until: state.time + between(random, 1.2, 2) };
+    }
+  }
+  return watchers;
+}
+
 export interface AgentPose {
   pose: Pose;
   facing: Facing;
@@ -294,6 +334,9 @@ export interface AgentPose {
 
 export function agentPose(agent: Agent, time: number): AgentPose {
   const phase = (agent.id.length * 0.37) % 1;
+  if (agent.watch !== undefined && time < agent.watch.until && !SEATED_MODES.has(agent.mode)) {
+    return { pose: "stand", facing: agent.watch.facing, frame: 0, seated: false };
+  }
   if (agent.path.length > 0) {
     return { pose: "walk", facing: agent.facing, frame: Math.floor(time * (agent.running ? 12 : 7)), seated: false };
   }
@@ -349,6 +392,7 @@ function newAgent(state: OfficeState, input: AgentInput, random: Random): Agent 
     leaving: false,
     you: false,
     nextBreakAt: FOREVER,
+    watch: undefined,
   };
 }
 

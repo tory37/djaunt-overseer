@@ -14,6 +14,7 @@ const SCENE_SETTING = "overseer.office.scene";
 const SLEEPERS_SETTING = "overseer.office.sleepers";
 const YOU_SETTING = "overseer.office.you";
 const YOUR_LOOK_SETTING = "overseer.office.yourLook";
+const CRITTERS_SETTING = "overseer.office.critters";
 
 export interface OfficePanelDeps {
   extensionUri: vscode.Uri;
@@ -37,7 +38,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
       deps.liveMonitor.onDidChange(() => this.postAll()),
       deps.registry.onDidChange(() => this.postAll()),
       vscode.workspace.onDidChangeConfiguration((change) => {
-        if ([SCENE_SETTING, SLEEPERS_SETTING, YOU_SETTING, YOUR_LOOK_SETTING].some((setting) => change.affectsConfiguration(setting))) {
+        if ([SCENE_SETTING, SLEEPERS_SETTING, YOU_SETTING, YOUR_LOOK_SETTING, CRITTERS_SETTING].some((setting) => change.affectsConfiguration(setting))) {
           this.postAll();
         }
       }),
@@ -89,7 +90,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     this.webviews.forEach((webview) => void webview.postMessage(message));
   }
 
-  private message(): { type: "office"; scene: string; agents: AgentInput[]; you: PixelGuyLook | null } {
+  private message(): { type: "office"; scene: string; agents: AgentInput[]; you: PixelGuyLook | null; critters: boolean } {
     const agents: AgentInput[] = [];
     const seen = new Set<string>();
     const showSleepers = vscode.workspace.getConfiguration().get<boolean>(SLEEPERS_SETTING, true);
@@ -112,7 +113,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     }
     const configuration = vscode.workspace.getConfiguration();
     const you = configuration.get<boolean>(YOU_SETTING, true) ? yourLook(configuration.get<unknown>(YOUR_LOOK_SETTING)) : null;
-    return { type: "office", scene: currentScene(), agents, you };
+    return { type: "office", scene: currentScene(), agents, you, critters: configuration.get<boolean>(CRITTERS_SETTING, true) };
   }
 }
 

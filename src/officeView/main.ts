@@ -3,10 +3,12 @@
 // desk and act out the scene events ({ type: "sceneEvent" }) with your monitor; the room looks up too.
 
 import { buildOfficeLayout, Desk, desksNeeded, OFFICE_SCENES, officeShape, OfficeLayout, OfficeSceneId, officeSceneId, Point, Prop, Station, STATION_DESKS } from "../officeLayout";
-import { Agent, AgentInput, agentPose, callYouBack, createOffice, isAtStation, officeCounts, relayoutOffice, stepOffice, syncOffice, syncYou, youAgent } from "../officeSim";
+import { critterGap, critterLines, critterPoses, CritterRun, critterRunDone, planCritterRun } from "../officeCritters";
+import { Agent, AgentInput, agentPose, callYouBack, createOffice, isAtStation, officeCounts, reactToCritter, relayoutOffice, stepOffice, syncOffice, syncYou, youAgent } from "../officeSim";
 import { YourEvent, YourReaction, yourEventSeconds, yourReaction, roomReaction, YourScreen } from "../officeYou";
 import { Facing, FRAME_HEIGHT, FRAME_WIDTH, pixelGuyFrame, pixelGuyLook, PixelGuyLook, Pose } from "../pixelGuy";
 import { DEFENSE_BEATS, ERROR_BEAT_SECONDS, ERROR_FLASH_SECONDS, EVENT_SECONDS, SCENE_EVENT_KINDS, SceneEventKind } from "../sceneEventSchedule";
+import { drawCritter } from "./critters";
 import { drawLuckyCat } from "./luckyCat";
 import { SCENE_PALETTES, ScenePalette } from "./palettes";
 
@@ -17,6 +19,7 @@ interface OfficeMessage {
   scene: string;
   agents: AgentInput[];
   you: PixelGuyLook | null;
+  critters?: boolean;
 }
 
 interface SceneEventMessage {
@@ -52,6 +55,12 @@ let sceneEvent: (YourEvent & { start: number }) | undefined;
 let roomReactions: { id: string; text: string; at: number }[] = [];
 
 const random = Math.random;
+
+// The critter troupe crossing the room now, who has reacted to it, and when the next one starts.
+let crittersOn = true;
+let critterRun: CritterRun | undefined;
+let critterWatchers = new Set<string>();
+let nextCritterAt = 5;
 
 // Builds just enough room for the sessions (ten desks at least, more as sessions open), shaped to fit the view, then
 // zooms it as far as the view allows.
@@ -102,9 +111,12 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEve
     }
   }
   const nextScene = officeSceneId(data.scene);
+  crittersOn = data.critters !== false;
   if (nextScene !== sceneId) {
     sceneId = nextScene;
     sceneChanged = true;
+    critterRun = undefined;
+    nextCritterAt = state.time + 3;
     if (width > 0 && height > 0) {
       fitLayout();
     }
@@ -1226,6 +1238,10 @@ function draw(seconds: number): void {
     }
     layers.push({ depth: agent.y + 0.5, paint: () => nextBoxes.push(drawAgent(agent, seconds)) });
   });
+  const run = critterRun;
+  if (run !== undefined) {
+    layers.push({ depth: run.row + 0.6, paint: () => drawCritters(run, palette, seconds) });
+  }
   layers.sort((first, second) => first.depth - second.depth).forEach((layer) => layer.paint());
   boxes = nextBoxes;
 
@@ -1256,6 +1272,40 @@ function draw(seconds: number): void {
   statusLabel.textContent = state.agents.length === 0 ? "quiet" : countText.join(" · ");
 }
 
+// Starts a troupe when it's due, lets the guys it passes react, and clears it once it's gone.
+function stepCritters(): void {
+  const now = state.time;
+  if (critterRun !== undefined && (critterRunDone(critterRun, now) || !crittersOn)) {
+    critterRun = undefined;
+    nextCritterAt = now + critterGap(random);
+  }
+  if (critterRun === undefined) {
+    if (crittersOn && now >= nextCritterAt && width > 0) {
+      critterRun = planCritterRun(state.layout, sceneId, now, random, TILE);
+      critterWatchers = new Set();
+      if (critterRun === undefined) {
+        nextCritterAt = now + critterGap(random);
+      }
+    }
+    return;
+  }
+  for (const pose of critterPoses(critterRun, now)) {
+    const at = { x: pose.x / TILE - 0.5, y: pose.y / TILE - 0.9 };
+    reactToCritter(state, at, critterLines(pose.kind), critterWatchers, random).forEach((id) => critterWatchers.add(id));
+  }
+}
+
+function drawCritters(run: CritterRun, palette: ScenePalette, seconds: number): void {
+  const layout = state.layout;
+  context.save();
+  context.beginPath();
+  context.rect(0, 0, layout.cols * TILE, layout.rows * TILE);
+  context.clip();
+  const flies = run.row >= layout.rows;
+  critterPoses(run, seconds).forEach((pose) => drawCritter(rect, pose, run.groundY, flies ? undefined : palette.shadow));
+  context.restore();
+}
+
 let frameHandle = 0;
 let lastTime: number | undefined;
 function loop(now: number): void {
@@ -1264,6 +1314,7 @@ function loop(now: number): void {
   if (lastTime !== undefined) {
     stepOffice(state, seconds - lastTime, random);
     playRoomReactions();
+    stepCritters();
   }
   lastTime = seconds;
   if (width > 0 && height > 0) {

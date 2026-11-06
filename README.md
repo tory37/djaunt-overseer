@@ -106,6 +106,7 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - You're in the room too, at your own station in the middle: a double desk with two monitors. You type, lean back, and every so often take a break to wander, grab a coffee, or shoot the breeze with someone, idle or busy at their desk. When an event hits you run back to your desk and act out the ERROR, HACK, and DEFENSE scene events with the other views: your main monitor flashes red, rains green code, or runs the defense bar up to a shield, and the second one shows the error log, more code, or a radar sweep. You jump up, hack like mad, and cheer. The room's screens flash with it, and the others look up. A lucky cat clock waves from the back wall. `overseer.office.yourLook` sets your look (a blonde ponytail with a shaved side, blue eyes, a thick orange beard, a black muscle shirt, white shorts, and black flip flops by default); `overseer.office.you` takes you out.
 - Click a guy to open his session. Hover for its name.
 - **Switch Office Scene…** (the button on the view) picks the room: Office, Server Room, Forest, Field, Riverbed, Cave, or Moon.
+- Every 10-25 seconds a few critters for the scene run across the room: mice and a cat in the office, foxes, rabbits, squirrels, and hedgehogs in the forest, a hen and her chicks in the field, ducks, frogs, and turtles by the river, bats in the cave, and little aliens on the moon. Idle guys they pass stop to watch and say something.
 
 ### Session preview
 - A session with no terminal in this window opens in one reused **Session Preview** tab. Clicking another session replaces it.
@@ -190,6 +191,7 @@ VS Code's modern UI reads tab colors only from settings, so with an Overseer the
 | `overseer.office.portraits` | `true` | Show each session's pixel guy as its row icon, with its state as a badge. Off uses the `overseer.sessionIcons.*` codicons. |
 | `overseer.office.scene` | `office` | The Office view's room: `office`, `serverRoom`, `forest`, `field`, `riverbed`, `cave`, or `moon`. |
 | `overseer.office.sleepers` | `true` | Give suspended sessions a guy too, asleep at his desk. |
+| `overseer.office.critters` | `true` | Critters for the scene run across the Office now and then. |
 | `overseer.office.you` | `true` | Put you in the Office, at your own two-monitor station in the middle, reacting to the scene events. |
 | `overseer.office.yourLook` | `{}` | Your guy's look: `skin`, `hair`, `hairStyle`, `eyes`, `beard`, `shirt`, `sleeveless`, `pants`, `shorts`, `shoes`, `flipFlops`, `accessory`, `accessoryColor`. Leave a field out for the default. |
 | `overseer.views.office` | `true` | Show the Office view. |
