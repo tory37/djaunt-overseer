@@ -2,7 +2,7 @@
   "name": "djaunt-overseer",
   "displayName": "Overseer",
   "description": "Mission control for Claude CLI sessions: find, group, suspend, and resume them from any repo; track each one's PRs, tickets, and workstreams; and watch them work in a pixel office.",
-  "version": "0.0.51",
+  "version": "0.0.52",
   "publisher": "djaunt",
   "private": true,
   "license": "UNLICENSED",
