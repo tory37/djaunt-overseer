@@ -226,6 +226,86 @@ const SPRITES: Record<FlierKind, FlierSprite> = {
       ["..ppp..", ".ppppp.", "pplpspp", "ppppppp", ".p.p.p.", "..p.p.p", ".p..p.."],
     ],
   },
+  pelican: {
+    colors: { b: "#F0EEE8", d: "#A8A49C", w: "#E0DED6", k: "#141414", y: "#F0B030", p: "#E89A40" },
+    frames: bird(["...........bb...", "dd.bbbbbbbbbkyyy", ".dbbbbbbbbb..pp."], ["..dwwww.........", "....wwwwww......"], ["....wwwwww......", "..dwwww........."]),
+  },
+  parrot: {
+    colors: { r: "#D8302A", y: "#F0C030", b: "#2A6AD8", k: "#141414", g: "#3A3A3A", w: "#F4F4F4", t: "#2A6AD8" },
+    frames: bird(["........rrr.", "tt.rrrrrwkg.", ".ttrrrrrrg..", "..t........."], ["...yyb......", "....bbb....."], ["....bbb.....", "...yyb......"]),
+  },
+  kite: {
+    colors: { r: "#E8404A", y: "#F4C848", t: "#E8E8E8", b: "#4FC3F7" },
+    frames: [
+      ["......r..", ".....rry.", "....rrryy", ".....ryy.", "..b.t.y..", ".t.b.....", "t........"],
+      ["......r..", ".....rry.", "....rrryy", ".....ryy.", "...bt.y..", ".bt......", "........."],
+    ],
+  },
+  snowyOwl: {
+    colors: { b: "#F4F4F4", d: "#C8CCD4", w: "#E4E6EC", l: "#FFFFFF", e: "#F2C94C", k: "#141414", y: "#3A3A44" },
+    frames: bird(["........b.b", "dd.....bbbb", ".dbbbbbbeky", "..bbllllby.", "...bllll..."], ["..wdwd.....", "...wwwdw..."], ["...wwwdw...", "..wdwd....."]),
+  },
+  sleigh: {
+    colors: { r: "#D8302A", g: "#F0C030", s: "#8A6A4A", b: "#8A5A3A", d: "#5A3A22", n: "#FF3030", t: "#C8A060" },
+    frames: [
+      ["...................d.d", "......ss...........dd.", ".....ssss.........bbbn", ".r...ssss...bbbbbbbb..", ".rrrrrrrrtttbbbbbbbb..", "..rrrrrrr...bbbbbbb...", ".gggggggg...b.b..b.b..", "g...........b.b..b.b.."],
+      ["...................d.d", "......ss...........dd.", ".....ssss.........bbbn", ".r...ssss...bbbbbbbb..", ".rrrrrrrrtttbbbbbbbb..", "..rrrrrrr...bbbbbbb...", ".gggggggg..b...bb...b.", "g.........b.....bb...b"],
+    ],
+  },
+  vulture: {
+    colors: { b: "#3A2E2A", d: "#2A201C", w: "#4A3E38", p: "#E8B8A8", k: "#141414", y: "#D8C8A0" },
+    frames: bird(["............pp..", "dd.bbbbbbbbbbpky", ".ddbbbbbbbbb...."], [".wwwwww.........", "...wwwwwww......", "......www......."], ["......www.......", "...wwwwwww......", ".wwwwww........."]),
+  },
+  fish: {
+    colors: { o: "#F08C3A", w: "#FFFFFF", k: "#141414", t: "#E06A20" },
+    frames: [
+      ["t..ooo.", ".toowko", "t..ooo."],
+      ["...ooo.", "ttoowko", "...ooo."],
+    ],
+  },
+  jellyfish: {
+    colors: { p: "#B8A8F8", l: "#E8E0FF", s: "#FFFFFF" },
+    frames: [
+      ["..ppp..", ".ppppp.", "pplpspp", "ppppppp", ".p.p.p.", ".p.p.p.", "p..p..p"],
+      ["..ppp..", ".ppppp.", "pplpspp", "ppppppp", ".p.p.p.", "..p.p.p", ".p..p.."],
+    ],
+  },
+  shark: {
+    colors: { g: "#7A8898", l: "#D8DEE4", k: "#141414", d: "#5A6878" },
+    frames: [
+      ["...........d..........", "..........dd..........", "d........ddd..........", "dd...gggggggggggggg...", ".ddgggggggggggggggkgg.", "dd...glllllllllllllgg.", "d......d.......d......"],
+      ["...........d..........", "..........dd..........", ".........ddd..........", ".d...gggggggggggggg...", "dddgggggggggggggggkgg.", ".d...glllllllllllllgg.", ".......d.......d......"],
+    ],
+  },
+  manta: {
+    colors: { b: "#2E4A7A", w: "#3E5E94", l: "#E8ECF0", t: "#1E2E50", k: "#E8ECF0" },
+    frames: bird(["....bbbbbbbbbb..", "tttbbbbbbbbbbbkb", "....bllllllllb.."], ["....wwwwwww.....", ".....wwwwwwwww..", "......wwww......"], ["......wwww......", ".....wwwwwwwww..", "....wwwwwww....."]),
+  },
+  seaTurtle: {
+    colors: { g: "#4E8A5A", s: "#8A6A34", d: "#5A4220", k: "#141414" },
+    frames: bird(["....sdsdsd....", "...sdsdsdsdggg", "gg.sssssssggkg", "....gggggg...."], ["......gg......", ".....gg......."], [".....gg.......", "......gg......"]),
+  },
+  flyingBook: {
+    colors: { c: "#7A3A9A", p: "#F4EEDC", g: "#E8C048" },
+    frames: [
+      ["c.........c", ".pc.....cp.", "..ppc.cpp..", "....cgc...."],
+      ["...........", "...........", "cppppcppppc", ".ccccgcccc."],
+    ],
+  },
+  helicopter: {
+    colors: { b: "#D8302A", w: "#9ED8F5", k: "#2A2A2A", g: "#8A8E96" },
+    frames: [
+      [".kkkkkkkkkkkkk.", "........k......", "k.....bbbbbb...", "kbbbbbbbbbwwb..", "k.....bbbbbbbb.", "......g....g...", ".....gggggggg.."],
+      ["....kkkkkkk....", "........k......", "......bbbbbb...", "kbbbbbbbbbwwb..", "......bbbbbbbb.", "......g....g...", ".....gggggggg.."],
+    ],
+  },
+  blimp: {
+    colors: { g: "#C8CCD4", d: "#9AA0AA", r: "#D8302A", k: "#3A3A44", a: "#F8E060" },
+    frames: [
+      ["......gggggggggg......", "d..ggggggggggggggggg..", "dd.gggrrrrrrrrrrrgggg.", "ddggggggggggggggggggga", "dd.ggggggggggggggggg..", "d.....ddgggggggg......", "..........kkkk........"],
+      ["......gggggggggg......", "d..ggggggggggggggggg..", "dd.gggrrrrrrrrrrrgggg.", "ddggggggggggggggggggg.", "dd.ggggggggggggggggg..", "d.....ddgggggggg......", "..........kkkk........"],
+    ],
+  },
 };
 
 export function flierGlows(kind: FlierKind): boolean {

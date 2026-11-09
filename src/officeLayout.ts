@@ -2,7 +2,9 @@
 // at its left end. Desk blocks repeat down the room: a row of desks in pairs, the seats below them, then an aisle.
 // The bottom row holds the props (cooler, coffee, couch, plants), each with a tile to stand on above it.
 
-export type OfficeSceneId = "office" | "serverRoom" | "forest" | "field" | "riverbed" | "cave" | "moon";
+export type OfficeSceneId =
+  | "office" | "serverRoom" | "forest" | "field" | "riverbed" | "cave" | "moon"
+  | "beach" | "snowfield" | "desert" | "reef" | "library" | "rooftop";
 
 export const OFFICE_SCENES: readonly { id: OfficeSceneId; label: string }[] = [
   { id: "office", label: "Office" },
@@ -12,7 +14,19 @@ export const OFFICE_SCENES: readonly { id: OfficeSceneId; label: string }[] = [
   { id: "riverbed", label: "Riverbed" },
   { id: "cave", label: "Cave" },
   { id: "moon", label: "Moon" },
+  { id: "beach", label: "Beach" },
+  { id: "snowfield", label: "Snowfield" },
+  { id: "desert", label: "Desert" },
+  { id: "reef", label: "Reef" },
+  { id: "library", label: "Library" },
+  { id: "rooftop", label: "Rooftop" },
 ];
+
+// Scenes under the open sky, where some fliers keep day or night hours. The reef follows the sky's light but has no
+// hours under the water.
+export const OUTDOOR_SCENES: ReadonlySet<OfficeSceneId> = new Set<OfficeSceneId>([
+  "forest", "field", "riverbed", "moon", "beach", "snowfield", "desert", "rooftop",
+]);
 
 export function officeSceneId(value: unknown): OfficeSceneId {
   return OFFICE_SCENES.some((scene) => scene.id === value) ? (value as OfficeSceneId) : "office";
@@ -26,10 +40,18 @@ export type PropKind =
   | "hay" | "well" | "flowers" | "scarecrow"
   | "reeds" | "spring" | "boulder"
   | "stalagmite" | "crystal"
-  | "moonRock" | "oxygen" | "dish" | "flag";
+  | "moonRock" | "oxygen" | "dish" | "flag"
+  | "palm" | "tiki" | "umbrella" | "sandcastle"
+  | "snowPine" | "cocoa" | "snowman" | "igloo"
+  | "cactus" | "oasis" | "skull" | "urn"
+  | "kelp" | "vent" | "coral" | "chest"
+  | "cauldron" | "globe" | "candelabra"
+  | "ac" | "grill" | "antenna";
 
 // Props a guy drinks from. Every scene has one, and the layout never skips them.
-export const DRINK_PROPS: ReadonlySet<PropKind> = new Set<PropKind>(["cooler", "coffee", "vending", "campfire", "well", "spring", "oxygen"]);
+export const DRINK_PROPS: ReadonlySet<PropKind> = new Set<PropKind>([
+  "cooler", "coffee", "vending", "campfire", "well", "spring", "oxygen", "tiki", "cocoa", "oasis", "vent", "cauldron",
+]);
 
 export interface Point {
   x: number;
@@ -84,6 +106,12 @@ const SCENE_PROPS: Record<OfficeSceneId, { corner: PropKind; middle: PropKind[] 
   riverbed: { corner: "reeds", middle: ["spring", "boulder", "couch", "reeds", "boulder"] },
   cave: { corner: "stalagmite", middle: ["campfire", "crystal", "couch", "mushroom", "stalagmite"] },
   moon: { corner: "moonRock", middle: ["oxygen", "dish", "couch", "flag", "moonRock"] },
+  beach: { corner: "palm", middle: ["tiki", "umbrella", "couch", "sandcastle", "palm"] },
+  snowfield: { corner: "snowPine", middle: ["cocoa", "snowman", "couch", "igloo", "snowPine"] },
+  desert: { corner: "cactus", middle: ["oasis", "skull", "couch", "urn", "cactus"] },
+  reef: { corner: "kelp", middle: ["vent", "coral", "couch", "chest", "kelp"] },
+  library: { corner: "shelf", middle: ["cauldron", "globe", "couch", "candelabra", "shelf"] },
+  rooftop: { corner: "ac", middle: ["cooler", "grill", "couch", "antenna", "plant"] },
 };
 
 export function buildOfficeLayout(requestedCols: number, requestedRows: number, sceneId: OfficeSceneId, withStation = false): OfficeLayout {

@@ -54,6 +54,16 @@ describe("officeDaylight", () => {
     expect(sceneLight("field", DAYTIME_SKY).darkness).toBe(0);
   });
 
+  it("keeps the reef a little dim by day and deep blue at night, and the library mostly lamplit", () => {
+    const noon = skyAt(12, 172, 40, 0.5);
+    const midnight = skyAt(0, 172, 40, 0.5);
+    expect(sceneLight("reef", noon).darkness).toBeGreaterThan(0.1);
+    expect(sceneLight("reef", noon).stars).toBe(0);
+    expect(sceneLight("reef", midnight).darkness).toBeGreaterThan(sceneLight("reef", noon).darkness + 0.4);
+    expect(sceneLight("library", midnight).darkness).toBeLessThan(sceneLight("beach", midnight).darkness / 2);
+    expect(sceneLight("snowfield", midnight).stars).toBeGreaterThan(0.5);
+  });
+
   it("runs a month-long day on the moon, lit by the Earth at night", () => {
     expect(lunarSunElevation(0.5)).toBeCloseTo(90, 5);
     expect(lunarSunElevation(0)).toBeCloseTo(-90, 5);
