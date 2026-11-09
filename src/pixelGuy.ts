@@ -2,7 +2,7 @@
 // accessory, so the same session always gets the same guy. Frames are small grids of colors that the Office view
 // draws, and the portrait is an SVG for the session row with a state badge in its corner.
 
-import { Canvas, HEAD_ROOM, INNER_HEIGHT, INNER_WIDTH, mixHex, PaletteKey, shadeHex } from "./pixelCanvas";
+import { Canvas, HEAD_ROOM, isStepping, INNER_HEIGHT, INNER_WIDTH, mixHex, PaletteKey, shadeHex } from "./pixelCanvas";
 import { isRaceId, pickedRace, RACE_IDS, RaceId, RaceSide, raceSpec, RaceSpec, seedWithoutRace } from "./pixelRaces";
 
 export { HEAD_ROOM, mixHex, shadeHex };
@@ -12,7 +12,8 @@ export type HairStyle = "short" | "long" | "spiky" | "bob" | "bald" | "mohawk" |
 // The full beard is only for your own guy, like the ponytail.
 export type Accessory = "none" | "glasses" | "headphones" | "cap" | "beard" | "fullBeard";
 export type Facing = "down" | "up" | "left" | "right";
-export type Pose = "stand" | "walk" | "type" | "sit" | "stretch" | "drink" | "talk" | "sleep";
+// Carry walks with both arms up, holding something overhead; build stands working at something in front of him.
+export type Pose = "stand" | "walk" | "type" | "sit" | "stretch" | "drink" | "talk" | "sleep" | "carry" | "build";
 
 export interface PixelGuyLook {
   skin: string;
@@ -44,7 +45,7 @@ export const FRAME_WIDTH = INNER_WIDTH + 2;
 export const FRAME_HEIGHT = INNER_HEIGHT + 2;
 // Walk frames loop over four steps; type and talk over two.
 // Sleep breathes: the head sinks a pixel on the second frame.
-export const POSE_FRAMES: Record<Pose, number> = { stand: 1, walk: 4, type: 2, sit: 1, stretch: 1, drink: 1, talk: 2, sleep: 2 };
+export const POSE_FRAMES: Record<Pose, number> = { stand: 1, walk: 4, type: 2, sit: 1, stretch: 1, drink: 1, talk: 2, sleep: 2, carry: 4, build: 2 };
 
 const SKINS = ["#F9D4B4", "#EDB98A", "#D08B5B", "#AE5D29", "#8D4A28", "#614335"];
 const HAIRS = ["#2C1B12", "#5A3825", "#A0522D", "#D9A441", "#E8D9A0", "#B8B8B8", "#E2504B", "#7C5CE0", "#3FA7D6", "#2E2E2E"];
@@ -299,8 +300,8 @@ function drawFrontLegs(canvas: Canvas, pose: Pose, step: number): void {
     canvas.rect(6, 14, 2, 1, "shoes");
     return;
   }
-  const leftUp = pose === "walk" && step === 1;
-  const rightUp = pose === "walk" && step === 3;
+  const leftUp = isStepping(pose) && step === 1;
+  const rightUp = isStepping(pose) && step === 3;
   canvas.rect(3, 13, 2, leftUp ? 1 : 2, "pants");
   canvas.rect(5, 13, 2, rightUp ? 1 : 2, "pantsShade");
   canvas.rect(2, leftUp ? 14 : 15, 3, 1, "shoes");
@@ -308,7 +309,15 @@ function drawFrontLegs(canvas: Canvas, pose: Pose, step: number): void {
 }
 
 function drawFrontArms(canvas: Canvas, pose: Pose, step: number, isBack: boolean): void {
-  if (pose === "stretch") {
+  if (pose === "build") {
+    // Hands out in front, working, one up at a time.
+    canvas.rect(1, 7, 1, 2, "sleeve");
+    canvas.rect(8, 7, 1, 2, "sleeve");
+    canvas.set(isBack ? 1 : 2, step === 0 ? 8 : 9, "skin");
+    canvas.set(isBack ? 8 : 7, step === 1 ? 8 : 9, "skin");
+    return;
+  }
+  if (pose === "stretch" || pose === "carry") {
     canvas.rect(1, 2, 1, 6, "sleeve");
     canvas.rect(8, 2, 1, 6, "sleeve");
     canvas.set(1, 1, "skin");
@@ -513,7 +522,7 @@ function drawSide(look: PixelGuyLook, race: RaceSpec, pose: Pose, step: number):
 }
 
 function drawSideLegs(canvas: Canvas, pose: Pose, step: number): void {
-  if (pose === "walk" && (step === 1 || step === 3)) {
+  if (isStepping(pose) && (step === 1 || step === 3)) {
     // Mid-stride: one leg forward, one back.
     canvas.rect(5, 13, 2, 2, step === 1 ? "pants" : "pantsShade");
     canvas.rect(3, 13, 2, 2, step === 1 ? "pantsShade" : "pants");
@@ -526,6 +535,17 @@ function drawSideLegs(canvas: Canvas, pose: Pose, step: number): void {
 }
 
 function drawSideArm(canvas: Canvas, pose: Pose, step: number): void {
+  if (pose === "carry") {
+    canvas.rect(5, 2, 1, 6, "sleeveShade");
+    canvas.set(5, 1, "skin");
+    return;
+  }
+  if (pose === "build") {
+    canvas.rect(4, 7, 2, 1, "sleeveShade");
+    canvas.rect(6, 8, 2, 1, "sleeveShade");
+    canvas.set(8, step === 0 ? 8 : 9, "skin");
+    return;
+  }
   const reach = pose === "walk" ? (step === 1 ? 1 : step === 3 ? -1 : 0) : 0;
   canvas.rect(4, 7, 2, 3, "sleeveShade");
   canvas.set(4 + Math.max(0, reach) + (reach < 0 ? -1 : 0), 10, "sleeveShade");

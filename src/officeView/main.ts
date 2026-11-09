@@ -12,6 +12,7 @@ import {
 import { personalityOf, planVisit, VisitorFrequency, visitorFrequency, VisitorKind, visitorGap, visitorReaction, visitorSmallTalk } from "../officeVisitors";
 import { YourEvent, YourReaction, yourEventSeconds, yourReaction, roomReaction, YourScreen } from "../officeYou";
 import { Facing, FRAME_HEIGHT, FRAME_WIDTH, HEAD_ROOM, pixelGuyFrame, pixelGuyLook, PixelGuyLook, Pose } from "../pixelGuy";
+import { DeskStyle, deskStyleFor } from "../deskStyles";
 import { DEFENSE_BEATS, ERROR_BEAT_SECONDS, ERROR_FLASH_SECONDS, EVENT_SECONDS, SCENE_EVENT_KINDS, SceneEventKind } from "../sceneEventSchedule";
 import { drawCritter } from "./critters";
 import { drawLuckyCat } from "./luckyCat";
@@ -284,7 +285,7 @@ function stepVisitors(): void {
 
 function answerVisitor(visitor: Agent, kind: VisitorKind, wholeRoom: boolean): void {
   for (const agent of state.agents) {
-    if (agent === visitor || agent.leaving || agent.bubble !== undefined) {
+    if (agent === visitor || agent.leaving || agent.bubble !== undefined || agent.crew !== undefined) {
       continue;
     }
     if (!wholeRoom && Math.hypot(agent.x - visitor.x, agent.y - visitor.y) > REMARK_REACH) {
@@ -315,6 +316,25 @@ function currentEvent(): YourEvent | undefined {
 // ----- Sprites -----
 
 const lookCache = new Map<string, PixelGuyLook>();
+
+// The maintenance crew's uniform: hi-vis orange, work pants, and a yellow cap.
+const CREW_UNIFORM: Partial<PixelGuyLook> = { shirt: "#F28C28", pants: "#2F3E55", shoes: "#3A2B26", accessory: "cap", accessoryColor: "#E8B931" };
+
+function lookOf(seed: string): PixelGuyLook {
+  let look = lookCache.get(seed);
+  if (look === undefined) {
+    look = pixelGuyLook(seed, racesOn);
+    if (seed.startsWith("crew|")) {
+      look = { ...look, ...CREW_UNIFORM };
+    }
+    lookCache.set(seed, look);
+  }
+  return look;
+}
+
+function deskStyleOf(seed: string | undefined): DeskStyle {
+  return deskStyleFor(seed === undefined ? undefined : lookOf(seed).race);
+}
 const spriteCache = new Map<string, HTMLCanvasElement>();
 
 function sprite(seed: string, pose: Pose, facing: Facing, frame: number): HTMLCanvasElement {
@@ -323,11 +343,7 @@ function sprite(seed: string, pose: Pose, facing: Facing, frame: number): HTMLCa
   if (cached !== undefined) {
     return cached;
   }
-  let look = lookCache.get(seed);
-  if (look === undefined) {
-    look = pixelGuyLook(seed, racesOn);
-    lookCache.set(seed, look);
-  }
+  const look = lookOf(seed);
   const image = document.createElement("canvas");
   image.width = FRAME_WIDTH;
   image.height = FRAME_HEIGHT;
@@ -755,7 +771,7 @@ function eventCodeColor(event: YourEvent | undefined): string | undefined {
   return event.age >= EVENT_SECONDS.defense ? undefined : ["#FF5A4F", "#F1C24B", "#F1C24B", "#4FC3F7"][beat];
 }
 
-function drawDesk(desk: Desk, owner: Agent | undefined, palette: ScenePalette, seconds: number, index: number, eventColor: string | undefined): void {
+function drawDesk(desk: Desk, owner: Agent | undefined, palette: ScenePalette, seconds: number, index: number, eventColor: string | undefined, style: DeskStyle): void {
   const left = desk.desk.x * TILE;
   const top = desk.desk.y * TILE;
   // Monitor, facing the seat below.
@@ -775,16 +791,132 @@ function drawDesk(desk: Desk, owner: Agent | undefined, palette: ScenePalette, s
     rect(left + 5 + bounce, top + 3 + (bounce % 2), 1, 1, palette.code[0]);
   }
   rect(left + 7, top + 8, 2, 1, palette.monitor);
-  // Desk top and front.
-  rect(left, top + 9, TILE, 3, palette.deskTop);
+  // Desk top and front, in its owner's race's style.
+  const deskTop = style.top ?? palette.deskTop;
+  const deskFront = style.front ?? palette.deskFront;
+  rect(left, top + 9, TILE, 3, deskTop);
   rect(left + 4, top + 10, 8, 1, palette.keyboard);
-  rect(left, top + 12, TILE, 4, palette.deskFront);
-  rect(left + 1, top + 12, 1, 4, palette.deskTop);
-  rect(left + TILE - 2, top + 12, 1, 4, palette.deskTop);
-  // A mug on some desks.
-  if (index % 3 === 1) {
-    rect(left + 13, top + 7, 2, 2, palette.mug);
+  rect(left, top + 12, TILE, 4, deskFront);
+  rect(left + 1, top + 12, 1, 4, deskTop);
+  rect(left + TILE - 2, top + 12, 1, 4, deskTop);
+  drawDeskDecor(left, top, style, palette, seconds, index);
+}
+
+// What makes each desk style its own, on top of its colors.
+function drawDeskDecor(left: number, top: number, style: DeskStyle, palette: ScenePalette, seconds: number, index: number): void {
+  const edge = style.edge ?? palette.deskFront;
+  const accent = style.accent ?? palette.mug;
+  switch (style.decor) {
+    case "mug":
+      if (index % 3 === 1) {
+        rect(left + 13, top + 7, 2, 2, palette.mug);
+      }
+      return;
+    case "planks":
+      // Crate slats and nail heads, and a cross brace.
+      rect(left, top + 14, TILE, 1, edge);
+      [3, 12].forEach((x) => rect(left + x, top + 12, 1, 1, accent));
+      [3, 12].forEach((x) => rect(left + x, top + 15, 1, 1, accent));
+      rect(left + 6, top + 12, 1, 1, edge);
+      rect(left + 9, top + 15, 1, 1, edge);
+      return;
+    case "hammer":
+      rect(left + 12, top + 9, 1, 3, edge);
+      rect(left + 11, top + 8, 3, 1, accent);
+      rect(left + 2, top + 12, 3, 2, accent);
+      return;
+    case "leaves":
+      // Bark grain down the front, and leaves sprouting from the corners.
+      [4, 8, 11].forEach((x) => rect(left + x, top + 12, 1, 4, edge));
+      rect(left, top + 8, 2, 1, accent);
+      rect(left + 1, top + 7, 1, 1, accent);
+      rect(left + TILE - 2, top + 8, 2, 1, accent);
+      rect(left + 14, top + 13, 1, 1, "#F28FB8");
+      return;
+    case "candle": {
+      rect(left + 1, top + 12, TILE - 2, 1, edge);
+      rect(left + 13, top + 5, 2, 4, "#EDE6D8");
+      const flicker = Math.floor(seconds * 8 + index) % 3;
+      rect(left + 13 + (flicker === 2 ? 1 : 0), top + 3, 1, 2, accent);
+      rect(left + 13, top + 4, 2, 1, flicker === 0 ? "#FFE48A" : accent);
+      return;
+    }
+    case "glowStrip": {
+      // Rounded corners and a glow strip that pulses.
+      rect(left, top + 15, 1, 1, palette.floor);
+      rect(left + TILE - 1, top + 15, 1, 1, palette.floor);
+      const pulse = 0.55 + Math.sin(seconds * 2 + index) * 0.3;
+      context.globalAlpha = pulse;
+      rect(left + 2, top + 13, TILE - 4, 1, accent);
+      context.globalAlpha = 1;
+      return;
+    }
+    case "led": {
+      const lit = Math.floor(seconds * 3 + index) % (TILE - 4);
+      rect(left + 2, top + 13, TILE - 4, 1, edge);
+      rect(left + 2 + lit, top + 13, 2, 1, accent);
+      return;
+    }
+    case "shell":
+      // A coral branch up one side and a shell on top.
+      rect(left + 1, top + 4, 1, 5, accent);
+      rect(left, top + 5, 1, 1, accent);
+      rect(left + 2, top + 6, 1, 1, accent);
+      rect(left + 12, top + 7, 3, 2, "#F7EEDF");
+      rect(left + 13, top + 7, 1, 1, edge);
+      return;
+    case "rune": {
+      const glow = 0.5 + Math.sin(seconds * 1.5 + index) * 0.4;
+      context.globalAlpha = glow;
+      rect(left + 7, top + 12, 2, 1, accent);
+      rect(left + 7, top + 13, 1, 2, accent);
+      rect(left + 8, top + 14, 1, 1, accent);
+      context.globalAlpha = 1;
+      rect(left + 3, top + 14, 1, 1, edge);
+      rect(left + 12, top + 13, 1, 1, edge);
+      return;
+    }
+    case "coins":
+      // A pile of gold on the desk, and a couple spilled.
+      rect(left + 11, top + 7, 4, 2, accent);
+      rect(left + 12, top + 6, 2, 1, accent);
+      rect(left + 12, top + 7, 1, 1, "#FFF0A0");
+      rect(left + 2, top + 8, 1, 1, accent);
+      context.globalAlpha = (Math.floor(seconds * 2 + index) % 5 === 0) ? 1 : 0;
+      rect(left + 13, top + 6, 1, 1, "#FFFFFF");
+      context.globalAlpha = 1;
+      return;
+    case "yarn":
+      rect(left + 12, top + 7, 3, 2, accent);
+      rect(left + 13, top + 7, 1, 1, "#FF8A80");
+      rect(left + 11, top + 9, 1, 1, accent);
+      rect(left + 10, top + 10, 1, 1, accent);
+      return;
+    case "egg":
+      // Twigs woven across the front, and an egg on top.
+      [12, 14].forEach((y) => rect(left + 1, top + y, TILE - 2, 1, edge));
+      rect(left + 12, top + 6, 2, 3, accent);
+      rect(left + 13, top + 7, 1, 1, "#C9BFAE");
+      return;
   }
+}
+
+// A desk or chair held up overhead by the crew, in the desk's style.
+function drawCarried(box: AgentBox, style: DeskStyle | undefined, bob: number, palette: ScenePalette): void {
+  const left = box.left - 1;
+  const top = box.top - HEAD_ROOM - 5 + bob;
+  if (style === undefined) {
+    // The chair: a seat and its back.
+    rect(left + 4, top + 1, 6, 2, palette.chair);
+    rect(left + 4, top - 2, 1, 3, palette.chair);
+    rect(left + 5, top + 3, 1, 1, "#000");
+    rect(left + 8, top + 3, 1, 1, "#000");
+    return;
+  }
+  rect(left, top, 14, 2, style.top ?? palette.deskTop);
+  rect(left, top + 2, 14, 2, style.front ?? palette.deskFront);
+  rect(left + 1, top + 4, 1, 1, style.front ?? palette.deskFront);
+  rect(left + 12, top + 4, 1, 1, style.front ?? palette.deskFront);
 }
 
 // Your second monitor's graph follows Core's tint, like the Djaunt view: the same spectrum, in the same order (the
@@ -1344,6 +1476,12 @@ function drawAgent(agent: Agent, seconds: number): AgentBox {
   context.globalAlpha = agent.leaving && agent.visitor === undefined ? 0.7 : 1;
   context.drawImage(sprite(agent.seed, pose.pose, pose.facing, pose.frame), box.left, box.top + bob - HEAD_ROOM);
   context.globalAlpha = 1;
+  const crew = agent.crew;
+  // Setting a desk down, it's drawn at its spot instead.
+  const settingDown = crew?.phase === "build" && crew.job?.kind === "deliver";
+  if (crew !== undefined && (crew.carrying !== undefined || crew.chair) && !settingDown) {
+    drawCarried(box, crew.carrying === undefined ? undefined : deskStyleOf(crew.carrying), bob, SCENE_PALETTES[sceneId]);
+  }
   return box;
 }
 
@@ -1559,10 +1697,25 @@ function draw(seconds: number): void {
     }
   });
   const layers: { depth: number; paint: () => void }[] = [];
-  layout.desks.forEach((desk, index) => {
-    layers.push({ depth: desk.desk.y + 0.4, paint: () => drawDesk(desk, owners.get(index), palette, seconds, index, eventColor) });
+  // Only the desks the crew has brought in.
+  state.placed.forEach((seed, index) => {
+    const desk = layout.desks[index];
+    if (desk === undefined) {
+      return;
+    }
+    const style = deskStyleOf(seed);
+    layers.push({ depth: desk.desk.y + 0.4, paint: () => drawDesk(desk, owners.get(index), palette, seconds, index, eventColor, style) });
     layers.push({ depth: desk.seat.y + 0.7, paint: () => drawChairBack(desk.seat, palette) });
   });
+  // A desk the crew is setting down shows at its spot, screen dark, while they work on it.
+  for (const member of state.agents) {
+    const job = member.crew?.job;
+    const desk = job === undefined ? undefined : layout.desks[job.deskIndex];
+    if (member.crew?.phase === "build" && job?.kind === "deliver" && desk !== undefined) {
+      const style = deskStyleOf(job.seed);
+      layers.push({ depth: desk.desk.y + 0.4, paint: () => drawDesk(desk, undefined, palette, seconds, job.deskIndex, eventColor, style) });
+    }
+  }
   layout.props.forEach((prop, index) => {
     layers.push({ depth: prop.at.y + (prop.kind === "couch" ? 0.3 : 0.8), paint: () => drawProp(prop, palette, seconds, index) });
     if (prop.kind === "couch") {
@@ -1657,6 +1810,9 @@ function drawLighting(layout: OfficeLayout, owners: Map<number, Agent>, stationO
     map.fillRect(x - radius, y - radius, radius * 2, radius * 2);
   };
   layout.desks.forEach((desk, index) => {
+    if (!state.placed.has(index)) {
+      return;
+    }
     const owner = owners.get(index);
     const typing = owner !== undefined && owner.mode === "type" && owner.path.length === 0;
     const present = owner !== undefined && !owner.leaving && owner.status !== "asleep";
@@ -1824,7 +1980,7 @@ canvas.addEventListener("mousemove", (event) => {
   const agent = hit?.you ? undefined : hit;
   hoveredId = agent?.id;
   youHovered = hit?.you === true || (agent === undefined && isOverYou(event.clientX, event.clientY));
-  canvas.style.cursor = agent === undefined || agent.visitor !== undefined ? "default" : "pointer";
+  canvas.style.cursor = agent === undefined || agent.visitor !== undefined || agent.crew !== undefined ? "default" : "pointer";
   if (youHovered) {
     tooltip.hidden = false;
     tooltip.textContent = sceneEvent !== undefined ? `you · ${sceneEvent.kind}!` : hit?.you ? "you · on break" : "you · on watch";
@@ -1839,6 +1995,10 @@ canvas.addEventListener("mousemove", (event) => {
     tooltip.textContent = `${agent.title} · visiting`;
     return;
   }
+  if (agent.crew !== undefined) {
+    tooltip.textContent = `${agent.title} · ${agent.crew.carrying !== undefined ? "carrying a desk" : agent.crew.phase === "build" ? "on a desk" : "on the job"}`;
+    return;
+  }
   tooltip.textContent = `${agent.title}${agent.id === focusedId ? " · selected" : ""} · ${agent.status === "asleep" ? "suspended" : agent.status}`;
 });
 
@@ -1850,7 +2010,7 @@ canvas.addEventListener("mouseleave", () => {
 
 canvas.addEventListener("click", (event) => {
   const agent = agentAt(event.clientX, event.clientY);
-  if (agent !== undefined && !agent.you && agent.visitor === undefined) {
+  if (agent !== undefined && !agent.you && agent.visitor === undefined && agent.crew === undefined) {
     vscode.postMessage({ type: "open", sessionId: agent.id });
   }
 });

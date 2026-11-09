@@ -3,7 +3,7 @@
 // drawn: horns, ears, tusks, snouts, tails, wings, and for a few a new lower body.
 
 import type { Accessory, HairStyle, Pose } from "./pixelGuy";
-import { Canvas, PaletteKey } from "./pixelCanvas";
+import { Canvas, isStepping, PaletteKey } from "./pixelCanvas";
 
 export const RACE_IDS = [
   "human", "orc", "goblin", "elf", "darkElf", "dwarf", "greyAlien", "greenAlien", "demon", "vampire", "zombie",
@@ -72,7 +72,7 @@ function points(canvas: Canvas, list: readonly (readonly [number, number])[], ke
 
 // Walking sways a tail or a coil one pixel each way.
 function sway(view: RaceView): number {
-  return view.pose === "walk" ? (view.step === 1 ? -1 : view.step === 3 ? 1 : 0) : 0;
+  return isStepping(view.pose) ? (view.step === 1 ? -1 : view.step === 3 ? 1 : 0) : 0;
 }
 
 function clearLegs(canvas: Canvas, fromY = 13): void {
@@ -204,8 +204,8 @@ function centaurBody(canvas: Canvas, view: RaceView): void {
     canvas.rect(1, 13, 8, 1, "markA");
     both(canvas, [[1, 14], [2, 14], [3, 14]], "markB");
   } else {
-    const leftUp = view.pose === "walk" && view.step === 1;
-    const rightUp = view.pose === "walk" && view.step === 3;
+    const leftUp = isStepping(view.pose) && view.step === 1;
+    const rightUp = isStepping(view.pose) && view.step === 3;
     canvas.rect(2, 14, 2, leftUp ? 0 : 1, "markA");
     canvas.rect(6, 14, 2, rightUp ? 0 : 1, "markA");
     canvas.rect(2, leftUp ? 14 : 15, 2, 1, "markB");
@@ -264,7 +264,7 @@ function satyrLegs(canvas: Canvas, view: RaceView): void {
   canvas.recolor("pantsShade", "markAShade", 13);
   canvas.recolor("skin", "markA", 13, 14);
   canvas.recolor("shoes", "markB");
-  if (view.side === "side" && !view.seated && view.pose !== "walk") {
+  if (view.side === "side" && !view.seated && !isStepping(view.pose)) {
     // The hock bends back.
     clearLegs(canvas, 13);
     canvas.rect(4, 13, 2, 1, "markA");
@@ -297,7 +297,7 @@ function sheet(canvas: Canvas, view: RaceView): void {
 }
 
 function blob(canvas: Canvas, view: RaceView): void {
-  const squish = view.pose === "walk" && view.step % 2 === 1;
+  const squish = isStepping(view.pose) && view.step % 2 === 1;
   clearLegs(canvas, 13);
   canvas.rect(1, 13, 8, 1, "skin");
   canvas.rect(squish ? 1 : 0, 14, squish ? 8 : 10, 1, "skin");

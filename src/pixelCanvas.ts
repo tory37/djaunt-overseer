@@ -15,6 +15,11 @@ export const BODY_HEIGHT = 16;
 export const HEAD_ROOM = 2;
 export const INNER_HEIGHT = BODY_HEIGHT + HEAD_ROOM;
 
+// Poses whose legs step: walking, and walking with something held overhead.
+export function isStepping(pose: string): boolean {
+  return pose === "walk" || pose === "carry";
+}
+
 export class Canvas {
   readonly cells: (PaletteKey | null)[][] = Array.from({ length: INNER_HEIGHT }, () => Array<PaletteKey | null>(INNER_WIDTH).fill(null));
 
