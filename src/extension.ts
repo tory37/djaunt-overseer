@@ -8,6 +8,7 @@ import { LiveSessionMonitor } from "./liveSessions";
 import { defaultClaudeHome } from "./paths";
 import { Registry } from "./registry";
 import { SessionIndex } from "./sessionIndex";
+import { JIRA_PANEL_VIEW_ID, JiraPanelProvider, registerJiraPanelCommands } from "./jiraPanel";
 import { JiraService } from "./jiraService";
 import { LinkStatusService } from "./linkStatusService";
 import { SessionAnalyzer } from "./sessionAnalyzer";
@@ -208,6 +209,7 @@ export function activate(context: vscode.ExtensionContext): void {
     refreshTree();
     SettingsPanel.notifyConfigChanged();
   });
+  const jiraPanelProvider = new JiraPanelProvider(context.extensionUri, jiraService);
   const indexRefreshTimer = setInterval(() => void sessionIndex.refresh(), INDEX_REFRESH_INTERVAL_MS);
 
   context.subscriptions.push(
@@ -268,6 +270,9 @@ export function activate(context: vscode.ExtensionContext): void {
       webviewOptions: { retainContextWhenHidden: true },
     }),
     ...registerOfficeCommands(registry),
+    jiraPanelProvider,
+    vscode.window.registerWebviewViewProvider(JIRA_PANEL_VIEW_ID, jiraPanelProvider),
+    ...registerJiraPanelCommands(jiraPanelProvider),
     sessionIndex.onDidChange(() => officePanelProvider.refreshTitles()),
     compactMonitor.onDidChange(refreshTree),
     sessionAnalyzer.onDidChangeTitles(() => {

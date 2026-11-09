@@ -16,7 +16,8 @@ export interface JiraSearchPage {
   nextPageToken?: string;
 }
 
-export const DEFAULT_QUERY_FIELDS = ["key", "summary", "status", "assignee", "updated"];
+export const DEFAULT_QUERY_FIELDS = ["key", "summary", "status", "updated", "assignee", "priority", "sprint", "fixVersions"];
+export const SPRINT_FIELD = "sprint";
 export const DEFAULT_INTERVAL_MINUTES = 5;
 export const MIN_INTERVAL_MINUTES = 1;
 export const MAX_ISSUES_PER_QUERY = 100;
@@ -24,6 +25,10 @@ const SEARCH_PAGE_LIMIT = 50;
 const FALLBACK_SEARCH_FIELD = "summary";
 // The search always returns these, so asking for them is redundant.
 const ALWAYS_RETURNED_FIELDS = new Set(["key", "url"]);
+const SPRINT_FIELD_DISPLAY_NAME = "sprint";
+const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+// Jira sends offsets as -0500; Date.parse wants -05:00.
+const COMPACT_OFFSET_PATTERN = /([+-]\d{2})(\d{2})$/;
 
 export const DEFAULT_JIRA_QUERIES: Array<Pick<JiraQuery, "name" | "jql">> = [
   { name: "Blocked", jql: 'assignee = currentUser() AND status = "Blocked"' },
@@ -55,14 +60,48 @@ export function readJiraQueries(raw: unknown): JiraQuery[] {
   });
 }
 
-export function searchArgs(jql: string, fields: string[], pageToken?: string): Record<string, unknown> {
-  const requestedFields = fields.filter((field) => !ALWAYS_RETURNED_FIELDS.has(field));
+// A field in `fieldIds` is sent as its id: the search leaves `sprint` empty unless asked for the instance's Sprint custom field.
+export function searchArgs(
+  jql: string,
+  fields: string[],
+  pageToken?: string,
+  fieldIds: Record<string, string> = {},
+): Record<string, unknown> {
+  const requestedFields = fields.filter((field) => !ALWAYS_RETURNED_FIELDS.has(field)).map((field) => fieldIds[field] ?? field);
   const fieldList = requestedFields.length > 0 ? requestedFields.join(",") : FALLBACK_SEARCH_FIELD;
   const args: Record<string, unknown> = { action: "search", jql, fields: fieldList, limit: SEARCH_PAGE_LIMIT, response_format: "json" };
   if (pageToken !== undefined) {
     args.next_page_token = pageToken;
   }
   return args;
+}
+
+export function getFieldsArgs(searchTerm: string): Record<string, unknown> {
+  return { action: "get_fields", search_term: searchTerm };
+}
+
+export function currentUserArgs(): Record<string, unknown> {
+  return { action: "get_current_user" };
+}
+
+// The instance's Sprint custom field id, from a `jira_metadata get_fields` envelope.
+export function parseSprintFieldId(envelopeText: string): string | undefined {
+  const envelope = parseJsonObject(envelopeText);
+  if (envelope?.success !== true || !Array.isArray(envelope.data)) {
+    return undefined;
+  }
+  const sprintField = envelope.data.find(
+    (field) => isRecord(field) && typeof field.name === "string" && field.name.trim().toLowerCase() === SPRINT_FIELD_DISPLAY_NAME,
+  );
+  return isRecord(sprintField) ? nonEmptyString(sprintField.id) : undefined;
+}
+
+export function parseCurrentUserName(envelopeText: string): string | undefined {
+  const envelope = parseJsonObject(envelopeText);
+  if (envelope?.success !== true || !isRecord(envelope.data)) {
+    return undefined;
+  }
+  return nonEmptyString(envelope.data.displayName);
 }
 
 // Parses the Jira MCP server's `jira_issues search` envelope; entries without a key are left out.
@@ -94,8 +133,30 @@ export function cellText(issue: JiraIssueRow, field: string): string {
   if (field === "key") {
     return issue.key;
   }
+  return valueText(fieldValue(issue, field));
+}
+
+// One text per item of a list field, such as each fix version, with empty items left out.
+export function cellTexts(issue: JiraIssueRow, field: string): string[] {
+  if (field === "key") {
+    return [issue.key];
+  }
+  const value = fieldValue(issue, field);
+  const items = Array.isArray(value) ? value : [value];
+  return items.map(valueText).filter((text) => text !== "");
+}
+
+export function parseIsoTimestamp(text: string): number | undefined {
+  if (!ISO_TIMESTAMP_PATTERN.test(text)) {
+    return undefined;
+  }
+  const parsedMs = Date.parse(text.replace(COMPACT_OFFSET_PATTERN, "$1:$2"));
+  return Number.isNaN(parsedMs) ? undefined : parsedMs;
+}
+
+function fieldValue(issue: JiraIssueRow, field: string): unknown {
   const customFields = isRecord(issue.values.custom_fields) ? issue.values.custom_fields : {};
-  return valueText(issue.values[field] ?? customFields[field]);
+  return issue.values[field] ?? customFields[field];
 }
 
 function valueText(value: unknown): string {
