@@ -15,6 +15,9 @@ import {
 } from "../officePerformances";
 import { personalityOf, planVisit, VisitorFrequency, visitorFrequency, VisitorKind, visitorGap, visitorReaction, visitorSmallTalk } from "../officeVisitors";
 import { YourEvent, YourReaction, yourEventSeconds, yourReaction, roomReaction, YourScreen } from "../officeYou";
+import {
+  bubbleAlpha, bubbleLimit, ChatLine, ChatLogEntry, ChatPriority, ChatterStyle, chatterStyle, layoutChatter, pushChatLog, showsChatLog, talkFactor, talkFrequency, visibleChatLog,
+} from "../officeChatter";
 import { Facing, FRAME_HEIGHT, FRAME_WIDTH, HEAD_ROOM, pixelGuyFrame, pixelGuyLook, PixelGuyLook, Pose } from "../pixelGuy";
 import { DeskStyle, deskStyleFor } from "../deskStyles";
 import { DEFENSE_BEATS, ERROR_BEAT_SECONDS, ERROR_FLASH_SECONDS, EVENT_SECONDS, SCENE_EVENT_KINDS, SceneEventKind } from "../sceneEventSchedule";
@@ -37,6 +40,8 @@ interface OfficeMessage {
   dayNight?: boolean;
   visitors?: unknown;
   performances?: unknown;
+  chatter?: unknown;
+  talk?: unknown;
   // False makes every guy human.
   races?: boolean;
   // The session the Session sidebar shows: his guy wears a crown.
@@ -102,6 +107,12 @@ let nextVisitorAt = visitorGap(Math.random, "normal", true);
 const REMARK_REACH = 4;
 
 // Shows: how often they come, when the next one does, and the notes, confetti, and sparkles in the air.
+let chatterSetting: ChatterStyle = "tidy";
+// The chat log's lines, and the strip it keeps above the room for the status readout and them.
+const LOG_LINE = 16;
+const LOG_LINES = 3;
+// Room for the status readout and three log lines.
+const LOG_RESERVE = 20 + LOG_LINES * LOG_LINE + 6;
 let performancesSetting: PerformanceFrequency = "normal";
 let nextShowAt = performanceGap(Math.random, "normal", true);
 let showCount = 0;
@@ -143,14 +154,16 @@ function currentSky(): SkyState {
 // zooms it as far as the view allows.
 function fitLayout(): void {
   const withStation = youKey !== undefined;
-  const shape = officeShape(desksNeeded(latestInputs.length) + (withStation ? STATION_DESKS : 0), width, height, TILE, withStation);
+  // The chat log gets its own strip above the room, so it never covers it.
+  const roomHeight = Math.max(TILE * 4, height - (chatterSetting === "log" ? LOG_RESERVE : 0));
+  const shape = officeShape(desksNeeded(latestInputs.length) + (withStation ? STATION_DESKS : 0), width, roomHeight, TILE, withStation);
   const layout = state.layout;
   if (shape.cols !== layout.cols || shape.rows !== layout.rows || sceneChanged || (layout.station !== undefined) !== withStation) {
     sceneChanged = false;
     relayoutOffice(state, buildOfficeLayout(shape.cols, shape.rows, sceneId, withStation), random);
   }
   const pixelRatio = window.devicePixelRatio || 1;
-  const fit = Math.min(width / (state.layout.cols * TILE), height / (state.layout.rows * TILE));
+  const fit = Math.min(width / (state.layout.cols * TILE), roomHeight / (state.layout.rows * TILE));
   // Whole device pixels keep the art crisp, but not at the cost of a much smaller room.
   const snapped = Math.floor(fit * pixelRatio) / pixelRatio;
   scale = snapped >= fit * 0.85 ? snapped : fit;
@@ -221,6 +234,14 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEve
     nextShowAt = Math.min(nextShowAt, state.time + performanceGap(random, nextPerformances, true));
   }
   performancesSetting = nextPerformances;
+  state.talk = talkFactor(talkFrequency(data.talk));
+  const nextChatter = chatterStyle(data.chatter);
+  if (nextChatter !== chatterSetting) {
+    chatterSetting = nextChatter;
+    if (width > 0 && height > 0) {
+      fitLayout();
+    }
+  }
   focusedId = typeof data.focusedId === "string" ? data.focusedId : undefined;
   if (nextScene !== sceneId) {
     sceneId = nextScene;
@@ -1670,6 +1691,7 @@ interface Bubble {
   // Where the tail points: the middle of the guy, just above his head.
   tailX: number;
   tailY: number;
+  alpha?: number;
 }
 
 function layoutBubble(box: { left: number; top: number }, text: string, bubbleTop = box.top - 11): Bubble {
@@ -1703,14 +1725,17 @@ function spreadBubbles(bubbles: Bubble[]): void {
 
 // A lifted bubble trails a thin line down to its guy, under the other bubbles.
 function paintBubbleStem(bubble: Bubble, palette: ScenePalette): void {
+  context.globalAlpha = bubble.alpha ?? 1;
   const stem = bubble.tailY - (bubble.top + bubble.height);
   if (stem > 0) {
     rect(Math.round(bubble.tailX), bubble.top + bubble.height, 1, stem, palette.bubbleEdge);
   }
+  context.globalAlpha = 1;
 }
 
 function paintBubble(bubble: Bubble, palette: ScenePalette): void {
   const { lines, left, top, width, height } = bubble;
+  context.globalAlpha = bubble.alpha ?? 1;
   rect(left, top, width, height, palette.bubbleEdge);
   rect(left + 1, top + 1, width - 2, height - 2, palette.bubble);
   rect(bubble.tailX, bubble.tailY, 2, 1, palette.bubbleEdge);
@@ -1718,6 +1743,7 @@ function paintBubble(bubble: Bubble, palette: ScenePalette): void {
   context.fillStyle = palette.bubbleText;
   context.textBaseline = "top";
   lines.forEach((line, index) => context.fillText(line, left + 3, top + 1.5 + index * 7));
+  context.globalAlpha = 1;
 }
 
 function wrapText(text: string, maxWidth: number): string[] {
@@ -1734,6 +1760,135 @@ function wrapText(text: string, maxWidth: number): string[] {
   }
   lines.push(line);
   return lines;
+}
+
+// A line someone is saying this frame, with where his bubble goes. `key` is the sim's bubble, one per line said.
+interface SpokenLine extends ChatLine {
+  seed: string;
+  key: object;
+  box: { left: number; top: number };
+  bubbleTop: number;
+}
+
+// When each bubble was first seen, so lines keep their order and fade in; and which went to the chat log.
+const bubbleSince = new WeakMap<object, number>();
+const loggedBubbles = new WeakSet<object>();
+let shownLines = new Set<string>();
+let chatLog: ChatLogEntry[] = [];
+
+function spokenLine(id: string, seed: string, bubble: { text: string; until: number }, priority: ChatPriority, box: { left: number; top: number }, bubbleTop: number): SpokenLine {
+  let since = bubbleSince.get(bubble);
+  if (since === undefined) {
+    since = state.time;
+    bubbleSince.set(bubble, since);
+  }
+  return { id, seed, key: bubble, text: bubble.text, since, until: bubble.until, priority, box, bubbleTop };
+}
+
+// How many log lines fit in the free space above the room.
+function logRoomLines(): number {
+  return Math.floor((Math.max(0, originY) - 22) / LOG_LINE);
+}
+
+// Bubbles for the lines the chatter style shows in full, pips over the rest. Lines that don't get a bubble go to
+// the chat log when it shows; a logged line stays a pip.
+function drawChatter(lines: SpokenLine[], palette: ScenePalette, seconds: number): void {
+  const logOn = showsChatLog(chatterSetting, logRoomLines() >= 2);
+  const logged = new Set(lines.filter((line) => loggedBubbles.has(line.key)).map((line) => line.id));
+  const chat = layoutChatter(lines, chatterSetting, shownLines, bubbleLimit(state.layout.cols), state.time, hoveredId, logged);
+  shownLines = chat.full;
+  if (logOn) {
+    lines
+      .filter((line) => line.priority !== "must" && !loggedBubbles.has(line.key) && (chatterSetting === "log" || chat.pips.has(line.id)))
+      .forEach((line) => {
+        loggedBubbles.add(line.key);
+        chatLog = pushChatLog(chatLog, { id: line.seed, text: line.text, at: state.time });
+      });
+  }
+  lines.filter((line) => chat.pips.has(line.id)).forEach((line) => paintPip(line, palette, seconds));
+  const bubbles = lines.filter((line) => chat.full.has(line.id)).map((line) => ({
+    ...layoutBubble(line.box, line.text, line.bubbleTop),
+    alpha: line.id === hoveredId ? 1 : bubbleAlpha(line.since, line.until, state.time),
+  }));
+  spreadBubbles(bubbles);
+  bubbles.forEach((bubble) => paintBubbleStem(bubble, palette));
+  bubbles.forEach((bubble) => paintBubble(bubble, palette));
+}
+
+// A small bubble with three dots that light in turn: he's saying something; hover him to read it.
+function paintPip(line: SpokenLine, palette: ScenePalette, seconds: number): void {
+  const left = Math.round(line.box.left + FRAME_WIDTH / 2 - 4);
+  const top = line.bubbleTop + 4;
+  const alpha = bubbleAlpha(line.since, line.until, state.time) * 0.8;
+  context.globalAlpha = alpha;
+  rect(left, top, 9, 5, palette.bubbleEdge);
+  rect(left + 1, top + 1, 7, 3, palette.bubble);
+  rect(left + 3, top + 5, 2, 1, palette.bubbleEdge);
+  const lit = Math.floor((seconds + line.since) * 3) % 3;
+  for (let dot = 0; dot < 3; dot++) {
+    context.globalAlpha = alpha * (dot === lit ? 1 : 0.4);
+    rect(left + 2 + dot * 2, top + 2, 1, 1, palette.bubbleText);
+  }
+  context.globalAlpha = 1;
+}
+
+// The chat log: the newest lines with the speaker's face, just above the room when there's room there, otherwise
+// on a band over the top of the room. Drawn in screen pixels in the editor font, so it reads at any zoom.
+let logStyle = { font: "11px monospace", text: "#ccc", background: "#1e1e1e", stamp: -1 };
+
+function drawChatLog(seconds: number): void {
+  const above = logRoomLines();
+  if (!showsChatLog(chatterSetting, above >= 2)) {
+    return;
+  }
+  if (seconds - logStyle.stamp > 2 || logStyle.stamp < 0) {
+    const css = getComputedStyle(document.body);
+    const family = css.getPropertyValue("--vscode-editor-font-family").trim() || "monospace";
+    logStyle = {
+      font: `11px ${family}`,
+      text: css.getPropertyValue("--vscode-foreground").trim() || "#ccc",
+      background: css.getPropertyValue("--vscode-sideBar-background").trim() || "#1e1e1e",
+      stamp: seconds,
+    };
+  }
+  const roomTop = Math.max(0, originY);
+  const overlay = above < 2;
+  const visible = visibleChatLog(chatLog, state.time, overlay ? LOG_LINES : Math.min(5, above));
+  if (visible.length === 0) {
+    return;
+  }
+  const pixelRatio = window.devicePixelRatio || 1;
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  context.imageSmoothingEnabled = false;
+  const bottom = overlay ? 20 + visible.length * LOG_LINE + 4 : roomTop - 4;
+  if (overlay) {
+    context.globalAlpha = 0.78 * Math.max(...visible.map((line) => line.alpha));
+    context.fillStyle = logStyle.background;
+    context.fillRect(0, 18, width, bottom - 18);
+  }
+  context.font = logStyle.font;
+  context.textBaseline = "middle";
+  const textLeft = 8 + 20;
+  visible.forEach(({ entry, alpha }, index) => {
+    const middle = bottom - (visible.length - index) * LOG_LINE + LOG_LINE / 2;
+    context.globalAlpha = alpha;
+    // The speaker's head and shoulders, cropped from his standing frame.
+    context.drawImage(sprite(entry.id, "stand", "down", 0), 0, 0, FRAME_WIDTH, 11, 8, middle - 8, 18, 16.5);
+    context.fillStyle = logStyle.text;
+    context.fillText(fitText(entry.text, width - textLeft - 8), textLeft, middle + 0.5);
+  });
+  context.globalAlpha = 1;
+}
+
+function fitText(text: string, maxWidth: number): string {
+  if (context.measureText(text).width <= maxWidth) {
+    return text;
+  }
+  let cut = text;
+  while (cut.length > 1 && context.measureText(cut + "…").width > maxWidth) {
+    cut = cut.slice(0, -1);
+  }
+  return cut.trimEnd() + "…";
 }
 
 // Three z's drifting up and fading, each a little bigger than the last.
@@ -1908,7 +2063,7 @@ function draw(seconds: number): void {
   }
   drawFireflies(layout.cols * TILE, seconds);
 
-  const bubbles: Bubble[] = [];
+  const lines: SpokenLine[] = [];
   boxes.forEach((box) => {
     if (box.agent.mode === "sleep" && box.agent.path.length === 0 && box.agent.bubble === undefined) {
       drawSnore(box, seconds, palette);
@@ -1917,21 +2072,26 @@ function draw(seconds: number): void {
     if (crowned) {
       drawCrown(box, seconds);
     }
-    if (box.agent.bubble !== undefined) {
-      bubbles.push(layoutBubble(box, box.agent.bubble.text, box.top - (crowned ? 14 : 11)));
+    const bubble = box.agent.bubble;
+    if (bubble !== undefined) {
+      const priority = box.agent.performer !== undefined ? "must" : box.agent.visitor !== undefined ? "high" : "normal";
+      lines.push(spokenLine(box.agent.id, box.agent.seed, bubble, priority, box, box.top - (crowned ? 14 : 11)));
     }
   });
   youArea = youBox;
   const finalYouBox = youBox as { left: number; top: number } | undefined;
-  const yourBubble = reaction.bubble ?? (you?.bubble?.text);
-  if (finalYouBox !== undefined && yourBubble !== undefined) {
+  if (finalYouBox !== undefined && youKey !== undefined) {
     // Above the monitors, so it never covers the screens.
     const monitorsTop = station === undefined ? finalYouBox.top : station.desk.y * TILE - 2;
-    bubbles.push(layoutBubble(finalYouBox, yourBubble, Math.min(finalYouBox.top, monitorsTop) - 11));
+    const bubbleTop = Math.min(finalYouBox.top, monitorsTop) - 11;
+    if (reaction.bubble !== undefined) {
+      // An event's lines are part of the act: always in a bubble.
+      lines.push({ id: "you", seed: youKey, key: {}, text: reaction.bubble, since: -Infinity, until: Infinity, priority: "must", box: finalYouBox, bubbleTop });
+    } else if (you?.bubble !== undefined) {
+      lines.push(spokenLine("you", youKey, you.bubble, "high", finalYouBox, bubbleTop));
+    }
   }
-  spreadBubbles(bubbles);
-  bubbles.forEach((bubble) => paintBubbleStem(bubble, palette));
-  bubbles.forEach((bubble) => paintBubble(bubble, palette));
+  drawChatter(lines, palette, seconds);
   drawEventTint(event, layout);
   const hovered = boxes.find((box) => box.agent.id === hoveredId);
   if (hovered !== undefined) {
@@ -1941,6 +2101,7 @@ function draw(seconds: number): void {
   const counts = officeCounts(state);
   const countText = [`${counts.working} working`, `${counts.idle} idle`, ...(counts.asleep > 0 ? [`${counts.asleep} asleep`] : [])];
   statusLabel.textContent = state.agents.length === 0 ? "quiet" : countText.join(" · ");
+  drawChatLog(seconds);
 }
 
 // The show's lights and particles, over the light map so they shine at night too.

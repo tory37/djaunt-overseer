@@ -200,6 +200,8 @@ export interface OfficeState {
   placed: Map<number, string>;
   // The show on now, if any.
   show?: ShowState;
+  // How much the guys talk on their own (officeChatter's talkFactor): 0 is never, 1 the usual.
+  talk?: number;
 }
 
 export type Random = () => number;
@@ -213,6 +215,7 @@ const CHAT_WAIT_SECONDS = 10;
 export const YOU_AGENT_ID = "you";
 
 const between = (random: Random, low: number, high: number) => low + random() * (high - low);
+const talkOf = (state: OfficeState) => state.talk ?? 1;
 
 export function createOffice(layout: OfficeLayout): OfficeState {
   clearDeskSpots(layout);
@@ -623,13 +626,13 @@ export function stepOffice(state: OfficeState, seconds: number, random: Random):
     if (agent.mode === "chat" && (agent.goal?.kind === "visit" ? visited === undefined : !chatPartnerOf(state, agent))) {
       agent.modeUntil = state.time;
     }
-    if (agent.mode === "chat" && state.time >= agent.nextBubbleAt) {
+    if (agent.mode === "chat" && state.time >= agent.nextBubbleAt && talkOf(state) > 0) {
       // At a busy guy's desk, he answers over his shoulder about half the time.
       const speaker = visited !== undefined && visited.bubble === undefined && random() < 0.45 ? visited : agent;
       const listener = speaker === agent ? visited ?? chatPartnerOf(state, agent) : agent;
       const line = chatLine(state, speaker, listener, random);
       say(state, speaker, line, line.length > 4 ? lineSeconds(line) : between(random, 1, 1.8));
-      agent.nextBubbleAt = state.time + between(random, 1.6, 3.4) + (line.length > 4 ? 1.2 : 0);
+      agent.nextBubbleAt = state.time + (between(random, 1.6, 3.4) + (line.length > 4 ? 1.2 : 0)) * Math.max(1, 1 / Math.sqrt(talkOf(state)));
     }
     if (agent.goal?.kind === "waitDesk" && agent.mode === "wait") {
       if (hasDesk(state, agent)) {
@@ -650,14 +653,14 @@ export function stepOffice(state: OfficeState, seconds: number, random: Random):
       agent.nextBubbleAt = state.time + between(random, 2.5, 5);
     }
     if (agent.mode === "type" && state.time >= agent.nextBubbleAt) {
-      if (random() < 0.35) {
+      if (random() < Math.min(0.9, 0.35 * talkOf(state))) {
         say(state, agent, pickPhrase(TYPING_LINES, random), 1.4);
       }
       agent.nextBubbleAt = state.time + between(random, 10, 25);
     }
     const muse = museMode(agent);
     if (muse !== undefined && agent.bubble === undefined && state.time >= agent.nextBubbleAt) {
-      if (random() < 0.3) {
+      if (random() < Math.min(0.9, 0.3 * talkOf(state))) {
         say(state, agent, pickPhrase(MUSE_LINES[muse], random), 1.4);
       }
       agent.nextBubbleAt = state.time + between(random, 8, 20);
@@ -938,8 +941,8 @@ function pickIdleActivity(state: OfficeState, agent: Agent, random: Random): voi
   if (freeCouch.length > 0) {
     options.push({ weight: 1, run: () => goTo(state, agent, freeCouch[Math.floor(random() * freeCouch.length)], { kind: "couch" }, false, random) });
   }
-  if (partners.length > 0) {
-    options.push({ weight: agent.you ? 6 : 3, run: () => startChat(state, agent, partners[Math.floor(random() * partners.length)], random) });
+  if (partners.length > 0 && talkOf(state) > 0) {
+    options.push({ weight: (agent.you ? 6 : 3) * talkOf(state), run: () => startChat(state, agent, partners[Math.floor(random() * partners.length)], random) });
   }
   if (agent.you || agent.visitor !== undefined) {
     const visits = state.agents
