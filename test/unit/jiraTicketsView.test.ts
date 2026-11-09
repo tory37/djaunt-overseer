@@ -110,7 +110,7 @@ describe("rowView", () => {
     expect(row.details).toEqual([]);
   });
 
-  it("sends the other fields to the details line in field order with icons and labeled titles", () => {
+  it("sends priority, sprint, and fix versions first, then the other fields in field order, with icons and labeled titles", () => {
     const fields = ["key", "priority", "issuetype", "labels", "sprint", "fixVersions"];
     const row = rowView(fullIssue, fields, NOW_MS);
     expect(row.details).toEqual([
@@ -122,8 +122,6 @@ describe("rowView", () => {
         icon: "arrow-up",
         filterChips: [{ text: "High", filterText: "priority:High", title: "Filter by priority: High" }],
       },
-      { field: "issuetype", label: "type", text: "Bug", title: "type: Bug", icon: "tag" },
-      { field: "labels", label: "labels", text: "ops", title: "labels: ops" },
       {
         field: "sprint",
         label: "Sprint",
@@ -140,6 +138,8 @@ describe("rowView", () => {
         icon: "milestone",
         filterChips: [{ text: "r2026.11.12", filterText: "fix:r2026.11.12", title: "Filter by Fix versions: r2026.11.12" }],
       },
+      { field: "issuetype", label: "type", text: "Bug", title: "type: Bug", icon: "tag" },
+      { field: "labels", label: "labels", text: "ops", title: "labels: ops" },
     ]);
   });
 
@@ -208,6 +208,58 @@ describe("rowView", () => {
     });
   });
 
+  describe("empty priority, sprint, and fix versions", () => {
+    const fields = ["key", "labels", "fixVersions", "sprint", "assignee", "priority"];
+    const emptyIssue = issue("A-4", { labels: ["ops"], assignee: "Ana", sprint: null, priority: null, fixVersions: [] });
+
+    it("shows a muted, empty item for each with its icon and a none filter", () => {
+      const details = rowView(emptyIssue, fields, NOW_MS, "Tory Hebert").details;
+      expect(details.filter((detail) => detail.isEmpty)).toEqual([
+        {
+          field: "priority",
+          label: "priority",
+          text: "No Priority",
+          title: "priority: none",
+          icon: "arrow-up",
+          tone: "muted",
+          isEmpty: true,
+          filterChips: [{ text: "No Priority", filterText: "priority:none", title: "Filter by tickets with no priority" }],
+        },
+        {
+          field: "sprint",
+          label: "Sprint",
+          text: "No Sprint",
+          title: "Sprint: none",
+          icon: "history",
+          tone: "muted",
+          isEmpty: true,
+          filterChips: [{ text: "No Sprint", filterText: "sprint:none", title: "Filter by tickets with no Sprint" }],
+        },
+        {
+          field: "fixVersions",
+          label: "Fix versions",
+          text: "No Fix Versions",
+          title: "Fix versions: none",
+          icon: "milestone",
+          tone: "muted",
+          isEmpty: true,
+          filterChips: [{ text: "No Fix Versions", filterText: "fix:none", title: "Filter by tickets with no Fix versions" }],
+        },
+      ]);
+    });
+
+    it("keeps assignee, priority, sprint, fix versions, then the rest, empty or not", () => {
+      const emptyOrder = rowView(emptyIssue, fields, NOW_MS).details.map((detail) => detail.field);
+      const filledOrder = rowView(fullIssue, fields, NOW_MS).details.map((detail) => detail.field);
+      expect(emptyOrder).toEqual(["assignee", "priority", "sprint", "fixVersions", "labels"]);
+      expect(filledOrder).toEqual(emptyOrder);
+    });
+
+    it("leaves out the empty items when the query didn't ask for the field", () => {
+      expect(rowView(emptyIssue, ["key", "labels"], NOW_MS).details.map((detail) => detail.field)).toEqual(["labels"]);
+    });
+  });
+
   it("uses only the first date for the age and shows later dates as details", () => {
     const row = rowView(fullIssue, ["key", "created", "updated"], NOW_MS);
     expect(row.age).toBe("2d");
@@ -217,7 +269,7 @@ describe("rowView", () => {
   });
 
   it("leaves out fields the query didn't ask for and fields with no value", () => {
-    const row = rowView(issue("A-2", { summary: "Hidden", status: "Done" }), ["key", "priority"], NOW_MS);
+    const row = rowView(issue("A-2", { summary: "Hidden", status: "Done" }), ["key", "labels", "issuetype"], NOW_MS);
     expect(row.summary).toBeUndefined();
     expect(row.status).toBeUndefined();
     expect(row.age).toBeUndefined();
