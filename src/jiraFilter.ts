@@ -8,7 +8,14 @@ export interface FilterTerm {
 const ASSIGNEE_FIELD = "assignee";
 const CURRENT_USER_VALUE = "me";
 const UNASSIGNED_VALUE = "unassigned";
-const UNASSIGNED_VALUES = new Set([UNASSIGNED_VALUE, "none"]);
+const NO_VALUE_FILTER_VALUE = "none";
+const NO_VALUE_FILTER_VALUES = new Set([NO_VALUE_FILTER_VALUE, "empty"]);
+const UNASSIGNED_VALUES = new Set([UNASSIGNED_VALUE, ...NO_VALUE_FILTER_VALUES]);
+const NO_VALUE_TEXTS: Record<string, string> = {
+  priority: "No Priority",
+  sprint: "No Sprint",
+  fixVersions: "No Fix Versions",
+};
 const TERM_PATTERN = /(?:[^\s"]+|"[^"]*"?)+/g;
 const QUOTE_PATTERN = /"/g;
 const WHITESPACE_PATTERN = /\s/;
@@ -79,6 +86,14 @@ export function unassignedFilterText(): string {
   return `${FILTER_PREFIXES[ASSIGNEE_FIELD]}:${UNASSIGNED_VALUE}`;
 }
 
+export function noValueText(field: string): string | undefined {
+  return NO_VALUE_TEXTS[field];
+}
+
+export function noValueFilterText(field: string): string {
+  return `${FILTER_PREFIXES[field] ?? field}:${NO_VALUE_FILTER_VALUE}`;
+}
+
 export function isSameUser(firstName: string, secondName: string): boolean {
   return firstName.trim().toLowerCase() === secondName.trim().toLowerCase();
 }
@@ -97,6 +112,9 @@ function termMatches(issue: JiraIssueRow, fields: string[], term: FilterTerm, cu
   }
   if (term.field === ASSIGNEE_FIELD) {
     return assigneeMatches(issue, term.value, currentUserName);
+  }
+  if (noValueText(term.field) !== undefined && NO_VALUE_FILTER_VALUES.has(term.value)) {
+    return searchableTexts(issue, term.field).length === 0;
   }
   return anyContains(searchableTexts(issue, term.field), term.value);
 }
@@ -120,6 +138,12 @@ function freeTexts(issue: JiraIssueRow, fields: string[], currentUserName: strin
       texts.push(UNASSIGNED_VALUE);
     } else if (isAssignedTo(assigneeNames, currentUserName)) {
       texts.push(CURRENT_USER_VALUE);
+    }
+  }
+  for (const field of fields) {
+    const emptyText = noValueText(field);
+    if (emptyText !== undefined && searchableTexts(issue, field).length === 0) {
+      texts.push(emptyText);
     }
   }
   return texts;

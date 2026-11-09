@@ -5,6 +5,8 @@ import {
   isFilterableField,
   isSameUser,
   issueMatchesFilter,
+  noValueFilterText,
+  noValueText,
   scopedFilterText,
   unassignedFilterText,
 } from "./jiraFilter";
@@ -35,6 +37,7 @@ export interface JiraDetailView {
   title: string;
   icon?: string;
   tone?: JiraDetailTone;
+  isEmpty?: boolean;
   filterChips?: JiraFilterChip[];
 }
 
@@ -83,6 +86,7 @@ const DETAIL_ICONS: Record<string, string> = {
   sprint: "history",
   fixVersions: "milestone",
 };
+const LEADING_DETAIL_FIELDS = [ASSIGNEE_FIELD, "priority", "sprint", "fixVersions"];
 
 export function queryIdentity(query: JiraQuery): string {
   return JSON.stringify([query.name, query.jql, query.fields]);
@@ -201,9 +205,15 @@ export function rowView(issue: JiraIssueRow, fields: string[], nowMs: number, cu
     }
   }
   if (fields.includes(ASSIGNEE_FIELD)) {
-    row.details.unshift(assigneeDetail(cellText(issue, ASSIGNEE_FIELD), currentUserName));
+    row.details.push(assigneeDetail(cellText(issue, ASSIGNEE_FIELD), currentUserName));
   }
+  row.details.sort((first, second) => detailRank(first.field) - detailRank(second.field));
   return row;
+}
+
+function detailRank(field: string): number {
+  const leadingIndex = LEADING_DETAIL_FIELDS.indexOf(field);
+  return leadingIndex === -1 ? LEADING_DETAIL_FIELDS.length : leadingIndex;
 }
 
 // Until the current user's name is known, a named assignee shows with no tone rather than as someone else.
@@ -239,9 +249,28 @@ function fieldFilterChips(issue: JiraIssueRow, field: string, label: string): Ji
   return cellTexts(issue, field).map((value) => filterChip(label, value, scopedFilterText(field, value)));
 }
 
+function noValueDetail(field: string, emptyText: string): JiraDetailView {
+  const label = fieldLabel(field);
+  const detail: JiraDetailView = {
+    field,
+    label,
+    text: emptyText,
+    title: `${label}: none`,
+    tone: "muted",
+    isEmpty: true,
+    filterChips: [{ text: emptyText, filterText: noValueFilterText(field), title: `Filter by tickets with no ${label}` }],
+  };
+  const icon = DETAIL_ICONS[field];
+  return icon === undefined ? detail : { ...detail, icon };
+}
+
 function placeField(row: JiraRowView, issue: JiraIssueRow, field: string, nowMs: number): void {
   const text = cellText(issue, field);
   if (text === "") {
+    const emptyText = noValueText(field);
+    if (emptyText !== undefined) {
+      row.details.push(noValueDetail(field, emptyText));
+    }
     return;
   }
   if (field === "summary") {

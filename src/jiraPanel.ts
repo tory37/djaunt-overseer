@@ -339,6 +339,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
   .detail .codicon { flex-shrink: 0; font-size: 11px; }
   .detail.attention { color: var(--vscode-charts-orange); font-weight: 600; }
   .detail.muted { color: var(--muted); }
+  .detail.no-value { font-style: italic; }
   .detail-separator { flex-shrink: 0; white-space: pre; }
   .error { display: flex; align-items: flex-start; gap: var(--s1); padding: 2px var(--s4) var(--s1) var(--s4); font-size: 12px; line-height: 16px; }
   .error .codicon { flex-shrink: 0; margin-top: 1px; font-size: var(--icon-size); color: var(--vscode-errorForeground); }
@@ -660,7 +661,7 @@ function panelHtml(nonce: string, cspSource: string, codiconStylesheet: string):
       if (index > 0) {
         line.append(element("span", "detail-separator", " · "));
       }
-      const item = element("span", "detail" + (detail.tone ? " " + detail.tone : ""));
+      const item = element("span", "detail" + (detail.tone ? " " + detail.tone : "") + (detail.isEmpty ? " no-value" : ""));
       item.title = detail.title;
       if (detail.icon) {
         item.append(codicon(detail.icon));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { issueMatchesFilter, parseFilter, scopedFilterText } from "../../src/jiraFilter";
+import { issueMatchesFilter, noValueFilterText, parseFilter, scopedFilterText } from "../../src/jiraFilter";
 import { JiraIssueRow } from "../../src/jiraQueries";
 
 const FIELDS = ["key", "summary", "status", "updated", "assignee", "priority", "sprint", "fixVersions"];
@@ -18,6 +18,7 @@ const releaseIssue = issue("ASSMNT-12", {
   fixVersions: [{ name: "r2026.11.12" }, { name: "r2026.12.03" }],
 });
 const unassignedIssue = issue("ASSMNT-13", { summary: "Add export", status: "To Do", assignee: null });
+const unplannedIssue = issue("ASSMNT-14", { summary: "Tidy logs", status: "To Do", priority: null, sprint: null, fixVersions: [] });
 
 function matches(text: string, target: JiraIssueRow = releaseIssue, currentUserName?: string): boolean {
   return issueMatchesFilter(target, FIELDS, parseFilter(text), currentUserName);
@@ -105,6 +106,29 @@ describe("issueMatchesFilter", () => {
     expect(matches("assignee:unassigned")).toBe(false);
   });
 
+  it("matches assignee:empty for an empty assignee", () => {
+    expect(matches("assignee:empty", unassignedIssue)).toBe(true);
+    expect(matches("assignee:empty")).toBe(false);
+  });
+
+  it("matches none and empty for no priority, sprint, or fix version", () => {
+    for (const text of ["priority:none", "pri:empty", "sprint:none", "sprint:empty", "fix:none", "fixversion:none", "release:empty"]) {
+      expect(matches(text, unplannedIssue)).toBe(true);
+      expect(matches(text)).toBe(false);
+    }
+  });
+
+  it("matches free text against the no-value labels", () => {
+    expect(matches("no fix", unplannedIssue)).toBe(true);
+    expect(matches('"no sprint"', unplannedIssue)).toBe(true);
+    expect(matches('"no priority"', unplannedIssue)).toBe(true);
+    expect(matches('"no sprint"')).toBe(false);
+  });
+
+  it("leaves out no-value labels for fields the query didn't ask for", () => {
+    expect(issueMatchesFilter(unplannedIssue, ["key", "summary"], parseFilter('"no sprint"'))).toBe(false);
+  });
+
   it("matches a scoped term only on fields the query asked for", () => {
     expect(issueMatchesFilter(releaseIssue, ["key", "summary"], parseFilter("fix:r2026"))).toBe(false);
     expect(issueMatchesFilter(releaseIssue, ["key", "summary"], parseFilter("high"))).toBe(false);
@@ -115,6 +139,12 @@ describe("scopedFilterText", () => {
   it("uses the short prefix and quotes values with spaces", () => {
     expect(scopedFilterText("fixVersions", "r2026.11.12")).toBe("fix:r2026.11.12");
     expect(scopedFilterText("sprint", "Assess 2026.11.08")).toBe('sprint:"Assess 2026.11.08"');
+  });
+
+  it("builds the none filter with the short prefix", () => {
+    expect(noValueFilterText("sprint")).toBe("sprint:none");
+    expect(noValueFilterText("priority")).toBe("priority:none");
+    expect(noValueFilterText("fixVersions")).toBe("fix:none");
   });
 
   it("round-trips through parseFilter", () => {

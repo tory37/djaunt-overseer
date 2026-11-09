@@ -119,9 +119,10 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 **Filter.** The bar at the top filters the loaded tickets. It makes no Jira calls.
 - Free text matches the key, summary, status, and every detail shown. `me` matches your tickets.
 - `field:value` checks one field: `fix:` (or `version:`, `release:`), `sprint:`, `assignee:` (or `who:`), `status:`, `priority:` (or `pri:`), `type:`, `key:`, `summary:`. Quote values with spaces: `sprint:"Assess 2026"`.
-- `assignee:me` is you. `assignee:unassigned` (or `none`) is nobody.
+- `assignee:me` is you. `assignee:unassigned` (or `none`, `empty`) is nobody.
+- `priority:none`, `sprint:none`, and `fix:none` (or `empty`) match tickets with no value in that field. Those show as "No Priority", "No Sprint", and "No Fix Versions", so free text like `no fix` finds them too.
 - All terms must match. Matching ignores case.
-- Click a status pill, assignee, priority, sprint, or fix version to filter by it. Example: click `r2026.11.12` to see what is tagged for that release.
+- Click a status pill, assignee, priority, sprint, or fix version to filter by it. Clicking "No Sprint" sets `sprint:none`. Example: click `r2026.11.12` to see what is tagged for that release.
 - Section counts show matched over total. Sections with no match hide. Esc clears the filter.
 
 ### Office
