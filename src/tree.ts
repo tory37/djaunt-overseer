@@ -84,7 +84,7 @@ export class SessionTreeProvider
     }
     const sessionId = node.pinned.sessionId;
     const portrait = this.portraits.isEnabled()
-      ? (state: SessionIconState) => this.portraits.icon(this.registry.avatarSeed(sessionId), state)
+      ? (state: SessionIconState) => this.portraits.icon(this.registry.avatarSeed(sessionId), this.registry.avatarLook(sessionId), state)
       : undefined;
     return sessionTreeItem(
       node.pinned,
@@ -248,7 +248,7 @@ function sessionState(sessionId: string, liveSession: LiveSession | undefined): 
   return liveSession === undefined ? "suspended" : "elsewhere";
 }
 
-type PortraitIcon = (state: SessionIconState) => vscode.Uri;
+type PortraitIcon = (state: SessionIconState) => vscode.Uri | undefined;
 
 function sessionStateIcon(state: SessionIconState): vscode.ThemeIcon {
   const configuredName = vscode.workspace.getConfiguration("overseer.sessionIcons").get<string>(state);

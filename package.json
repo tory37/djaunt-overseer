@@ -143,6 +143,17 @@
         "icon": "$(comment-discussion)"
       },
       {
+        "command": "overseer.office.customizeYou",
+        "title": "Customize Your Guy…",
+        "category": "Overseer",
+        "icon": "$(person)"
+      },
+      {
+        "command": "overseer.customizePixelGuy",
+        "title": "Customize Pixel Guy…",
+        "category": "Overseer"
+      },
+      {
         "command": "overseer.rerollPixelGuy",
         "title": "Re-roll Pixel Guy",
         "category": "Overseer"
@@ -652,6 +663,11 @@
           "group": "navigation@3"
         },
         {
+          "command": "overseer.office.customizeYou",
+          "when": "view == overseer.office",
+          "group": "navigation@4"
+        },
+        {
           "command": "overseer.jira.refresh",
           "when": "view == overseer.jira",
           "group": "navigation@0"
@@ -755,7 +771,7 @@
         },
         {
           "submenu": "overseer.pixelGuy",
-          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./ && config.overseer.office.portraits",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/ && viewItem =~ /^session\\./ && config.overseer.office.portraits && overseer.officeConnected",
           "group": "7_look@1"
         },
         {
@@ -1042,6 +1058,10 @@
           "when": "false"
         },
         {
+          "command": "overseer.customizePixelGuy",
+          "when": "false"
+        },
+        {
           "command": "overseer.rerollPixelGuy",
           "when": "false"
         },
@@ -1099,6 +1119,10 @@
       ],
       "overseer.pixelGuy": [
         {
+          "command": "overseer.customizePixelGuy",
+          "group": "0_make@1"
+        },
+        {
           "command": "overseer.rerollPixelGuy",
           "group": "1_look@1"
         },
@@ -1143,7 +1167,7 @@
         "overseer.views.office": {
           "type": "boolean",
           "default": true,
-          "description": "Show the Office view below Session: a pixel guy for each session in the sidebar, working at his desk while the session is busy, wandering the office while it's idle, and asleep at his desk while it's suspended. Click a guy to open his session."
+          "description": "Show the Office view below Session: a pixel guy for each session in the sidebar, working at his desk while the session is busy, wandering the office while it's idle, and asleep at his desk while it's suspended. Click a guy to open his session. The Office comes from the Office Simulation extension; its settings are under officeSim.*."
         },
         "overseer.views.jira": {
           "type": "boolean",
@@ -1532,301 +1556,15 @@
             ]
           }
         },
-        "overseer.office.scene": {
-          "type": "string",
-          "default": "office",
-          "enum": [
-            "office",
-            "serverRoom",
-            "forest",
-            "field",
-            "riverbed",
-            "cave",
-            "moon",
-            "beach",
-            "snowfield",
-            "desert",
-            "reef",
-            "library",
-            "rooftop"
-          ],
-          "enumItemLabels": [
-            "Office",
-            "Server Room",
-            "Forest",
-            "Field",
-            "Riverbed",
-            "Cave",
-            "Moon",
-            "Beach",
-            "Snowfield",
-            "Desert",
-            "Reef",
-            "Library",
-            "Rooftop"
-          ],
-          "markdownDescription": "The Office view's room. Switch it with **Overseer: Switch Office Scene…** or the button on the view."
-        },
         "overseer.office.sleepers": {
           "type": "boolean",
           "default": true,
           "description": "Give suspended sessions in the sidebar a guy too, asleep at his desk. Off shows only running sessions."
         },
-        "overseer.office.critters": {
-          "type": "boolean",
-          "default": true,
-          "description": "Every so often a few critters for the scene run across the Office: mice in the office, foxes and rabbits in the forest, chickens in the field, ducks and frogs by the river, bats in the cave, little aliens on the moon. Idle guys stop to watch."
-        },
-        "overseer.office.fliers": {
-          "type": "boolean",
-          "default": true,
-          "description": "Every so often something for the scene flies over the Office: pigeons and paper planes in the office, drones and ghosts in the server room, owls and hawks in the forest, geese and hot-air balloons over the field, herons and dragonflies by the river, a dragon or a phoenix in the cave, rockets, meteors, and a space whale on the moon. Some only come out by day or by night. Idle guys look up."
-        },
-        "overseer.office.dayNight": {
-          "type": "boolean",
-          "default": true,
-          "description": "Light the Office by your clock: sunrise, golden hour, sunset, and night, with the sun and the real phase of the moon in the sky. Outdoor scenes get dark at night and screens and fires light up around them; the office keeps its lights on; the server room and the cave never see the sky. On the moon a day lasts a month. Off keeps it daytime."
-        },
-        "overseer.office.visitors": {
-          "type": "string",
-          "enum": [
-            "off",
-            "rare",
-            "normal",
-            "often",
-            "packed"
-          ],
-          "enumDescriptions": [
-            "Nobody visits.",
-            "Someone every 3 to 6 minutes.",
-            "Someone every 1 to 2.5 minutes.",
-            "Someone every 25 to 75 seconds.",
-            "Someone every 8 to 30 seconds. The room fills up."
-          ],
-          "default": "normal",
-          "description": "How often people from other departments (sometimes a manager) drop into the Office. Up to five hang around at once: some say something and leave, others stay a minute or two, and some settle in for a good while to chat, get coffee, and loom over busy guys. Each guy answers in his own way: the suck-up says \"OK BOSS!\", the reasonable ones grumble."
-        },
-        "overseer.office.chatter": {
-          "type": "string",
-          "enum": [
-            "tidy",
-            "bubbles",
-            "log",
-            "quiet"
-          ],
-          "enumDescriptions": [
-            "A few speech bubbles at once (more in a wider room). The rest go to a chat log above the room when there's empty space there, or show a small \"...\" bubble until a slot frees up.",
-            "Every line in a speech bubble over its speaker.",
-            "Lines go to a chat log above the room with the speaker's face, and fade after a few seconds. The room shows small \"...\" bubbles.",
-            "Only small \"...\" bubbles. Hover a guy to read his line."
-          ],
-          "default": "tidy",
-          "markdownDescription": "How the Office shows what the guys say. In every style, hovering a guy shows his line, and your own lines during an event and a show's act are always in bubbles. **Overseer: Office Chatter…** switches it from the Office view."
-        },
-        "overseer.office.talk": {
-          "type": "string",
-          "enum": [
-            "off",
-            "rare",
-            "normal",
-            "often"
-          ],
-          "enumDescriptions": [
-            "The guys don't chat or mutter on their own.",
-            "Fewer chats and mutters, and slower back-and-forth.",
-            "The usual.",
-            "About twice as many chats and mutters."
-          ],
-          "default": "normal",
-          "markdownDescription": "How often the Office guys talk on their own: chats with each other, mutters while typing, and musings while idle. Visitors, shows, events, and critters keep their own lines. **Overseer: Office Chatter…** sets it from the Office view."
-        },
-        "overseer.office.bubbleLook": {
-          "type": "string",
-          "enum": [
-            "solid",
-            "soft",
-            "faint"
-          ],
-          "enumDescriptions": [
-            "Opaque bubbles.",
-            "The bubble's background at 70%, so the room shows through a little.",
-            "Smaller text on a 50% background, so the room shows through more."
-          ],
-          "default": "soft",
-          "markdownDescription": "How the Office's speech bubbles look. The text stays solid, and hovering a guy makes his bubble solid. **Overseer: Office Chatter…** sets it from the Office view."
-        },
-        "overseer.office.performances": {
-          "type": "string",
-          "enum": [
-            "off",
-            "rare",
-            "normal",
-            "often"
-          ],
-          "enumDescriptions": [
-            "No shows.",
-            "A show every 30 to 60 minutes.",
-            "A show every 12 to 25 minutes.",
-            "A show every 4 to 8 minutes."
-          ],
-          "default": "normal",
-          "markdownDescription": "How often someone comes to the Office to put on a show: a guitarist, a band, a lunch or snack trolley, a comedian under a spotlight, a magician, or a DJ with a mirror ball. The idle and sleeping guys gather round to watch, cheer, laugh, and eat; busy guys keep working and get their lunch left on their desks. A show waits until someone is free to watch. Play one now with **Overseer: Play Office Show…**."
-        },
         "overseer.office.portraits": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Show each session's pixel guy as its row icon in Sessions and Terminals, with the session's state as a badge in his corner. Turn off to use the `overseer.sessionIcons.*` codicons. Re-roll a guy from the row's menu."
-        },
-        "overseer.office.races": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "Give the pixel guys races: orcs, elves, aliens, robots, centaurs, ghosts, and 30 more, each as likely as human. Visitors get them too. Pick one for a session with **Pixel Guy → Pick Race…** on its row's menu. Off makes everyone human, except guys you picked a race for."
-        },
-        "overseer.office.you": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "Put you in the Office: your own guy at a two-monitor station in the middle of the room, who reacts to the ERROR, HACK, and DEFENSE scene events along with his monitors. Set his look with `#overseer.office.yourLook#`."
-        },
-        "overseer.office.yourLook": {
-          "type": "object",
-          "default": {},
-          "markdownDescription": "Your guy's look in the Office. Leave a field out for the default: a blonde ponytail with one side shaved, blue eyes, a thick orange beard, a black muscle shirt, white shorts, and black flip flops. Colors are `#rrggbb`.",
-          "properties": {
-            "skin": {
-              "type": "string",
-              "pattern": "^#[0-9a-fA-F]{6}$",
-              "default": "#F2C9A0",
-              "description": "Skin color."
-            },
-            "hair": {
-              "type": "string",
-              "pattern": "^#[0-9a-fA-F]{6}$",
-              "default": "#F2D16B",
-              "description": "Hair color."
-            },
-            "hairStyle": {
-              "type": "string",
-              "enum": [
-                "ponytail",
-                "short",
-                "long",
-                "spiky",
-                "bob",
-                "bald",
-                "mohawk",
-                "bun",
-                "curly"
-              ],
-              "default": "ponytail"
-            },
-            "race": {
-              "type": "string",
-              "enum": [
-                "human",
-                "orc",
-                "goblin",
-                "elf",
-                "darkElf",
-                "dwarf",
-                "greyAlien",
-                "greenAlien",
-                "demon",
-                "vampire",
-                "zombie",
-                "skeleton",
-                "troll",
-                "gnome",
-                "fae",
-                "undine",
-                "lizardfolk",
-                "catfolk",
-                "wolffolk",
-                "minotaur",
-                "robot",
-                "cyclops",
-                "squidfolk",
-                "mushroom",
-                "golem",
-                "ghost",
-                "slime",
-                "dryad",
-                "jackalfolk",
-                "harpy",
-                "centaur",
-                "naga",
-                "merfolk",
-                "satyr",
-                "dragonkin",
-                "ogre"
-              ],
-              "default": "human",
-              "description": "Race. Skin, hair, hair style, and eyes you leave out come from the race."
-            },
-            "eyes": {
-              "type": "string",
-              "pattern": "^#[0-9a-fA-F]{6}$",
-              "default": "#3D8BFD",
-              "description": "Eye color."
-            },
-            "shirt": {
-              "type": "string",
-              "pattern": "^#[0-9a-fA-F]{6}$",
-              "default": "#2A2A30",
-              "description": "Shirt color."
-            },
-            "sleeveless": {
-              "type": "boolean",
-              "default": true,
-              "description": "Bare arms."
-            },
-            "pants": {
-              "type": "string",
-              "pattern": "^#[0-9a-fA-F]{6}$",
-              "default": "#F4F4F6",
-              "description": "Pants or shorts color."
-            },
-            "shorts": {
-              "type": "boolean",
-              "default": true,
-              "description": "Bare shins."
-            },
-            "shoes": {
-              "type": "string",
-              "pattern": "^#[0-9a-fA-F]{6}$",
-              "default": "#1E1E1E",
-              "description": "Shoe color."
-            },
-            "flipFlops": {
-              "type": "boolean",
-              "default": true,
-              "description": "Bare toes."
-            },
-            "accessory": {
-              "type": "string",
-              "enum": [
-                "fullBeard",
-                "beard",
-                "none",
-                "glasses",
-                "headphones",
-                "cap"
-              ],
-              "default": "fullBeard"
-            },
-            "beard": {
-              "type": "string",
-              "pattern": "^#[0-9a-fA-F]{6}$",
-              "default": "#D9772B",
-              "description": "Beard color, when the accessory is a beard or full beard."
-            },
-            "accessoryColor": {
-              "type": "string",
-              "pattern": "^#[0-9a-fA-F]{6}$",
-              "default": "#1E1E1E",
-              "description": "Accessory color."
-            }
-          },
-          "additionalProperties": false
+          "markdownDescription": "Show each session's pixel guy as its row icon in Sessions and Terminals, with the session's state as a badge in his corner. Needs the Office Simulation extension. Turn off to use the `overseer.sessionIcons.*` codicons. Customize or re-roll a guy from the row's **Pixel Guy** menu."
         }
       }
     },
@@ -2255,7 +1993,7 @@
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "package": "npm run build && vsce package --no-dependencies --skip-license",
     "themes": "node scripts/themes.mjs",
