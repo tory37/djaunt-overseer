@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_EVENT_MINUTES,
   DEFENSE_SCRIPTS,
+  ERROR_SCRIPTS,
+  EVENT_VARIANTS,
+  eventPick,
   enabledSceneEvents,
   eventMinutes,
   firstSceneEventDelayMs,
@@ -77,10 +80,26 @@ describe("firstSceneEventDelayMs", () => {
 });
 
 describe("sceneEventMessage", () => {
-  it("carries the kind and a variant in range for that kind", () => {
+  it("carries the kind and a variant that picks evenly from any list", () => {
     expect(sceneEventMessage("hack", fixed(0))).toEqual({ type: "sceneEvent", kind: "hack", variant: 0 });
-    expect(sceneEventMessage("hack", fixed(1)).variant).toBe(HACK_PHRASES.length - 1);
-    expect(sceneEventMessage("defense", fixed(1)).variant).toBe(DEFENSE_SCRIPTS.length - 1);
-    expect(sceneEventMessage("error", fixed(1)).variant).toBe(0);
+    expect(sceneEventMessage("error", fixed(1)).variant).toBe(EVENT_VARIANTS - 1);
+    for (let length = 1; length <= 16; length++) {
+      expect(EVENT_VARIANTS % length).toBe(0);
+    }
+    expect(eventPick(HACK_PHRASES, HACK_PHRASES.length + 2)).toBe(HACK_PHRASES[2]);
+    expect(eventPick(DEFENSE_SCRIPTS, -1)).toBe(DEFENSE_SCRIPTS[DEFENSE_SCRIPTS.length - 1]);
+  });
+
+  it("keeps the big event text short enough to fit", () => {
+    for (const [line, answer] of HACK_PHRASES) {
+      expect(line.length).toBeLessThanOrEqual(25);
+      expect(answer.length).toBeLessThanOrEqual(25);
+    }
+    for (const script of DEFENSE_SCRIPTS) {
+      script.forEach((line) => expect(line.length).toBeLessThanOrEqual(25));
+    }
+    for (const script of ERROR_SCRIPTS) {
+      script.forEach((line) => expect(line.length).toBeLessThanOrEqual(30));
+    }
   });
 });

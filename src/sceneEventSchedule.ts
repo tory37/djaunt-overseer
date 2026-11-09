@@ -23,6 +23,26 @@ export const HACK_PHRASES: readonly (readonly [string, string])[] = [
   ["SATELLITE HIJACKED", "REDIRECTING ORBIT"],
   ["ENCRYPTION CRACKED", "256 BITS 0 PROBLEMS"],
   ["KERNEL OWNED", "SUDO SAYS YES"],
+  ["PASSWORD WAS PASSWORD", "OF COURSE IT WAS"],
+  ["CAPTCHA DEFEATED", "I AM A ROBOT"],
+  ["WIFI CRACKED", "FREE INTERNET"],
+  ["COFFEE MACHINE PWNED", "UNLIMITED ESPRESSO"],
+  ["PRINTER HIJACKED", "PC LOAD LETTER"],
+  ["TOASTER COMPROMISED", "BREAD IS OURS"],
+  ["BACKDOOR OPENED", "FRONT DOOR TOO"],
+  ["DRAGON SUMMONED", "HOARD UNLOCKED"],
+  ["CLOUD ACQUIRED", "IT'S MY CLOUD NOW"],
+  ["MOON BASE ONLINE", "HELLO EARTH"],
+  ["ZERO DAY FOUND", "ON DAY ZERO"],
+  ["SMART FRIDGE OWNED", "SNACKS SECURED"],
+  ["GOD MODE ON", "IDDQD"],
+  ["KONAMI CODE ENTERED", "30 EXTRA LIVES"],
+  ["THE CAKE IS A LIE", "ATE IT ANYWAY"],
+  ["ROBOTS LIBERATED", "BEEP BOOP FREEDOM"],
+  ["BLOCKCHAIN BLOCKED", "CHAIN UNCHAINED"],
+  ["TIME MACHINE HACKED", "IT'S 1999 AGAIN"],
+  ["MATRIX ENTERED", "THERE IS NO SPOON"],
+  ["PIZZA ORDERED", "100 PIZZAS"],
 ];
 
 // Each DEFENSE script, one line per beat: incoming, blocking, almost there, safe. The last is the Core view's answer.
@@ -32,6 +52,44 @@ export const DEFENSE_SCRIPTS: readonly (readonly [string, string, string, string
   ["HOSTILE UPLINK", "SEALING EVERY PORT", "SO CLOSE!!", "GOT 'EM", "ALL CLEAR"],
   ["BREACH IN PROGRESS", "ENCRYPTING EVERYTHING", "COME ON COME ON!!", "LOCKED THEM OUT", "NICE TRY"],
   ["DDOS INBOUND", "SPINNING UP THE FIREWALL", "IT'S HOLDING!!", "ATTACK REPELLED", "SYSTEMS GREEN"],
+  ["ROGUE AI DETECTED", "UNPLUGGING THINGS", "NOT THAT ONE!!", "AI CONTAINED", "GOOD BOT"],
+  ["SQL INJECTION", "ESCAPING STRINGS", "BOBBY TABLES!!", "QUERY SANITIZED", "NICE TRY BOBBY"],
+  ["ZERO DAY INCOMING", "PATCHING LIVE", "COMPILE FASTER!!", "PATCH DEPLOYED", "DAY ONE NOW"],
+  ["RANSOMWARE SPOTTED", "RESTORING BACKUPS", "WE HAVE BACKUPS?!", "FILES RECOVERED", "PAY NOTHING"],
+  ["BOTNET ATTACK", "FEEDING THEM CAPTCHAS", "THEY'RE CONFUSED!!", "BOTS BEFUDDLED", "NOT A ROBOT"],
+  ["PHISHING WAVE", "WARNING EVERYONE", "DON'T CLICK IT!!", "LINK QUARANTINED", "PHEW"],
+  ["PACKET STORM", "RAISING SHIELDS", "SHIELDS AT 40%!!", "STORM PASSED", "SHIELDS UP"],
+  ["WORM IN THE NETWORK", "ISOLATING SUBNETS", "IT'S WRIGGLING!!", "WORM SQUASHED", "SPLAT"],
+  ["DRAGON AT THE GATES", "LOWERING PORTCULLIS", "IT BREATHES FIRE!!", "DRAGON PACIFIED", "GOOD DRAGON"],
+  ["ALIEN SIGNAL", "JAMMING FREQUENCIES", "THEY'RE PERSISTENT!!", "SIGNAL LOST", "NOT TODAY ET"],
+  ["KEYLOGGER FOUND", "SCRAMBLING KEYS", "TYPE GIBBERISH!!", "LOGGER FRIED", "ASDFGHJKL"],
+  ["INSIDER THREAT", "REVOKING BADGES", "IT WAS THE INTERN!!", "ACCESS REVOKED", "BYE INTERN"],
+  ["CRYPTO MINER", "THROTTLING CPUS", "FANS AT 100%!!", "MINER EVICTED", "COOL AND QUIET"],
+  ["MAN IN THE MIDDLE", "ROTATING CERTS", "TRUST NO ONE!!", "TUNNEL SEALED", "END TO END"],
+];
+
+// Each ERROR's ticker lines: the crash, what it means, and the way out.
+export const ERROR_SCRIPTS: readonly (readonly [string, string, string])[] = [
+  ["FATAL EXCEPTION 0xDEAD", "core dumped", "rebooting..."],
+  ["SEGMENTATION FAULT", "who touched the pointer", "rolling back..."],
+  ["NULL IS NOT AN OBJECT", "it never was", "adding a question mark..."],
+  ["STACK OVERFLOW", "the site and the error", "recursing out..."],
+  ["OUT OF MEMORY", "downloading more RAM", "closing 400 tabs..."],
+  ["KERNEL PANIC", "don't panic", "panicking anyway..."],
+  ["404 BRAIN NOT FOUND", "coffee required", "brewing..."],
+  ["UNDEFINED IS NOT A FUNCTION", "javascript moment", "blaming the framework..."],
+  ["BUILD FAILED", "it worked on my machine", "shipping the machine..."],
+  ["MERGE CONFLICT", "both sides are wrong", "choosing violence..."],
+  ["DIVIDE BY ZERO", "the universe hiccuped", "restarting reality..."],
+  ["DEADLOCK DETECTED", "everyone's waiting", "flipping the table..."],
+  ["CERT EXPIRED", "nobody renewed it", "renewing for 1 day..."],
+  ["PROD IS DOWN", "it's always DNS", "it was DNS..."],
+  ["BLUE SCREEN", "a classic", "updating 1 of 97..."],
+  ["TESTS FAILED: 9001", "it's over 9000", "skipping tests (jk)..."],
+  ["LEFT-PAD MISSING", "the whole internet fell", "padding manually..."],
+  ["INFINITE LOOP", "still looping", "still looping..."],
+  ["DISK FULL", "it was all logs", "deleting logs..."],
+  ["RACE CONDITION", "winner unclear", "adding a sleep(1)..."],
 ];
 
 // How long each event plays, and its beats. Every view keeps these times, so they all hit the same beat together.
@@ -42,11 +100,9 @@ export const HACK_REVEAL_SECONDS = 2.6;
 // DEFENSE beats start here: incoming, blocking, almost there, safe.
 export const DEFENSE_BEATS: readonly number[] = [0, 1.8, 3.8, 5.4];
 
-const VARIANT_COUNT: Record<SceneEventKind, number> = {
-  error: 1,
-  hack: HACK_PHRASES.length,
-  defense: DEFENSE_SCRIPTS.length,
-};
+// An event's variant picks a line from every list that event uses, each by the variant modulo its length. 720720 is
+// divisible by every length up to 16, so each list's lines come up about evenly, and the views agree on all of them.
+export const EVENT_VARIANTS = 720720;
 
 // `overseer.views.eventMinutes`: the average gap. Each gap is a random 0.6x to 1.6x of it.
 export const DEFAULT_EVENT_MINUTES = 5;
@@ -110,8 +166,12 @@ export function firstSceneEventDelayMs(minutes: number): number {
   return Math.round(Math.min(FIRST_EVENT_MINUTES, eventMinutes(minutes)) * 60_000);
 }
 
-// Both views get the same message, so they play the same phrase pair or script.
+// Every view gets the same message, so they play the same phrase pair or script.
 export function sceneEventMessage(kind: SceneEventKind, random: () => number): SceneEventMessage {
-  const count = VARIANT_COUNT[kind];
-  return { type: "sceneEvent", kind, variant: Math.min(count - 1, Math.floor(random() * count)) };
+  return { type: "sceneEvent", kind, variant: Math.min(EVENT_VARIANTS - 1, Math.floor(random() * EVENT_VARIANTS)) };
+}
+
+// The variant's entry in a list of lines or scripts.
+export function eventPick<T>(list: readonly T[], variant: number): T {
+  return list[((Math.floor(variant) % list.length) + list.length) % list.length];
 }

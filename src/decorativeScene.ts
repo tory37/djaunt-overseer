@@ -3,6 +3,7 @@ import type * as vscode from "vscode";
 import {
   DEFENSE_BEATS,
   DEFENSE_SCRIPTS,
+  ERROR_SCRIPTS,
   ERROR_BEAT_SECONDS,
   ERROR_FLASH_SECONDS,
   EVENT_SECONDS,
@@ -112,6 +113,7 @@ ${readoutsHtml}
 
   const HACK_PHRASES = ${JSON.stringify(HACK_PHRASES)};
   const DEFENSE_SCRIPTS = ${JSON.stringify(DEFENSE_SCRIPTS)};
+  const ERROR_SCRIPTS = ${JSON.stringify(ERROR_SCRIPTS)};
   const EVENT_SECONDS = ${JSON.stringify(EVENT_SECONDS)};
   const ERROR_FLASH_SECONDS = ${ERROR_FLASH_SECONDS};
   const ERROR_BEAT_SECONDS = ${ERROR_BEAT_SECONDS};
@@ -146,6 +148,7 @@ ${readoutsHtml}
       beatAge: sceneEvent.kind === "defense" ? age - DEFENSE_BEATS[beat] : age,
       phrases: HACK_PHRASES[sceneEvent.variant % HACK_PHRASES.length],
       lines: DEFENSE_SCRIPTS[sceneEvent.variant % DEFENSE_SCRIPTS.length],
+      errors: ERROR_SCRIPTS[sceneEvent.variant % ERROR_SCRIPTS.length],
     };
   }
 

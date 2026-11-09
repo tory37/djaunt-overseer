@@ -64,6 +64,46 @@ const TICKER_PHRASES = [
   "aligning the satellites...",
   "counting to infinity...",
   "asking the AI nicely...",
+  "rebasing onto the timeline...",
+  "polishing the semicolons...",
+  "naming the variables...",
+  "renaming the variables...",
+  "hydrating the components...",
+  "petting the dragon...",
+  "bribing the compiler...",
+  "rolling for initiative...",
+  "untangling the cables...",
+  "convincing the linter...",
+  "debugging the debugger...",
+  "reading the docs (finally)...",
+  "deprecating the deprecations...",
+  "migrating the database again...",
+  "converting to a microservice...",
+  "converting back to a monolith...",
+  "estimating the estimates...",
+  "waiting for npm install...",
+  "still waiting for npm install...",
+  "feeding the build pipeline...",
+  "applying the hotfix to the hotfix...",
+  "renewing the SSL cert...",
+  "teaching the AI to say please...",
+  "squashing 400 commits...",
+  "force pushing (respectfully)...",
+  "summoning a senior engineer...",
+  "drawing the rest of the owl...",
+  "pinging the satellites...",
+  "counting the sheep in the field...",
+  "measuring the moon's latency...",
+  "herding the ducklings...",
+  "negotiating with the geese...",
+  "asking the cave dragon for a loan...",
+  "waking the server room ghost...",
+  "watering the office plant...",
+  "refilling the coffee...",
+  "nudging the progress bar...",
+  "adding more cowbell...",
+  "compressing the vibes...",
+  "optimizing the optimizer...",
 ];
 
 export const HACKER_TICKER_SCRIPT = `
@@ -72,8 +112,8 @@ export const HACKER_TICKER_SCRIPT = `
   const SCRAMBLE = "0123456789ABCDEF#$%&*+<>/=?ｱｳｶｻﾀﾅﾊﾏﾔﾗ";
   const DECRYPT_SECONDS = 0.6;
   const EXIT_SECONDS = 0.3;
-  // Event lines by start second. Hack and defense lines come from the event so the ticker agrees with the big text.
-  const ERROR_LINES = [[0, "FATAL EXCEPTION 0xDEAD"], [1.2, "core dumped"], [2.5, "rebooting..."]];
+  // Event lines by start second. The event's own lines come with it, so the ticker agrees with the big text.
+  const ERROR_AT = [0, 1.2, 2.5];
   const HACK_LINES = [[0, "injecting payload..."], [1.3, "bypassing firewall..."]];
   const HACK_REVEAL_AT = 2.6;
   const DEFENSE_AT = [0, 1.8, 3.8, 5.4];
@@ -97,7 +137,10 @@ export const HACKER_TICKER_SCRIPT = `
   }
 
   function eventLine(event) {
-    if (event.kind === "error") return ERROR_LINES.filter(([at]) => event.age >= at).pop();
+    if (event.kind === "error") {
+      const step = ERROR_AT.filter((at) => event.age >= at).length - 1;
+      return [ERROR_AT[step], event.errors[step]];
+    }
     if (event.kind === "hack") {
       return event.age >= HACK_REVEAL_AT ? [HACK_REVEAL_AT, event.phrases[0].toLowerCase() + "."] : HACK_LINES.filter(([at]) => event.age >= at).pop();
     }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildOfficeLayout } from "../../src/officeLayout";
 import { AgentInput, createOffice, lookToward, officeCounts, OfficeState, stepOffice, syncOffice, visitorAgents, visitorArrives } from "../../src/officeSim";
-import { MAX_VISITORS, Personality, personalityOf, planVisit, VISITOR_KINDS, visitorFrequency, visitorGap, visitorReaction, visitorSmallTalk } from "../../src/officeVisitors";
+import { MAX_VISITORS, Personality, personalityOf, planVisit, REACTIONS, VISITOR_KINDS, visitorFrequency, visitorGap, visitorReaction, visitorSmallTalk } from "../../src/officeVisitors";
 import { seededRandom } from "../../src/pixelGuy";
 
 const input = (id: string, status: AgentInput["status"]): AgentInput => ({ id, seed: id, status, title: `Session ${id}` });
@@ -28,12 +28,12 @@ describe("officeVisitors", () => {
   it("has the suck-up answer every boss, and the grumbler grumble", () => {
     const random = seededRandom(3);
     for (let index = 0; index < 30; index++) {
-      expect(visitorReaction("suckUp", true, false, random)).toMatch(/boss|BOSS|Synergy|Yes sir/);
+      expect(REACTIONS.suckUp.boss).toContain(visitorReaction("suckUp", true, false, random));
     }
     const grumbles = Array.from({ length: 40 }, () => visitorReaction("grumbler", true, false, random)).filter((line) => line !== undefined);
     expect(grumbles.length).toBeGreaterThan(10);
     expect(grumbles.length).toBeLessThan(40);
-    expect(grumbles.every((line) => /grumble|sigh|mhm|sure/.test(line as string))).toBe(true);
+    expect(grumbles.every((line) => REACTIONS.grumbler.boss.includes(line as string))).toBe(true);
     expect(visitorReaction("suckUp", true, true, () => 0.1)).toBe("zzz…");
   });
 

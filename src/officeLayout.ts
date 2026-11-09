@@ -68,6 +68,8 @@ export interface OfficeLayout {
   station: Station | undefined;
   props: Prop[];
   couchSeats: Point[];
+  // The scene it was built for, which sets what the guys chat about.
+  scene?: OfficeSceneId;
 }
 
 export const MIN_COLS = 8;
@@ -138,7 +140,7 @@ export function buildOfficeLayout(requestedCols: number, requestedRows: number, 
     props.push({ kind, at: { x, y: propRow }, stand: { x, y: propRow - 1 } });
   }
 
-  return { cols, rows, tiles, door, desks, station, props, couchSeats };
+  return { cols, rows, tiles, door, desks, station, props, couchSeats, scene: sceneId };
 }
 
 // Takes the desk pair nearest the middle of the room out of the desks, for your station: the desk row whose desk and
