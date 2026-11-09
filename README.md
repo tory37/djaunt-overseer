@@ -96,6 +96,34 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - Other actions are on the session's right-click menu in the tree. The **Claude** submenu holds Compact, Clear Context, Switch Model, Show Cost, and Commands. They send `/compact`, `/clear`, `/model`, `/cost`, or one of your saved prompts, and show only for a session running in this window while it is idle.
 - **Commands…** prompts come from the `overseer.sessionCommands` setting, as `{name, prompt}` entries, like "Latest reviews are in on the PR. Pull them and evaluate." A `{ticket link}` in a prompt asks for that value first.
 
+### Jira Tickets sidebar
+- Off by default. Turn on `overseer.views.jira` and a **Jira Tickets** icon joins the activity bar.
+- Each JQL query in `overseer.jira.queries` is a section with a table of its tickets: up to 100, with a link to the rest in Jira.
+- Queries run one at a time through the same Jira MCP server as ticket status (`overseer.jira.mcpServer`). They poll only while the view shows.
+- Click a row to open the ticket. The gear opens the setting in `settings.json`.
+
+```json
+"overseer.views.jira": true,
+"overseer.jira.queries": [
+  {
+    "name": "Mine, in flight",
+    "jql": "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC",
+    "fields": ["key", "summary", "status", "priority", "updated"],
+    "intervalMinutes": 5
+  }
+]
+```
+
+`fields` defaults to key, summary, status, updated, assignee, priority, sprint, and fixVersions. The assignee shows as "Me" when it is you, and stands out in orange when it is someone else or nobody. `sprint` works without knowing your Jira site's Sprint field id; Overseer looks it up. `intervalMinutes` defaults to 5, minimum 1. The default queries cover your tickets in Blocked, To Do, In Progress, Peer Review, QA, Ready to Ship, and CR Validating.
+
+**Filter.** The bar at the top filters the loaded tickets. It makes no Jira calls.
+- Free text matches the key, summary, status, and every detail shown. `me` matches your tickets.
+- `field:value` checks one field: `fix:` (or `version:`, `release:`), `sprint:`, `assignee:` (or `who:`), `status:`, `priority:` (or `pri:`), `type:`, `key:`, `summary:`. Quote values with spaces: `sprint:"Assess 2026"`.
+- `assignee:me` is you. `assignee:unassigned` (or `none`) is nobody.
+- All terms must match. Matching ignores case.
+- Click a status pill, assignee, priority, sprint, or fix version to filter by it. Example: click `r2026.11.12` to see what is tagged for that release.
+- Section counts show matched over total. Sections with no match hide. Esc clears the filter.
+
 ### Office
 - The **Office** view, below Session, gives every session in the sidebar a pixel guy. The session's id picks his looks, so he stays the same guy across reloads.
 - Each guy has a race, every one as likely as human: orc, goblin, elf, dark elf, dwarf, grey and green aliens, demon, vampire, zombie, skeleton, troll, gnome, fae, undine, lizardfolk, catfolk, wolffolk, minotaur, robot, cyclops, squidfolk, mushroom folk, golem, ghost, slime, dryad, jackalfolk, harpy, centaur, naga, merfolk, satyr, dragonkin, and ogre. Visitors get races too. **Pixel Guy → Pick Race…** on a row's menu picks one and keeps the rest of his look; `overseer.office.races` off makes everyone human.
@@ -182,6 +210,8 @@ VS Code's modern UI reads tab colors only from settings, so with an Overseer the
 | `overseer.links.prs.openOnly` | `true` | Hide merged and closed PRs in the Session sidebar. A PR with no known status still shows. |
 | `overseer.links.jira.baseUrl` | empty | Jira site for tickets whose URL the transcript doesn't show, e.g. `https://acme.atlassian.net`. |
 | `overseer.jira.mcpServer` | `jira` | Name of the stdio Jira MCP server in `~/.claude.json`. |
+| `overseer.views.jira` | `false` | Show the Jira Tickets sidebar. |
+| `overseer.jira.queries` | seven status queries | JQL sections for the Jira Tickets sidebar: `name`, `jql`, `fields`, `intervalMinutes`. |
 | `overseer.links.liveStatus` | `true` | Show PR and ticket status through `gh` and your Jira MCP server. |
 | `overseer.summary.model` | `haiku` | Model for Summarize with Haiku. |
 | `overseer.sessionCommands` | three starters | Prompts the **Commands…** picker sends. `{name}` in a prompt asks for a value. |
