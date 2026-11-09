@@ -1640,6 +1640,21 @@
           "default": "normal",
           "markdownDescription": "How often the Office guys talk on their own: chats with each other, mutters while typing, and musings while idle. Visitors, shows, events, and critters keep their own lines. **Overseer: Office Chatter…** sets it from the Office view."
         },
+        "overseer.office.bubbleLook": {
+          "type": "string",
+          "enum": [
+            "solid",
+            "soft",
+            "faint"
+          ],
+          "enumDescriptions": [
+            "Opaque bubbles.",
+            "The bubble's background at 70%, so the room shows through a little.",
+            "Smaller text on a 50% background, so the room shows through more."
+          ],
+          "default": "soft",
+          "markdownDescription": "How the Office's speech bubbles look. The text stays solid, and hovering a guy makes his bubble solid. **Overseer: Office Chatter…** sets it from the Office view."
+        },
         "overseer.office.performances": {
           "type": "string",
           "enum": [

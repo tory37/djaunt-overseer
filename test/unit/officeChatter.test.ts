@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bubbleAlpha, bubbleLimit, ChatLine, chatterStyle, layoutChatter, LOG_KEEP, pushChatLog, showsChatLog, talkFactor, talkFrequency, visibleChatLog } from "../../src/officeChatter";
+import { bubbleAlpha, bubbleLimit, bubbleLook, bubbleStyle, ChatLine, chatterStyle, layoutChatter, LOG_KEEP, pushChatLog, showsChatLog, talkFactor, talkFrequency, visibleChatLog } from "../../src/officeChatter";
 
 const line = (id: string, since: number, priority: ChatLine["priority"] = "normal", until = since + 4): ChatLine => ({ id, text: id, since, until, priority });
 
@@ -109,6 +109,22 @@ describe("showsChatLog", () => {
     expect(showsChatLog("tidy", false)).toBe(false);
     expect(showsChatLog("quiet", true)).toBe(false);
     expect(showsChatLog("bubbles", true)).toBe(false);
+  });
+});
+
+describe("bubble look", () => {
+  it("defaults to soft, with faint the most see-through and smaller", () => {
+    expect(bubbleLook(undefined)).toBe("soft");
+    expect(bubbleLook("faint")).toBe("faint");
+    expect(bubbleStyle("solid", false)).toEqual({ font: 7, fill: 1 });
+    expect(bubbleStyle("soft", false)).toEqual({ font: 7, fill: 0.7 });
+    expect(bubbleStyle("faint", false).fill).toBeLessThan(0.7);
+    expect(bubbleStyle("faint", false).font).toBeLessThan(7);
+  });
+
+  it("goes solid on hover", () => {
+    expect(bubbleStyle("faint", true)).toEqual({ font: 6, fill: 1 });
+    expect(bubbleStyle("soft", true).fill).toBe(1);
   });
 });
 

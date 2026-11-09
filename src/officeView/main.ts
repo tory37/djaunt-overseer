@@ -16,7 +16,7 @@ import {
 import { personalityOf, planVisit, VisitorFrequency, visitorFrequency, VisitorKind, visitorGap, visitorReaction, visitorSmallTalk } from "../officeVisitors";
 import { YourEvent, YourReaction, yourEventSeconds, yourReaction, roomReaction, YourScreen } from "../officeYou";
 import {
-  bubbleAlpha, bubbleLimit, ChatLine, ChatLogEntry, ChatPriority, ChatterStyle, chatterStyle, layoutChatter, pushChatLog, showsChatLog, talkFactor, talkFrequency, visibleChatLog,
+  bubbleAlpha, bubbleLimit, BubbleLook, bubbleLook, bubbleStyle, ChatLine, ChatLogEntry, ChatPriority, ChatterStyle, chatterStyle, layoutChatter, pushChatLog, showsChatLog, talkFactor, talkFrequency, visibleChatLog,
 } from "../officeChatter";
 import { Facing, FRAME_HEIGHT, FRAME_WIDTH, HEAD_ROOM, pixelGuyFrame, pixelGuyLook, PixelGuyLook, Pose } from "../pixelGuy";
 import { DeskStyle, deskStyleFor } from "../deskStyles";
@@ -42,6 +42,7 @@ interface OfficeMessage {
   performances?: unknown;
   chatter?: unknown;
   talk?: unknown;
+  bubbleLook?: unknown;
   // False makes every guy human.
   races?: boolean;
   // The session the Session sidebar shows: his guy wears a crown.
@@ -235,6 +236,7 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEve
   }
   performancesSetting = nextPerformances;
   state.talk = talkFactor(talkFrequency(data.talk));
+  bubbleLookSetting = bubbleLook(data.bubbleLook);
   const nextChatter = chatterStyle(data.chatter);
   if (nextChatter !== chatterSetting) {
     chatterSetting = nextChatter;
@@ -1681,6 +1683,7 @@ function drawYou(station: Station, reaction: YourReaction): { left: number; top:
 // bubbleTop puts the bubble higher than over the guy's head; your bubble sits above your monitors.
 // Long lines wrap; the bubble grows upward so its tail stays over the guy.
 const BUBBLE_WRAP = 96;
+let bubbleLookSetting: BubbleLook = "soft";
 
 interface Bubble {
   lines: string[];
@@ -1692,17 +1695,22 @@ interface Bubble {
   tailX: number;
   tailY: number;
   alpha?: number;
+  // Text size and background opacity (bubbleStyle).
+  font: number;
+  fill: number;
 }
 
-function layoutBubble(box: { left: number; top: number }, text: string, bubbleTop = box.top - 11): Bubble {
-  context.font = "7px monospace";
+function layoutBubble(box: { left: number; top: number }, text: string, bubbleTop = box.top - 11, hovered = false): Bubble {
+  const { font, fill } = bubbleStyle(bubbleLookSetting, hovered);
+  context.font = `${font}px monospace`;
   const lines = wrapText(text, Math.min(BUBBLE_WRAP, state.layout.cols * TILE - 8));
   const textWidth = Math.max(...lines.map((line) => Math.ceil(context.measureText(line).width)));
   const width = textWidth + 6;
-  const height = 9 + (lines.length - 1) * 7;
+  const height = font + 2 + (lines.length - 1) * font;
   // Long lines stay inside the room; the tail stays over the guy.
   const left = Math.max(1, Math.min(state.layout.cols * TILE - width - 1, Math.round(box.left + FRAME_WIDTH / 2 - width / 2)));
-  return { lines, left, top: bubbleTop - (lines.length - 1) * 7, width, height, tailX: box.left + FRAME_WIDTH / 2 - 1, tailY: bubbleTop + 9 };
+  // The bubble's bottom sits on the tail; extra lines grow it upward.
+  return { lines, left, top: bubbleTop + 9 - height, width, height, tailX: box.left + FRAME_WIDTH / 2 - 1, tailY: bubbleTop + 9, font, fill };
 }
 
 // Lifts bubbles out of each other's way, the lowest guy's staying put, so a busy room stays readable.
@@ -1736,13 +1744,21 @@ function paintBubbleStem(bubble: Bubble, palette: ScenePalette): void {
 function paintBubble(bubble: Bubble, palette: ScenePalette): void {
   const { lines, left, top, width, height } = bubble;
   context.globalAlpha = bubble.alpha ?? 1;
-  rect(left, top, width, height, palette.bubbleEdge);
-  rect(left + 1, top + 1, width - 2, height - 2, palette.bubble);
+  // The outline is a little more solid than the background, so a see-through bubble keeps its edge.
+  const base = bubble.alpha ?? 1;
+  context.globalAlpha = base * Math.min(1, bubble.fill + 0.25);
+  rect(left, top, width, 1, palette.bubbleEdge);
+  rect(left, top + height - 1, width, 1, palette.bubbleEdge);
+  rect(left, top + 1, 1, height - 2, palette.bubbleEdge);
+  rect(left + width - 1, top + 1, 1, height - 2, palette.bubbleEdge);
   rect(bubble.tailX, bubble.tailY, 2, 1, palette.bubbleEdge);
-  context.font = "7px monospace";
+  context.globalAlpha = base * bubble.fill;
+  rect(left + 1, top + 1, width - 2, height - 2, palette.bubble);
+  context.globalAlpha = base;
+  context.font = `${bubble.font}px monospace`;
   context.fillStyle = palette.bubbleText;
   context.textBaseline = "top";
-  lines.forEach((line, index) => context.fillText(line, left + 3, top + 1.5 + index * 7));
+  lines.forEach((line, index) => context.fillText(line, left + 3, top + 1.5 + index * bubble.font));
   context.globalAlpha = 1;
 }
 
@@ -1807,7 +1823,7 @@ function drawChatter(lines: SpokenLine[], palette: ScenePalette, seconds: number
   }
   lines.filter((line) => chat.pips.has(line.id)).forEach((line) => paintPip(line, palette, seconds));
   const bubbles = lines.filter((line) => chat.full.has(line.id)).map((line) => ({
-    ...layoutBubble(line.box, line.text, line.bubbleTop),
+    ...layoutBubble(line.box, line.text, line.bubbleTop, line.id === hoveredId),
     alpha: line.id === hoveredId ? 1 : bubbleAlpha(line.since, line.until, state.time),
   }));
   spreadBubbles(bubbles);
