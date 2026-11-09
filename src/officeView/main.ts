@@ -2,7 +2,7 @@
 // posts the live sessions ({ type: "office" }); a click on a guy posts { type: "open" } back. You sit at your own
 // desk and act out the scene events ({ type: "sceneEvent" }) with your monitor; the room looks up too.
 
-import { buildOfficeLayout, Desk, desksNeeded, OFFICE_SCENES, officeShape, OfficeLayout, OfficeSceneId, officeSceneId, Point, Prop, Station, STATION_DESKS } from "../officeLayout";
+import { buildOfficeLayout, Desk, desksNeeded, OFFICE_SCENES, officeShape, OUTDOOR_SCENES, OfficeLayout, OfficeSceneId, officeSceneId, Point, Prop, Station, STATION_DESKS } from "../officeLayout";
 import { DAYTIME_SKY, discLit, earthIllumination, lunarSunElevation, mix, SceneLight, sceneLight, SkyState, skyNow } from "../officeDaylight";
 import { critterGap, critterLines, critterPoses, CritterRun, critterRunDone, planCritterRun } from "../officeCritters";
 import { FLIERS, flierGap, flierLines, flierPoses, Flight, flightDone, planFlight } from "../officeFliers";
@@ -19,6 +19,7 @@ import { drawCritter } from "./critters";
 import { drawFlier, drawFlierShadow, drawFlierTrail } from "./fliers";
 import { drawLuckyCat } from "./luckyCat";
 import { SCENE_PALETTES, ScenePalette } from "./palettes";
+import { backdropHasSky, drawAfterLight, drawBackdrop, drawGroundDetail, drawSceneryProp, drawWeather, Kit, LIBRARY_WINDOW_EVERY, propLight, skyBottom } from "./scenery";
 
 declare function acquireVsCodeApi(): { postMessage(message: unknown): void };
 
@@ -60,6 +61,8 @@ const context = canvas.getContext("2d") as CanvasRenderingContext2D;
 const statusLabel = document.getElementById("status") as HTMLElement;
 const sceneLabel = document.getElementById("scene") as HTMLElement;
 const tooltip = document.getElementById("tooltip") as HTMLElement;
+// The drawing tools the newer scenes' scenery uses.
+const kit: Kit = { rect, glow, context };
 
 let sceneId: OfficeSceneId = "office";
 let latestInputs: AgentInput[] = [];
@@ -458,6 +461,8 @@ function drawGround(left: number, top: number, seed: number, palette: ScenePalet
       rect(dust.x, dust.y, 1, 1, "#BDBDC4");
       return;
     }
+    default:
+      drawGroundDetail(kit, palette, seed, at);
   }
 }
 
@@ -496,6 +501,11 @@ function drawWall(layout: OfficeLayout, palette: ScenePalette, seconds: number):
     case "space":
       drawSpace(width, palette, seconds);
       break;
+    default:
+      if (backdropHasSky(palette.backdrop)) {
+        drawSkyBodies(width, seconds);
+      }
+      drawBackdrop(kit, palette, width, seconds, light);
   }
   context.restore();
   // The lucky cat sits on the ledge between the door and the first window.
@@ -566,6 +576,20 @@ function drawFireflies(width: number, seconds: number): void {
 // The field's back row: the sky for the real time of day, the sun and the moon in their places, drifting clouds,
 // hills, and a fence.
 function drawSky(width: number, palette: ScenePalette, seconds: number): void {
+  drawSkyBodies(width, seconds);
+  for (let x = 0; x < width; x += 2) {
+    const hill = hillTop(x);
+    rect(x, hill, 2, TILE - hill, "#6FA84A");
+  }
+  rect(0, 12, width, 1, palette.wallTrim);
+  rect(0, 14, width, 1, palette.wallTrim);
+  for (let x = 3; x < width; x += 8) {
+    rect(x, 10, 1, 6, palette.wallTrim);
+  }
+}
+
+// The open sky for the real time of day: stars, the sun and the moon in their places, and drifting clouds.
+function drawSkyBodies(width: number, seconds: number): void {
   const sky = currentSky();
   rect(0, 0, width, TILE, light.sky);
   if (light.stars > 0) {
@@ -591,15 +615,6 @@ function drawSky(width: number, palette: ScenePalette, seconds: number): void {
     const x = Math.floor(((seconds * 1.5 + cloud * 70 + noise(cloud) * 30) % (width + 20)) - 10);
     rect(x, 2 + (cloud % 2) * 2, 9, 2, light.cloud);
     rect(x + 2, 1 + (cloud % 2) * 2, 4, 1, light.cloud);
-  }
-  for (let x = 0; x < width; x += 2) {
-    const hill = hillTop(x);
-    rect(x, hill, 2, TILE - hill, "#6FA84A");
-  }
-  rect(0, 12, width, 1, palette.wallTrim);
-  rect(0, 14, width, 1, palette.wallTrim);
-  for (let x = 3; x < width; x += 8) {
-    rect(x, 10, 1, 6, palette.wallTrim);
   }
 }
 
@@ -1221,6 +1236,14 @@ function drawProp(prop: Prop, palette: ScenePalette, seconds: number, index: num
       return;
     case "couch":
       // The seat; the backrest draws after anyone sitting on it.
+      if (palette.couchStyle === "towel") {
+        // A beach towel spread on the sand: stripes across it.
+        for (let x = 1; x < TILE * 2 - 1; x++) {
+          rect(left + x, top + 5, 1, 9, Math.floor((x - 1) / 3) % 2 === 0 ? palette.couch : palette.couchLight);
+        }
+        rect(left + 1, top + 13, TILE * 2 - 2, 1, palette.shadow);
+        return;
+      }
       rect(left + 1, top + 4, TILE * 2 - 2, 6, palette.couch);
       if (palette.couchStyle === "sofa") {
         rect(left + 2, top + 5, TILE - 3, 4, palette.couchLight);
@@ -1402,6 +1425,8 @@ function drawProp(prop: Prop, palette: ScenePalette, seconds: number, index: num
       rect(left + 7, top - 4, 4, 1, "#FFFFFF");
       rect(left + 2, top + 14, 3, 2, "#8E8E96");
       return;
+    default:
+      drawSceneryProp(kit, prop.kind, left, top, seconds, index);
   }
 }
 
@@ -1420,6 +1445,9 @@ function glow(centerX: number, centerY: number, radius: number, color: string, a
 function drawCouchBack(prop: Prop, palette: ScenePalette): void {
   const left = prop.at.x * TILE;
   const top = prop.at.y * TILE;
+  if (palette.couchStyle === "towel") {
+    return;
+  }
   if (palette.couchStyle !== "sofa") {
     // A log or a stone slab: no back, just its front, and ring ends on a log.
     rect(left + 1, top + 9, TILE * 2 - 2, 6, shadeColor(palette.couch));
@@ -1763,7 +1791,9 @@ function draw(seconds: number): void {
   if (overhead !== undefined) {
     drawFlight(overhead, seconds, false);
   }
+  drawWeather(kit, sceneId, layout.cols * TILE, layout.rows * TILE, seconds);
   drawLighting(layout, owners, atStation || event !== undefined, seconds);
+  drawAfterLight(kit, sceneId, layout.cols * TILE, light);
   if (overhead !== undefined) {
     drawFlight(overhead, seconds, true);
   }
@@ -1872,6 +1902,12 @@ function drawLighting(layout: OfficeLayout, owners: Map<number, Agent>, stationO
       case "dish":
         pool(left + 8, top, 10, "#FF8A80", 0.25);
         return;
+      default: {
+        const glowing = propLight(prop.kind);
+        if (glowing !== undefined) {
+          pool(left + glowing.dx, top + glowing.dy, glowing.radius, glowing.color, glowing.alpha);
+        }
+      }
     }
   });
   if (layout.door !== undefined && palette().doorStyle === "hatch") {
@@ -1892,10 +1928,22 @@ function palette(): ScenePalette {
 // the moon's ridge.
 function paintOpenSky(map: CanvasRenderingContext2D, layout: OfficeLayout): void {
   const roomWidth = layout.cols * TILE;
-  switch (palette().backdrop) {
+  const backdrop = palette().backdrop;
+  if (backdropHasSky(backdrop)) {
+    for (let x = 0; x < roomWidth; x++) {
+      map.fillRect(x, 0, 1, skyBottom(backdrop, x));
+    }
+    return;
+  }
+  switch (backdrop) {
     case "windows":
       for (let x = 3; x < layout.cols - 1; x += 5) {
         map.fillRect(x * TILE + 2, 3, 12, 8);
+      }
+      return;
+    case "bookcases":
+      for (let x = 3; x * TILE < roomWidth - TILE; x += LIBRARY_WINDOW_EVERY) {
+        map.fillRect(x * TILE + 2, 2, 12, 10);
       }
       return;
     case "sky":
@@ -1952,8 +2000,7 @@ function drawCritters(run: CritterRun, palette: ScenePalette, seconds: number): 
 
 // Night outdoors, for the fliers that keep hours; undefined indoors.
 function fliersNight(): boolean | undefined {
-  const outdoors = sceneId === "forest" || sceneId === "field" || sceneId === "riverbed" || sceneId === "moon";
-  return outdoors ? light.stars > 0.3 : undefined;
+  return OUTDOOR_SCENES.has(sceneId) ? light.stars > 0.3 : undefined;
 }
 
 // Starts a flight when it's due, has idle guys under it look up, and clears it once it's gone.

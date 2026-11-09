@@ -1414,7 +1414,13 @@
             "field",
             "riverbed",
             "cave",
-            "moon"
+            "moon",
+            "beach",
+            "snowfield",
+            "desert",
+            "reef",
+            "library",
+            "rooftop"
           ],
           "enumItemLabels": [
             "Office",
@@ -1423,7 +1429,13 @@
             "Field",
             "Riverbed",
             "Cave",
-            "Moon"
+            "Moon",
+            "Beach",
+            "Snowfield",
+            "Desert",
+            "Reef",
+            "Library",
+            "Rooftop"
           ],
           "markdownDescription": "The Office view's room. Switch it with **Overseer: Switch Office Scene…** or the button on the view."
         },

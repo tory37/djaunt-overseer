@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FLIER_GAP_SECONDS, flierGap, flierLines, flierPoses, FLIERS, fliersNow, flightDone, planFlight, SCENE_FLIERS } from "../../src/officeFliers";
-import { buildOfficeLayout, OFFICE_SCENES } from "../../src/officeLayout";
+import { buildOfficeLayout, OFFICE_SCENES, OUTDOOR_SCENES } from "../../src/officeLayout";
 import { seededRandom } from "../../src/pixelGuy";
 
 const TILE = 16;
@@ -31,7 +31,7 @@ describe("officeFliers", () => {
     expect(leads(false)).not.toContain("firefly");
     expect(leads(undefined)).toEqual(SCENE_FLIERS.forest.map((troupe) => troupe[0]));
     // Every outdoor scene has something to send at any hour.
-    for (const scene of ["forest", "field", "riverbed", "moon"] as const) {
+    for (const scene of OUTDOOR_SCENES) {
       expect(fliersNow(scene, true).length).toBeGreaterThan(0);
       expect(fliersNow(scene, false).length).toBeGreaterThan(0);
     }

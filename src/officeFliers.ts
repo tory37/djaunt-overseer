@@ -13,7 +13,10 @@ export type FlierKind =
   | "goose" | "swallow" | "bee" | "hotAirBalloon"
   | "heron" | "dragonfly" | "kingfisher" | "gull" | "mallard"
   | "dragon" | "wisp" | "phoenix"
-  | "rocket" | "satellite" | "spaceWhale" | "meteor" | "starJelly";
+  | "rocket" | "satellite" | "spaceWhale" | "meteor" | "starJelly"
+  | "pelican" | "parrot" | "kite" | "snowyOwl" | "sleigh" | "vulture"
+  | "fish" | "jellyfish" | "shark" | "manta" | "seaTurtle"
+  | "flyingBook" | "helicopter" | "blimp";
 
 // flap: a steady bob with the wingbeat. glide: long and level, a few beats then a glide. swoop: dips low over the
 // room mid-crossing and climbs out. dart: a bug's jittery zigzag that hangs in the air now and then. drift: slow
@@ -76,6 +79,20 @@ export const FLIERS: Record<FlierKind, FlierSpec> = {
   spaceWhale: { motion: "drift", speed: 9, width: 22, flap: 0.8, formation: "line", shadow: true },
   meteor: { motion: "streak", speed: 90, width: 4, flap: 8, formation: "line", glow: true, trail: "#F8A23A" },
   starJelly: { motion: "drift", speed: 8, width: 7, flap: 1.5, formation: "swarm", glow: true },
+  pelican: { motion: "glide", speed: 26, width: 16, flap: 2.5, formation: "line", shadow: true },
+  parrot: { motion: "flap", speed: 34, width: 12, flap: 6, formation: "line", time: "day" },
+  kite: { motion: "drift", speed: 12, width: 9, flap: 2, formation: "line", time: "day" },
+  snowyOwl: { motion: "glide", speed: 24, width: 11, flap: 3, formation: "line" },
+  sleigh: { motion: "drift", speed: 22, width: 22, flap: 3, formation: "line", glow: true, time: "night", trail: "#FFF6C8" },
+  vulture: { motion: "glide", speed: 18, width: 16, flap: 1.5, formation: "line", shadow: true, time: "day" },
+  fish: { motion: "dart", speed: 24, width: 7, flap: 4, formation: "swarm" },
+  jellyfish: { motion: "drift", speed: 7, width: 7, flap: 1.2, formation: "swarm", glow: true },
+  shark: { motion: "glide", speed: 22, width: 22, flap: 1.5, formation: "line", shadow: true },
+  manta: { motion: "glide", speed: 16, width: 16, flap: 1, formation: "line", shadow: true },
+  seaTurtle: { motion: "drift", speed: 12, width: 14, flap: 1.2, formation: "line" },
+  flyingBook: { motion: "flap", speed: 24, width: 11, flap: 4, formation: "swarm" },
+  helicopter: { motion: "flap", speed: 36, width: 15, flap: 12, formation: "line", shadow: true },
+  blimp: { motion: "drift", speed: 7, width: 22, flap: 1, formation: "line", shadow: true, time: "day" },
 };
 
 // The flights each scene picks from. A flight moves together at its first member's speed.
@@ -87,6 +104,12 @@ export const SCENE_FLIERS: Record<OfficeSceneId, FlierKind[][]> = {
   riverbed: [["heron"], ["dragonfly"], ["dragonfly", "dragonfly"], ["kingfisher"], ["gull", "gull"], ["mallard", "mallard", "mallard"]],
   cave: [["dragon"], ["wisp", "wisp", "wisp"], ["phoenix"], ["ghost"], ["moth", "moth"]],
   moon: [["rocket"], ["satellite"], ["spaceWhale"], ["meteor"], ["meteor", "meteor"], ["starJelly", "starJelly"]],
+  beach: [["gull"], ["gull", "gull", "gull"], ["pelican", "pelican", "pelican"], ["parrot", "parrot"], ["kite"], ["meteor"]],
+  snowfield: [["snowyOwl"], ["goose", "goose", "goose", "goose", "goose"], ["crow", "crow"], ["hawk"], ["sleigh"]],
+  desert: [["vulture"], ["vulture", "vulture", "vulture"], ["hawk"], ["owl"], ["hotAirBalloon"], ["meteor"]],
+  reef: [["fish", "fish", "fish", "fish", "fish", "fish"], ["fish", "fish", "fish"], ["jellyfish", "jellyfish", "jellyfish"], ["shark"], ["manta"], ["seaTurtle"]],
+  library: [["flyingBook", "flyingBook", "flyingBook"], ["flyingBook"], ["owl"], ["ghost"], ["wisp", "wisp", "wisp"], ["paperPlane"]],
+  rooftop: [["pigeon", "pigeon", "pigeon"], ["crow"], ["helicopter"], ["blimp"], ["paperPlane"], ["pigeon"]],
 };
 
 // Seconds between one flight leaving and the next one starting.
@@ -280,6 +303,20 @@ const KIND_LINES: Record<FlierKind, string[]> = {
   spaceWhale: ["space whale!", "it's huge", "hello friend", "it's singing", "so majestic", "whale hello there"],
   meteor: ["shooting star!", "make a wish", "meteor!", "is that coming here?", "wish: no bugs"],
   starJelly: ["space jellies", "glowy", "ooh", "don't touch them", "so floaty", "jelly!"],
+  pelican: ["pelicans!", "big beak", "hide the fish"],
+  parrot: ["parrot!", "squawk!", "pretty bird"],
+  kite: ["kite!", "whose kite?", "go higher"],
+  snowyOwl: ["snowy owl!", "hedwig?", "hoo"],
+  sleigh: ["is that…", "SLEIGH!", "early this year", "naughty list?"],
+  vulture: ["vultures…", "not dead yet!", "circling…"],
+  fish: ["fish!", "school's in", "blub"],
+  jellyfish: ["jellies!", "don't touch", "glowy"],
+  shark: ["SHARK", "stay calm", "don't bleed"],
+  manta: ["manta!", "so graceful", "whoosh"],
+  seaTurtle: ["sea turtle!", "dude!", "go with the flow"],
+  flyingBook: ["the books!", "shhh", "catch it!"],
+  helicopter: ["chopper!", "get to the chopper", "loud…"],
+  blimp: ["blimp!", "big balloon", "ad space"],
 };
 
 export function flierLines(kind: FlierKind): string[] {

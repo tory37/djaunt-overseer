@@ -206,6 +206,104 @@ const SPRITES: Record<CritterKind, CritterSprite> = {
     colors: { w: "#F2F2F4", v: "#E0A830", g: "#A8ACB4" },
     frames: legs(["..www..", ".wwvvw.", ".wwvvw.", "gwwwww.", "gwwwwww", ".wwwww."], [".w...w."], ["..w.w.."]),
   },
+  hermitCrab: {
+    colors: { s: "#E8C8A0", d: "#B8906A", r: "#D8483A", k: "#1A1A1A" },
+    frames: legs(["...ssss....", "..sddsss.k.", ".ssdssdsrk.", ".sssssdrrr.", "..rrrrrrr.."], ["..r.r.r.r.."], [".r.r.r.r..."]),
+  },
+  sandpiper: {
+    colors: { b: "#A89078", d: "#7A6450", w: "#F2EEE6", k: "#1A1A1A", y: "#2A2A2A" },
+    frames: legs(["....bb..", "d..bbkyy", ".dbbbb..", "..wwww.."], ["...y.y.."], ["....yy.."]),
+  },
+  penguin: {
+    colors: { k: "#1E1E28", w: "#F4F4F4", e: "#FFFFFF", o: "#F0A030" },
+    frames: legs(["..kkk..", ".kkkek.", ".kkkkoo", "kkkww..", "kkwwww.", "kkwwww.", ".kwwww."], ["..o..o."], ["...oo.."]),
+  },
+  arcticFox: {
+    colors: { o: "#EEF0F4", s: "#C8CED8", w: "#FFFFFF", k: "#2A2E3A" },
+    frames: legs(
+      ["............o.o.", "ws..........oooo", ".wsoooooooooooko", "..soooooooooooww", "...ssooooooss..."],
+      ["....k.k...k.k..."],
+      [".....kk....kk..."],
+    ),
+  },
+  polarBear: {
+    colors: { w: "#F4F2EC", s: "#D8D4C8", k: "#1A1A1A" },
+    frames: legs(
+      ["............ww..", "....wwwwwwwwwww.", "..wwwwwwwwwwwkww", ".wwwwwwwwwwwwwwk", ".swwwwwwwwwwwss.", "..sswwwwwwwwss.."],
+      ["..ss.ss...ss.ss."],
+      ["...ss.ss.ss.ss.."],
+    ),
+  },
+  seal: {
+    colors: { g: "#7A7E88", l: "#A8ACB4", k: "#141414" },
+    frames: legs(["........ggg.", "........gkgg", "g......ggggk", "gg.ggggggg.."], [".gglllllllg."], ["..ggllllllgg"]),
+  },
+  lizard: {
+    colors: { g: "#7AA84A", d: "#4E7A30", k: "#141414" },
+    frames: legs([".......gggg.", "dd.gggggggkg", "..dgdgdgggg."], ["...g....g..."], ["..g......g.."]),
+  },
+  scorpion: {
+    colors: { c: "#B8862E", d: "#8A5E1E", k: "#1A1A1A" },
+    frames: legs(["..cc.......", ".c..c......", ".c...c...cc", "..cccccccc.", "...ccccckc."], ["...d.d.d.d."], ["..d.d.d.d.."]),
+  },
+  camel: {
+    colors: { t: "#D8A868", d: "#B88848", k: "#1A1A1A" },
+    frames: legs(
+      [".............tt.", "....tt..tt..ttkt", "...tttttttt.tt..", "..tttttttttttt..", ".ttttttttttttt..", "t.dttttttttdd..."],
+      ["...d.d....d.d...", "...d.d....d.d..."],
+      ["..d...d..d...d..", "..d...d..d...d.."],
+    ),
+  },
+  tumbleweed: {
+    colors: { b: "#B8925A", d: "#8A6A3A" },
+    frames: [
+      ["..bdbdb..", ".d.b.d.b.", "b.d.b.d.d", "db.d.b.b.", "b.b.d.d.b", ".d.b.b.d.", "..bdbdb.."],
+      ["..dbdbd..", ".b.d.b.d.", "d.b.d.b.b", "bd.b.d.d.", "d.d.b.b.d", ".b.d.d.b.", "..dbdbd.."],
+    ],
+  },
+  roadrunner: {
+    colors: { b: "#5A4A3A", w: "#C8B8A0", k: "#141414", y: "#3A3A3A", g: "#6A8AAA" },
+    frames: legs(
+      ["..........bb..", "t.........bkyy", ".t.....bbbbb..", "..tbbbbbww....", "....bbbww....."],
+      ["....g..g......"],
+      ["....gg........"],
+    ),
+  },
+  starfish: {
+    colors: { o: "#F08C4A", l: "#F8B87A" },
+    frames: [
+      ["....o....", "...ooo...", "ooooloooo", ".ooooooo.", "..oo.oo..", ".oo...oo."],
+      ["....o....", "...ooo...", "ooooloooo", ".ooooooo.", "..oo.oo..", "..o...o.."],
+    ],
+  },
+  octopus: {
+    colors: { p: "#C85A8A", l: "#E88AB0", k: "#1A1A1A", w: "#FFFFFF" },
+    frames: [
+      ["...pppp...", "..pplppp..", "..pwkpwk..", "..pppppp..", ".pppppppp.", "p.p.pp.p.p", "p..p..p..p"],
+      ["...pppp...", "..pplppp..", "..pwkpwk..", "..pppppp..", ".pppppppp.", ".p.p..p.p.", ".p..pp..p."],
+    ],
+  },
+  seahorse: {
+    colors: { y: "#F0B030", d: "#C88A20", k: "#1A1A1A" },
+    frames: [
+      ["..dy...", ".yykyyy", "..yy...", "d.yyy..", ".dyyy..", "..yy...", "...y...", "..y.y..", "...y..."],
+      ["..dy...", ".yykyyy", "..yy...", ".dyyy..", "d.yyy..", "..yy...", "...y...", "..y.y..", "...y..."],
+    ],
+  },
+  book: {
+    colors: { c: "#8A2E2E", p: "#F4EEDC", g: "#E8C048", k: "#1A1A1A" },
+    frames: [
+      ["cccccccc", "gppppppc", "gpppkppc", "gppppppc", "cccccccc", ".c....c."],
+      ["....cccc", "...cpppc", "cccppppc", "gpppkppc", "cccccccc", "..c..c.."],
+    ],
+  },
+  broom: {
+    colors: { s: "#8A5A2E", b: "#E0B850", d: "#B88A30" },
+    frames: [
+      ["......s", ".....s.", "....s..", "...s...", "..dd...", ".bbbb..", "bbbbbb."],
+      ["....s..", "....s..", "...s...", "...s...", "..dd...", ".bbbb..", ".bbbbb."],
+    ],
+  },
 };
 
 // Draws one critter with its feet at (pose.x, pose.y), centered on x. A small shadow stays on the ground under

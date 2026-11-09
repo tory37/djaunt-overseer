@@ -70,6 +70,8 @@ describe("buildOfficeLayout", () => {
   it("reads an unknown scene as the office", () => {
     expect(officeSceneId("serverRoom")).toBe("serverRoom");
     expect(officeSceneId("moon")).toBe("moon");
+    expect(officeSceneId("reef")).toBe("reef");
+    expect(officeSceneId("rooftop")).toBe("rooftop");
     expect(officeSceneId("mars")).toBe("office");
     expect(officeSceneId(undefined)).toBe("office");
   });

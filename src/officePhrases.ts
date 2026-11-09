@@ -113,6 +113,36 @@ export const SCENE_CHAT: Record<OfficeSceneId, readonly string[]> = {
     "where's the air?", "moon cheese?", "it's rock", "my helmet's foggy", "remote work, but further", "houston?",
     "space latency", "the view though", "zero G coffee", "I'm floating",
   ],
+  beach: [
+    "sand in my keyboard", "sunscreen?", "surf's up", "glare on my screen", "is that a crab?", "beach day!",
+    "the tide's coming in", "wifi's bad out here", "salty air", "who brought snacks?", "sandcastle standup",
+    "wave-driven development", "my laptop is hot", "shell scripting", "out of office. literally.",
+  ],
+  snowfield: [
+    "it's freezing", "my fingers!", "brr", "snow day!", "can't feel my toes", "is that a penguin?",
+    "hot cocoa?", "snowball fight!", "frozen build", "the code froze", "cold start", "ice ice baby",
+    "let it snow", "a cold deploy", "who left the door open?",
+  ],
+  desert: [
+    "it's so hot", "water?", "is that a mirage?", "dry spell", "sand everywhere", "my laptop is melting",
+    "tumbleweed…", "where's the shade?", "it's a dry heat", "cactus!", "heatwave deploy", "hot fix!",
+    "the CPU is cooking", "camel case", "thirsty",
+  ],
+  reef: [
+    "blub", "is my laptop waterproof?", "fish!", "deep dive", "it's so blue", "bubbles!", "the coral!",
+    "swim lane", "under the sea", "low latency, high pressure", "sea-plus-plus", "stay hydrated",
+    "watch the jellies", "I'm a deep-sea dev", "nice reef",
+  ],
+  library: [
+    "shhh", "SHHH", "the books!", "overdue", "so quiet", "read the docs", "RTFM", "where's the manual?",
+    "that one flew", "dewey decimal", "library code!", "checked out", "no talking", "nice reading nook",
+    "the docs are outdated",
+  ],
+  rooftop: [
+    "nice view", "it's windy", "don't look down", "pigeons!", "sunset standup", "the city!",
+    "is that a helicopter?", "rooftop deploy", "top-level code", "high availability", "cloud computing!",
+    "who's grilling?", "my notes blew away", "good signal up here", "up on the roof",
+  ],
 };
 
 // Mutters while typing: mostly code bits, sometimes a word.

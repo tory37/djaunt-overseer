@@ -12,7 +12,10 @@ export type CritterKind =
   | "bat" | "rat" | "beetle"
   | "alien" | "rover"
   | "corgi" | "hamster" | "spider" | "drone" | "raccoon" | "pig" | "butterfly"
-  | "otter" | "crab" | "slime" | "moonBunny" | "ufo" | "astronaut";
+  | "otter" | "crab" | "slime" | "moonBunny" | "ufo" | "astronaut"
+  | "hermitCrab" | "sandpiper" | "penguin" | "arcticFox" | "polarBear" | "seal"
+  | "lizard" | "scorpion" | "camel" | "tumbleweed" | "roadrunner"
+  | "starfish" | "octopus" | "seahorse" | "book" | "broom";
 
 // run: a quick two-frame scamper. hop: arcs off the ground. fly: flaps over the room. waddle: a slow side-to-side
 // rock. roll: glides on wheels.
@@ -63,6 +66,22 @@ export const CRITTERS: Record<CritterKind, CritterSpec> = {
   moonBunny: { gait: "hop", speed: 20, width: 10, pauses: true, floaty: true },
   ufo: { gait: "fly", speed: 34, width: 11, pauses: false },
   astronaut: { gait: "hop", speed: 14, width: 7, pauses: true, floaty: true },
+  hermitCrab: { gait: "waddle", speed: 12, width: 9, pauses: true },
+  sandpiper: { gait: "run", speed: 48, width: 8, pauses: true },
+  penguin: { gait: "waddle", speed: 14, width: 7, pauses: true },
+  arcticFox: { gait: "run", speed: 44, width: 15, pauses: false },
+  polarBear: { gait: "waddle", speed: 14, width: 16, pauses: true },
+  seal: { gait: "waddle", speed: 12, width: 12, pauses: true },
+  lizard: { gait: "run", speed: 46, width: 12, pauses: true },
+  scorpion: { gait: "run", speed: 24, width: 11, pauses: true },
+  camel: { gait: "waddle", speed: 14, width: 16, pauses: true },
+  tumbleweed: { gait: "hop", speed: 36, width: 9, pauses: false },
+  roadrunner: { gait: "run", speed: 64, width: 14, pauses: true },
+  starfish: { gait: "waddle", speed: 8, width: 9, pauses: false },
+  octopus: { gait: "waddle", speed: 14, width: 10, pauses: true },
+  seahorse: { gait: "hop", speed: 12, width: 7, pauses: true, floaty: true },
+  book: { gait: "hop", speed: 22, width: 8, pauses: true },
+  broom: { gait: "hop", speed: 20, width: 7, pauses: true },
 };
 
 // The troupes each scene picks from. A troupe moves together at its first member's speed, one behind the other.
@@ -74,6 +93,12 @@ export const SCENE_CRITTERS: Record<OfficeSceneId, CritterKind[][]> = {
   riverbed: [["frog"], ["frog", "frog"], ["duck", "duckling", "duckling", "duckling"], ["turtle"], ["otter"], ["crab"], ["crab", "crab"]],
   cave: [["bat"], ["bat", "bat"], ["bat", "bat", "bat"], ["rat"], ["beetle"], ["spider"], ["slime"], ["slime", "slime"]],
   moon: [["alien"], ["alien", "alien"], ["alien", "alien", "alien"], ["rover"], ["moonBunny"], ["ufo"], ["astronaut"], ["rover", "astronaut"]],
+  beach: [["crab"], ["crab", "crab", "crab"], ["hermitCrab"], ["sandpiper", "sandpiper", "sandpiper"], ["turtle"], ["corgi"]],
+  snowfield: [["penguin"], ["penguin", "penguin", "penguin", "penguin"], ["arcticFox"], ["polarBear"], ["seal"], ["rabbit"]],
+  desert: [["lizard"], ["lizard", "lizard"], ["scorpion"], ["camel"], ["camel", "camel"], ["tumbleweed"], ["roadrunner"]],
+  reef: [["crab"], ["crab", "crab"], ["starfish"], ["octopus"], ["hermitCrab"], ["seahorse", "seahorse"]],
+  library: [["cat"], ["mouse"], ["mouse", "cat"], ["book"], ["book", "book", "book"], ["broom"], ["slime"]],
+  rooftop: [["rat"], ["rat", "cat"], ["raccoon"], ["raccoon", "raccoon"], ["cat"], ["drone"], ["corgi"]],
 };
 
 // Seconds between one troupe leaving and the next one starting.
@@ -255,6 +280,22 @@ const KIND_LINES: Record<CritterKind, string[]> = {
   moonBunny: ["moon bun!", "hop hop", "it's making mochi", "space bun", "low-g hops"],
   ufo: ["UFO!", "they're here", "o_O", "beam me up", "act natural", "take the intern"],
   astronaut: ["hi!", "o7", "space!", "nice suit", "hello, houston", "one small step"],
+  hermitCrab: ["nice shell", "house hunting?"],
+  sandpiper: ["peep peep", "zoom!"],
+  penguin: ["penguin!", "waddle waddle", "noot"],
+  arcticFox: ["snow fox!", "so fluffy"],
+  polarBear: ["BEAR", "don't move", "big floof"],
+  seal: ["seal!", "arf arf", "blubber buddy"],
+  lizard: ["lizard!", "zip"],
+  scorpion: ["nope", "scorpion!", "check your boots"],
+  camel: ["camel!", "humps!", "spits?"],
+  tumbleweed: ["tumbleweed…", "…", "*whistles*"],
+  roadrunner: ["meep meep", "so fast", "zoom!"],
+  starfish: ["starfish!", "go go go", "patrick?"],
+  octopus: ["octopus!", "8 arms", "so smart"],
+  seahorse: ["seahorse!", "tiny horse", "ooh"],
+  book: ["a book!", "come back", "overdue"],
+  broom: ["it sweeps itself", "magic!", "o_O"],
 };
 
 export function critterLines(kind: CritterKind): string[] {

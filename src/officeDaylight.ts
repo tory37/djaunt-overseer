@@ -146,6 +146,12 @@ const SCENE_EXPOSURE: Record<OfficeSceneId, number> = {
   riverbed: 1,
   cave: 0,
   moon: 1,
+  beach: 1,
+  snowfield: 1,
+  desert: 1,
+  reef: 1,
+  library: 0.32,
+  rooftop: 1,
 };
 
 export function sceneLight(scene: OfficeSceneId, sky: SkyState): SceneLight {
@@ -153,6 +159,9 @@ export function sceneLight(scene: OfficeSceneId, sky: SkyState): SceneLight {
   const exposure = SCENE_EXPOSURE[scene];
   if (scene === "moon") {
     return moonLight(sky);
+  }
+  if (scene === "reef") {
+    return reefLight(sunUp);
   }
   const [tint, strength] = ambientAt(sunUp);
   const darkness = strength * exposure;
@@ -175,6 +184,14 @@ function moonLight(sky: SkyState): SceneLight {
   const night = clamp((2 - sunUp) / 4);
   const darkness = night * (0.66 - 0.22 * earthLit);
   return { ambient: mix("#FFFFFF", "#3A4670", darkness), darkness, sky: "#05060C", stars: 1, cloud: "#FFFFFF", sun: "#FFF6E0" };
+}
+
+// Under the sea the light is always a little blue and dim, and the night is deep. No sky, no stars.
+function reefLight(sunUp: number): SceneLight {
+  const [, strength] = ambientAt(sunUp);
+  const night = strength / 0.8;
+  const darkness = 0.14 + 0.58 * night;
+  return { ambient: mix("#B4D8F4", "#14265A", night), darkness, sky: "#1C5A8E", stars: 0, cloud: "#FFFFFF", sun: "#FFF6E0" };
 }
 
 // The sun's height over the middle of the moon's near side: noon at full moon, midnight at new moon.
