@@ -10,6 +10,7 @@ import {
   transitionError,
   workflowArgs,
 } from "./jira";
+import { JiraIssueRow, MAX_ISSUES_PER_QUERY, parseSearchPage, searchArgs, searchError } from "./jiraQueries";
 import { resolveCliBinary } from "./liveSessions";
 import { claudeJsonPath, McpServerConfig, McpStdioClient, readClaudeJson, readMcpServerConfig } from "./mcpClient";
 
@@ -38,6 +39,23 @@ export class JiraService implements vscode.Disposable {
     if (failure !== undefined) {
       throw new Error(failure);
     }
+  }
+
+  async search(jql: string, fields: string[]): Promise<{ issues: JiraIssueRow[]; hasMore: boolean }> {
+    const issues: JiraIssueRow[] = [];
+    let pageToken: string | undefined;
+    do {
+      const envelopeText = await this.client.callTool(JIRA_TOOL_NAME, searchArgs(jql, fields, pageToken));
+      const failure = searchError(envelopeText);
+      if (failure !== undefined) {
+        throw new Error(failure);
+      }
+      const page = parseSearchPage(envelopeText);
+      issues.push(...page.issues);
+      pageToken = page.nextPageToken;
+    } while (pageToken !== undefined && issues.length < MAX_ISSUES_PER_QUERY);
+    const hasMore = pageToken !== undefined || issues.length > MAX_ISSUES_PER_QUERY;
+    return { issues: issues.slice(0, MAX_ISSUES_PER_QUERY), hasMore };
   }
 
   dispose(): void {
