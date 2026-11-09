@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as vscode from "vscode";
 import type { PinnedSession } from "./grouping";
 import type { LiveSessionMonitor } from "./liveSessions";
-import { CHATTER_LABELS, CHATTER_STYLES, chatterStyle } from "./officeChatter";
+import { CHATTER_LABELS, CHATTER_STYLES, chatterStyle, TALK_FREQUENCIES, TalkFrequency, talkFrequency } from "./officeChatter";
 import { OFFICE_SCENES, officeSceneId } from "./officeLayout";
 import type { AgentInput } from "./officeSim";
 import { isPerformanceKind, PERFORMANCE_KINDS, PERFORMANCES, performanceFrequency, PerformanceKindId } from "./officePerformances";
@@ -25,6 +25,7 @@ const DAY_NIGHT_SETTING = "overseer.office.dayNight";
 const VISITORS_SETTING = "overseer.office.visitors";
 const PERFORMANCES_SETTING = "overseer.office.performances";
 const CHATTER_SETTING = "overseer.office.chatter";
+const TALK_SETTING = "overseer.office.talk";
 
 export interface OfficePanelDeps {
   extensionUri: vscode.Uri;
@@ -55,7 +56,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
       deps.registry.onDidChange(() => this.postAll()),
       deps.onDidChangeFocus(() => this.postAll()),
       vscode.workspace.onDidChangeConfiguration((change) => {
-        if ([SCENE_SETTING, SLEEPERS_SETTING, YOU_SETTING, YOUR_LOOK_SETTING, CRITTERS_SETTING, FLIERS_SETTING, DAY_NIGHT_SETTING, VISITORS_SETTING, PERFORMANCES_SETTING, CHATTER_SETTING, RACES_SETTING].some((setting) => change.affectsConfiguration(setting))) {
+        if ([SCENE_SETTING, SLEEPERS_SETTING, YOU_SETTING, YOUR_LOOK_SETTING, CRITTERS_SETTING, FLIERS_SETTING, DAY_NIGHT_SETTING, VISITORS_SETTING, PERFORMANCES_SETTING, CHATTER_SETTING, TALK_SETTING, RACES_SETTING].some((setting) => change.affectsConfiguration(setting))) {
           this.postAll();
         }
       }),
@@ -134,6 +135,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     visitors: string;
     performances: string;
     chatter: string;
+    talk: string;
     races: boolean;
     focusedId: string | null;
   } {
@@ -170,6 +172,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
       visitors: visitorFrequency(configuration.get<unknown>(VISITORS_SETTING)),
       performances: performanceFrequency(configuration.get<unknown>(PERFORMANCES_SETTING)),
       chatter: chatterStyle(configuration.get<unknown>(CHATTER_SETTING)),
+      talk: talkFrequency(configuration.get<unknown>(TALK_SETTING)),
       races: configuration.get<boolean>(RACES_SETTING, true),
       focusedId: this.deps.focusedSessionId() ?? null,
     };
@@ -207,22 +210,36 @@ export function registerOfficeCommands(registry: Registry, office: OfficePanelPr
         office.playShow(picked.id);
       }
     }),
+    // Takes a style as an argument (for a keybinding), or asks for a style or how often they talk.
     vscode.commands.registerCommand("overseer.office.chatterStyle", async (style?: unknown) => {
       const configuration = vscode.workspace.getConfiguration();
-      let picked = CHATTER_STYLES.find((id) => id === style);
-      if (picked === undefined) {
-        const current = chatterStyle(configuration.get<unknown>(CHATTER_SETTING));
-        picked = (await vscode.window.showQuickPick(
-          CHATTER_STYLES.map((id) => ({
-            label: id === current ? `$(check) ${CHATTER_LABELS[id].label}` : CHATTER_LABELS[id].label,
-            description: CHATTER_LABELS[id].description,
-            id,
-          })),
-          { placeHolder: "How the Office shows what the guys say" },
-        ))?.id;
+      const given = CHATTER_STYLES.find((id) => id === style);
+      if (given !== undefined) {
+        await configuration.update(CHATTER_SETTING, given, vscode.ConfigurationTarget.Global);
+        return;
       }
-      if (picked !== undefined) {
-        await configuration.update(CHATTER_SETTING, picked, vscode.ConfigurationTarget.Global);
+      const current = chatterStyle(configuration.get<unknown>(CHATTER_SETTING));
+      const talk = talkFrequency(configuration.get<unknown>(TALK_SETTING));
+      type Item = vscode.QuickPickItem & { style?: (typeof CHATTER_STYLES)[number]; talk?: TalkFrequency };
+      const items: Item[] = [
+        { label: "Style", kind: vscode.QuickPickItemKind.Separator },
+        ...CHATTER_STYLES.map((id) => ({
+          label: id === current ? `$(check) ${CHATTER_LABELS[id].label}` : CHATTER_LABELS[id].label,
+          description: CHATTER_LABELS[id].description,
+          style: id,
+        })),
+        { label: "How often they talk", kind: vscode.QuickPickItemKind.Separator },
+        ...TALK_FREQUENCIES.map((id) => ({
+          label: id === talk ? `$(check) ${TALK_LABELS[id].label}` : TALK_LABELS[id].label,
+          description: TALK_LABELS[id].description,
+          talk: id,
+        })),
+      ];
+      const picked = await vscode.window.showQuickPick(items, { placeHolder: "How the Office shows what the guys say, and how often they talk" });
+      if (picked?.style !== undefined) {
+        await configuration.update(CHATTER_SETTING, picked.style, vscode.ConfigurationTarget.Global);
+      } else if (picked?.talk !== undefined) {
+        await configuration.update(TALK_SETTING, picked.talk, vscode.ConfigurationTarget.Global);
       }
     }),
     vscode.commands.registerCommand("overseer.office.switchScene", async () => {
@@ -275,6 +292,13 @@ const SHOW_DESCRIPTIONS: Record<PerformanceKindId, string> = {
   comedian: "stand-up under a spotlight",
   magician: "card tricks and a rabbit in a hat",
   dj: "a DJ, a mirror ball, and dancing",
+};
+
+const TALK_LABELS: Record<TalkFrequency, { label: string; description: string }> = {
+  off: { label: "Talk: Off", description: "no chats or mutters on their own" },
+  rare: { label: "Talk: Rare", description: "now and then" },
+  normal: { label: "Talk: Normal", description: "the usual" },
+  often: { label: "Talk: Often", description: "a chatty room" },
 };
 
 function officeHtml(webview: vscode.Webview, scriptUri: vscode.Uri): string {

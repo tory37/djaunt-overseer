@@ -448,3 +448,33 @@ describe("officeSim", () => {
     });
   });
 });
+
+describe("talk frequency", () => {
+  // Counts the lines the guys start saying over a stretch of time.
+  function linesSaid(talk: number, seed: number): number {
+    const random = seededRandom(seed);
+    const state = createOffice(buildOfficeLayout(14, 10, "office"));
+    state.talk = talk;
+    syncOffice(state, ["a", "b", "c", "d", "e"].map((id) => input(id, "idle")).concat([input("w", "working")]), random, "seated");
+    const seen = new Set<object>();
+    for (let elapsed = 0; elapsed < 240; elapsed += 0.05) {
+      stepOffice(state, 0.05, random);
+      state.agents.forEach((guy) => {
+        if (guy.bubble !== undefined) {
+          seen.add(guy.bubble);
+        }
+      });
+    }
+    return seen.size;
+  }
+
+  it("keeps the guys from talking on their own when off", () => {
+    expect(linesSaid(0, 3)).toBe(0);
+  });
+
+  it("talks more often than rare", () => {
+    const rare = [1, 2, 3].reduce((sum, seed) => sum + linesSaid(0.35, seed), 0);
+    const often = [1, 2, 3].reduce((sum, seed) => sum + linesSaid(2, seed), 0);
+    expect(often).toBeGreaterThan(rare * 1.5);
+  });
+});

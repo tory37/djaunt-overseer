@@ -138,7 +138,7 @@
       },
       {
         "command": "overseer.office.chatterStyle",
-        "title": "Office Chatter Style…",
+        "title": "Office Chatter…",
         "category": "Overseer",
         "icon": "$(comment-discussion)"
       },
@@ -1615,13 +1615,30 @@
             "quiet"
           ],
           "enumDescriptions": [
-            "A few speech bubbles at once (more in a wider room). Everyone else talking shows a small \"...\" bubble until a slot frees up.",
+            "A few speech bubbles at once (more in a wider room). The rest go to a chat log above the room when there's empty space there, or show a small \"...\" bubble until a slot frees up.",
             "Every line in a speech bubble over its speaker.",
             "Lines go to a chat log above the room with the speaker's face, and fade after a few seconds. The room shows small \"...\" bubbles.",
             "Only small \"...\" bubbles. Hover a guy to read his line."
           ],
           "default": "tidy",
-          "markdownDescription": "How the Office shows what the guys say. In every style, hovering a guy shows his line, and your own lines during an event and a show's act are always in bubbles. **Overseer: Office Chatter Style…** switches it from the Office view."
+          "markdownDescription": "How the Office shows what the guys say. In every style, hovering a guy shows his line, and your own lines during an event and a show's act are always in bubbles. **Overseer: Office Chatter…** switches it from the Office view."
+        },
+        "overseer.office.talk": {
+          "type": "string",
+          "enum": [
+            "off",
+            "rare",
+            "normal",
+            "often"
+          ],
+          "enumDescriptions": [
+            "The guys don't chat or mutter on their own.",
+            "Fewer chats and mutters, and slower back-and-forth.",
+            "The usual.",
+            "About twice as many chats and mutters."
+          ],
+          "default": "normal",
+          "markdownDescription": "How often the Office guys talk on their own: chats with each other, mutters while typing, and musings while idle. Visitors, shows, events, and critters keep their own lines. **Overseer: Office Chatter…** sets it from the Office view."
         },
         "overseer.office.performances": {
           "type": "string",

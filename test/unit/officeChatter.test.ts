@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bubbleAlpha, bubbleLimit, ChatLine, chatterStyle, layoutChatter, LOG_KEEP, pushChatLog, visibleChatLog } from "../../src/officeChatter";
+import { bubbleAlpha, bubbleLimit, ChatLine, chatterStyle, layoutChatter, LOG_KEEP, pushChatLog, showsChatLog, talkFactor, talkFrequency, visibleChatLog } from "../../src/officeChatter";
 
 const line = (id: string, since: number, priority: ChatLine["priority"] = "normal", until = since + 4): ChatLine => ({ id, text: id, since, until, priority });
 
@@ -43,6 +43,12 @@ describe("layoutChatter", () => {
   it("puts high priority lines ahead in tidy", () => {
     const chat = layoutChatter([...lines, line("v", 3, "high")], "tidy", new Set(), 2, 3);
     expect(chat.full.has("v")).toBe(true);
+  });
+
+  it("keeps a logged line a pip when a slot frees", () => {
+    const chat = layoutChatter([line("a", 0), line("b", 0)], "tidy", new Set(), 2, 1, undefined, new Set(["a"]));
+    expect([...chat.full]).toEqual(["b"]);
+    expect([...chat.pips]).toEqual(["a"]);
   });
 
   it("doesn't promote a line with too little time left to read", () => {
@@ -93,5 +99,25 @@ describe("bubbleAlpha", () => {
     expect(bubbleAlpha(0, 4, 2)).toBe(1);
     expect(bubbleAlpha(0, 4, 3.85)).toBeCloseTo(0.5);
     expect(bubbleAlpha(-Infinity, Infinity, 5)).toBe(1);
+  });
+});
+
+describe("showsChatLog", () => {
+  it("shows in log always, in tidy only with room above", () => {
+    expect(showsChatLog("log", false)).toBe(true);
+    expect(showsChatLog("tidy", true)).toBe(true);
+    expect(showsChatLog("tidy", false)).toBe(false);
+    expect(showsChatLog("quiet", true)).toBe(false);
+    expect(showsChatLog("bubbles", true)).toBe(false);
+  });
+});
+
+describe("talk frequency", () => {
+  it("reads the setting and scales the talk", () => {
+    expect(talkFrequency("often")).toBe("often");
+    expect(talkFrequency("chatty")).toBe("normal");
+    expect(talkFactor("off")).toBe(0);
+    expect(talkFactor("rare")).toBeLessThan(talkFactor("normal"));
+    expect(talkFactor("often")).toBeGreaterThan(talkFactor("normal"));
   });
 });

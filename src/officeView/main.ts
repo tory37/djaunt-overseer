@@ -15,7 +15,9 @@ import {
 } from "../officePerformances";
 import { personalityOf, planVisit, VisitorFrequency, visitorFrequency, VisitorKind, visitorGap, visitorReaction, visitorSmallTalk } from "../officeVisitors";
 import { YourEvent, YourReaction, yourEventSeconds, yourReaction, roomReaction, YourScreen } from "../officeYou";
-import { bubbleAlpha, bubbleLimit, ChatLine, ChatLogEntry, ChatPriority, ChatterStyle, chatterStyle, layoutChatter, pushChatLog, visibleChatLog } from "../officeChatter";
+import {
+  bubbleAlpha, bubbleLimit, ChatLine, ChatLogEntry, ChatPriority, ChatterStyle, chatterStyle, layoutChatter, pushChatLog, showsChatLog, talkFactor, talkFrequency, visibleChatLog,
+} from "../officeChatter";
 import { Facing, FRAME_HEIGHT, FRAME_WIDTH, HEAD_ROOM, pixelGuyFrame, pixelGuyLook, PixelGuyLook, Pose } from "../pixelGuy";
 import { DeskStyle, deskStyleFor } from "../deskStyles";
 import { DEFENSE_BEATS, ERROR_BEAT_SECONDS, ERROR_FLASH_SECONDS, EVENT_SECONDS, SCENE_EVENT_KINDS, SceneEventKind } from "../sceneEventSchedule";
@@ -39,6 +41,7 @@ interface OfficeMessage {
   visitors?: unknown;
   performances?: unknown;
   chatter?: unknown;
+  talk?: unknown;
   // False makes every guy human.
   races?: boolean;
   // The session the Session sidebar shows: his guy wears a crown.
@@ -231,6 +234,7 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEve
     nextShowAt = Math.min(nextShowAt, state.time + performanceGap(random, nextPerformances, true));
   }
   performancesSetting = nextPerformances;
+  state.talk = talkFactor(talkFrequency(data.talk));
   const nextChatter = chatterStyle(data.chatter);
   if (nextChatter !== chatterSetting) {
     chatterSetting = nextChatter;
@@ -1758,15 +1762,17 @@ function wrapText(text: string, maxWidth: number): string[] {
   return lines;
 }
 
-// A line someone is saying this frame, with where his bubble goes.
+// A line someone is saying this frame, with where his bubble goes. `key` is the sim's bubble, one per line said.
 interface SpokenLine extends ChatLine {
   seed: string;
+  key: object;
   box: { left: number; top: number };
   bubbleTop: number;
 }
 
-// When each bubble was first seen, so lines keep their order and fade in.
+// When each bubble was first seen, so lines keep their order and fade in; and which went to the chat log.
 const bubbleSince = new WeakMap<object, number>();
+const loggedBubbles = new WeakSet<object>();
 let shownLines = new Set<string>();
 let chatLog: ChatLogEntry[] = [];
 
@@ -1775,18 +1781,30 @@ function spokenLine(id: string, seed: string, bubble: { text: string; until: num
   if (since === undefined) {
     since = state.time;
     bubbleSince.set(bubble, since);
-    // Lines that must be seen are always in a bubble, so the log skips them.
-    if (priority !== "must") {
-      chatLog = pushChatLog(chatLog, { id: seed, text: bubble.text, at: state.time });
-    }
   }
-  return { id, seed, text: bubble.text, since, until: bubble.until, priority, box, bubbleTop };
+  return { id, seed, key: bubble, text: bubble.text, since, until: bubble.until, priority, box, bubbleTop };
 }
 
-// Bubbles for the lines the chatter style shows in full, pips over the rest.
+// How many log lines fit in the free space above the room.
+function logRoomLines(): number {
+  return Math.floor((Math.max(0, originY) - 22) / LOG_LINE);
+}
+
+// Bubbles for the lines the chatter style shows in full, pips over the rest. Lines that don't get a bubble go to
+// the chat log when it shows; a logged line stays a pip.
 function drawChatter(lines: SpokenLine[], palette: ScenePalette, seconds: number): void {
-  const chat = layoutChatter(lines, chatterSetting, shownLines, bubbleLimit(state.layout.cols), state.time, hoveredId);
+  const logOn = showsChatLog(chatterSetting, logRoomLines() >= 2);
+  const logged = new Set(lines.filter((line) => loggedBubbles.has(line.key)).map((line) => line.id));
+  const chat = layoutChatter(lines, chatterSetting, shownLines, bubbleLimit(state.layout.cols), state.time, hoveredId, logged);
   shownLines = chat.full;
+  if (logOn) {
+    lines
+      .filter((line) => line.priority !== "must" && !loggedBubbles.has(line.key) && (chatterSetting === "log" || chat.pips.has(line.id)))
+      .forEach((line) => {
+        loggedBubbles.add(line.key);
+        chatLog = pushChatLog(chatLog, { id: line.seed, text: line.text, at: state.time });
+      });
+  }
   lines.filter((line) => chat.pips.has(line.id)).forEach((line) => paintPip(line, palette, seconds));
   const bubbles = lines.filter((line) => chat.full.has(line.id)).map((line) => ({
     ...layoutBubble(line.box, line.text, line.bubbleTop),
@@ -1819,7 +1837,8 @@ function paintPip(line: SpokenLine, palette: ScenePalette, seconds: number): voi
 let logStyle = { font: "11px monospace", text: "#ccc", background: "#1e1e1e", stamp: -1 };
 
 function drawChatLog(seconds: number): void {
-  if (chatterSetting !== "log") {
+  const above = logRoomLines();
+  if (!showsChatLog(chatterSetting, above >= 2)) {
     return;
   }
   if (seconds - logStyle.stamp > 2 || logStyle.stamp < 0) {
@@ -1833,7 +1852,6 @@ function drawChatLog(seconds: number): void {
     };
   }
   const roomTop = Math.max(0, originY);
-  const above = Math.floor((roomTop - 22) / LOG_LINE);
   const overlay = above < 2;
   const visible = visibleChatLog(chatLog, state.time, overlay ? LOG_LINES : Math.min(5, above));
   if (visible.length === 0) {
@@ -2068,7 +2086,7 @@ function draw(seconds: number): void {
     const bubbleTop = Math.min(finalYouBox.top, monitorsTop) - 11;
     if (reaction.bubble !== undefined) {
       // An event's lines are part of the act: always in a bubble.
-      lines.push({ id: "you", seed: youKey, text: reaction.bubble, since: -Infinity, until: Infinity, priority: "must", box: finalYouBox, bubbleTop });
+      lines.push({ id: "you", seed: youKey, key: {}, text: reaction.bubble, since: -Infinity, until: Infinity, priority: "must", box: finalYouBox, bubbleTop });
     } else if (you?.bubble !== undefined) {
       lines.push(spokenLine("you", youKey, you.bubble, "high", finalYouBox, bubbleTop));
     }
