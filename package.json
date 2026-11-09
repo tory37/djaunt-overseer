@@ -131,6 +131,12 @@
         "icon": "$(layout)"
       },
       {
+        "command": "overseer.office.playShow",
+        "title": "Play Office Show…",
+        "category": "Overseer",
+        "icon": "$(megaphone)"
+      },
+      {
         "command": "overseer.rerollPixelGuy",
         "title": "Re-roll Pixel Guy",
         "category": "Overseer"
@@ -628,6 +634,11 @@
           "command": "overseer.office.switchScene",
           "when": "view == overseer.office",
           "group": "navigation@1"
+        },
+        {
+          "command": "overseer.office.playShow",
+          "when": "view == overseer.office",
+          "group": "navigation@2"
         },
         {
           "command": "overseer.jira.refresh",
@@ -1583,6 +1594,23 @@
           ],
           "default": "normal",
           "description": "How often people from other departments (sometimes a manager) drop into the Office. Up to five hang around at once: some say something and leave, others stay a minute or two, and some settle in for a good while to chat, get coffee, and loom over busy guys. Each guy answers in his own way: the suck-up says \"OK BOSS!\", the reasonable ones grumble."
+        },
+        "overseer.office.performances": {
+          "type": "string",
+          "enum": [
+            "off",
+            "rare",
+            "normal",
+            "often"
+          ],
+          "enumDescriptions": [
+            "No shows.",
+            "A show every 30 to 60 minutes.",
+            "A show every 12 to 25 minutes.",
+            "A show every 4 to 8 minutes."
+          ],
+          "default": "normal",
+          "markdownDescription": "How often someone comes to the Office to put on a show: a guitarist, a band, a lunch or snack trolley, a comedian under a spotlight, a magician, or a DJ with a mirror ball. The idle and sleeping guys gather round to watch, cheer, laugh, and eat; busy guys keep working and get their lunch left on their desks. A show waits until someone is free to watch. Play one now with **Overseer: Play Office Show…**."
         },
         "overseer.office.portraits": {
           "type": "boolean",

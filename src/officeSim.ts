@@ -19,6 +19,7 @@ import {
   CREW_START_LINES, exchangeAnswer, MUSE_LINES, MuseMode, pickExchange, pickPhrase, RUSH_LINES, SLEEP_LINES, THANKS_LINES, TYPING_LINES,
   WAIT_LINES, WAKE_IDLE_LINES, WAKE_TO_WORK_LINES,
 } from "./officePhrases";
+import { audienceLine, FoodKind, PERFORMANCES, PerformanceKindId, ShowCue, ShowLine, ShowRole } from "./officePerformances";
 import { MAX_VISITORS, personalityOf, visitorReaction } from "./officeVisitors";
 import type { Facing, Pose } from "./pixelGuy";
 
@@ -31,7 +32,10 @@ export interface AgentInput {
   title: string;
 }
 
-export type AgentMode = "walk" | "type" | "sit" | "stretch" | "drink" | "loiter" | "chat" | "wait" | "couch" | "sleep" | "address" | "build";
+export type AgentMode =
+  | "walk" | "type" | "sit" | "stretch" | "drink" | "loiter" | "chat" | "wait" | "couch" | "sleep" | "address" | "build"
+  // In the crowd at a show, and on stage putting one on.
+  | "watch" | "perform";
 
 export type AgentGoal =
   | { kind: "work" }
@@ -49,6 +53,9 @@ export type AgentGoal =
   | { kind: "waitDesk" }
   // A maintenance guy on a job; his crew phase says which step.
   | { kind: "crew" }
+  // A performer headed for his spot on stage, and a guy headed for a spot in the crowd.
+  | { kind: "perform" }
+  | { kind: "show" }
   | { kind: "door" };
 
 export interface Agent {
@@ -84,6 +91,58 @@ export interface Agent {
   crew: CrewState | undefined;
   // The answer he owes the guy he's chatting with, said on his next turn if it's still fresh.
   reply?: { text: string; until: number };
+  // Someone putting on a show, not a session.
+  performer: PerformerState | undefined;
+  // In the crowd: his answer to the last cue, said a moment after it; arms up until cheerUntil; what he's eating.
+  react?: { text: string; at: number; cheer: boolean };
+  cheerUntil: number;
+  snack?: FoodKind;
+}
+
+export interface PerformerState {
+  role: ShowRole;
+  spot: Point;
+  // Taking a bow at the end.
+  bowing: boolean;
+}
+
+// arriving: the performers walking in to their spots. playing: the show, the lead saying his lines over its length.
+// bows: the closer said, a few seconds of applause before everyone heads off.
+export type ShowPhase = "arriving" | "playing" | "bows";
+
+export interface ShowState {
+  kind: PerformanceKindId;
+  title: string;
+  // The lead's spot; the others stand beside it, the drummer behind.
+  stage: Point;
+  spots: Point[];
+  phase: ShowPhase;
+  performerIds: string[];
+  lines: readonly ShowLine[];
+  closer: ShowLine;
+  spoken: number;
+  nextLineAt: number;
+  lineGap: number;
+  length: number;
+  startedAt: number;
+  endsAt: number;
+  // Starts anyway if a performer can't make it to his spot by then.
+  giveUpAt: number;
+  nextGatherAt: number;
+  food: readonly FoodKind[];
+  // The last cue and when, for the view's effects (sparkles, confetti).
+  lastCue: { cue: ShowCue; at: number } | undefined;
+}
+
+export interface ShowInput {
+  kind: PerformanceKindId;
+  title: string;
+  // One per role in the spec, the lead first.
+  performers: readonly { id: string; seed: string; title: string; role: ShowRole }[];
+  lines: readonly ShowLine[];
+  closer: ShowLine;
+  length: number;
+  food?: readonly FoodKind[];
 }
 
 export interface CrewJob {
@@ -139,6 +198,8 @@ export interface OfficeState {
   time: number;
   // The desks standing in the room, by index into layout.desks, each with the seed of the guy it came in for.
   placed: Map<number, string>;
+  // The show on now, if any.
+  show?: ShowState;
 }
 
 export type Random = () => number;
@@ -161,9 +222,9 @@ export function createOffice(layout: OfficeLayout): OfficeState {
 export const CREW_IDS = ["crew-1", "crew-2"] as const;
 const CREW_TITLE = "Maintenance";
 
-// A session's guy: not you, not a visitor, not the crew.
+// A session's guy: not you, not a visitor, not the crew, not a performer.
 function isSession(agent: Agent): boolean {
-  return !agent.you && agent.visitor === undefined && agent.crew === undefined;
+  return !agent.you && agent.visitor === undefined && agent.crew === undefined && agent.performer === undefined;
 }
 
 export function crewAgents(state: OfficeState): Agent[] {
@@ -464,7 +525,14 @@ function stepYou(state: OfficeState, agent: Agent, random: Random): void {
     agent.status = "idle";
     agent.nextBreakAt = state.time + between(random, 20, 40);
     say(state, agent, pickPhrase(BREAK_LINES, random), 1.4);
-    pickIdleActivity(state, agent, random);
+    if (!joinShow(state, agent, random)) {
+      pickIdleActivity(state, agent, random);
+    }
+    return;
+  }
+  if (agent.goal?.kind === "show" && state.show !== undefined) {
+    // You stay for the show.
+    agent.nextBreakAt = state.time + 5;
     return;
   }
   endChat(state, agent);
@@ -502,6 +570,11 @@ export function relayoutOffice(state: OfficeState, layout: OfficeLayout, random:
       agent.crew = { job: undefined, phase: "idle", carrying: undefined, chair: false };
     }
   }
+  // The show goes on if its stage is still open floor; otherwise it's over.
+  const show = state.show;
+  if (show !== undefined && !show.spots.every((spot) => layout.tiles[spot.y]?.[spot.x] === "floor" && spot.y >= 1)) {
+    endShow(state, random);
+  }
   for (const agent of state.agents) {
     if (agent.crew !== undefined) {
       crewDecide(state, agent, random);
@@ -518,6 +591,7 @@ export function stepOffice(state: OfficeState, seconds: number, random: Random):
   const dt = Math.max(0, Math.min(seconds, 0.25));
   state.time += dt;
   manageCrew(state, random);
+  stepShow(state, random);
   for (const agent of [...state.agents]) {
     if (agent.bubble !== undefined && state.time >= agent.bubble.until) {
       agent.bubble = undefined;
@@ -567,6 +641,9 @@ export function stepOffice(state: OfficeState, seconds: number, random: Random):
         say(state, agent, pickPhrase(WAIT_LINES, random), 1.4);
         agent.nextBubbleAt = state.time + between(random, 4, 9);
       }
+    }
+    if (agent.mode === "watch") {
+      stepWatcher(state, agent, random);
     }
     if (agent.crew?.phase === "help" && state.time >= agent.nextBubbleAt) {
       say(state, agent, pickPhrase(CREW_HELP_LINES, random), 1.4);
@@ -631,6 +708,18 @@ export interface AgentPose {
 
 export function agentPose(agent: Agent, time: number): AgentPose {
   const phase = (agent.id.length * 0.37) % 1;
+  if (agent.path.length === 0 && agent.mode === "perform" && agent.performer !== undefined) {
+    return performerPose(agent, agent.performer, time);
+  }
+  if (agent.path.length === 0 && agent.mode === "watch") {
+    if (time < agent.cheerUntil) {
+      return { pose: "cheer", facing: agent.facing, frame: Math.floor(time * 4 + phase * 2), seated: false };
+    }
+    if (agent.snack !== undefined && agent.bubble === undefined) {
+      return { pose: "eat", facing: agent.facing, frame: Math.floor(time * 1.2 + phase * 2), seated: false };
+    }
+    return { pose: agent.bubble === undefined ? "stand" : "talk", facing: agent.facing, frame: Math.floor(time * 5), seated: false };
+  }
   if (agent.watch !== undefined && time < agent.watch.until && !SEATED_MODES.has(agent.mode)) {
     return { pose: "stand", facing: agent.watch.facing, frame: 0, seated: false };
   }
@@ -699,6 +788,8 @@ function newAgent(state: OfficeState, input: AgentInput, random: Random): Agent 
     watch: undefined,
     visitor: undefined,
     crew: undefined,
+    performer: undefined,
+    cheerUntil: 0,
   };
 }
 
@@ -788,13 +879,22 @@ function decide(state: OfficeState, agent: Agent, random: Random): void {
     leave(state, agent);
     return;
   }
+  if (agent.performer !== undefined) {
+    performerDecide(state, agent, random);
+    return;
+  }
   if (agent.visitor !== undefined) {
     if (isAddressing(agent) || state.time >= agent.visitor.stayUntil) {
       visitorLeaves(state, agent);
       return;
     }
     endChat(state, agent);
-    pickIdleActivity(state, agent, random);
+    if (!joinShow(state, agent, random)) {
+      pickIdleActivity(state, agent, random);
+    }
+    return;
+  }
+  if (agent.status !== "working" && joinShow(state, agent, random)) {
     return;
   }
   if (agent.status === "working") {
@@ -870,7 +970,8 @@ function pickIdleActivity(state: OfficeState, agent: Agent, random: Random): voi
 }
 
 function canChat(agent: Agent): boolean {
-  return !agent.leaving && agent.status === "idle" && agent.goal?.kind !== "chat" && agent.mode !== "chat" && agent.mode !== "wait";
+  return !agent.leaving && agent.status === "idle" && agent.performer === undefined && agent.goal?.kind !== "chat" && agent.goal?.kind !== "show" &&
+    agent.mode !== "chat" && agent.mode !== "wait" && agent.mode !== "watch";
 }
 
 // Picks two open floor tiles side by side and sends both guys there.
@@ -1037,6 +1138,25 @@ function arrive(state: OfficeState, agent: Agent, random: Random): void {
     case "crew":
       crewArrive(state, agent, random);
       return;
+    case "perform":
+      agent.facing = "down";
+      setMode(state, agent, state.show === undefined ? "loiter" : "perform", state.show === undefined ? 0.3 : FOREVER);
+      return;
+    case "show": {
+      const show = state.show;
+      if (show === undefined || show.phase === "bows") {
+        setMode(state, agent, "loiter", between(random, 0.5, 1.5));
+        return;
+      }
+      agent.facing = facingToward(agent, show.stage);
+      setMode(state, agent, "watch", FOREVER);
+      agent.nextBubbleAt = state.time + between(random, 2, 6);
+      agent.snack = show.food.length > 0 ? show.food[Math.floor(random() * show.food.length)] : undefined;
+      if (agent.snack !== undefined && random() < 0.5) {
+        say(state, agent, random() < 0.5 ? "thanks!" : "ooh!", 1.2);
+      }
+      return;
+    }
     case "address":
       agent.facing = "down";
       setMode(state, agent, "address", FOREVER);
@@ -1381,4 +1501,318 @@ function facingToward(agent: Agent, point: Point): Facing {
   const dx = point.x - agent.x;
   const dy = point.y - agent.y;
   return Math.abs(dx) >= Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
+}
+
+// ----- Shows -----
+
+// A show comes to the Office: its performers walk in from the door to a stage near the middle of the room. Returns
+// false when a show is already on, or there's no room for a stage.
+export function startShow(state: OfficeState, input: ShowInput, random: Random): boolean {
+  if (state.show !== undefined || input.performers.length === 0) {
+    return false;
+  }
+  const stage = pickStage(state, input.performers.map((performer) => performer.role), random);
+  if (stage === undefined) {
+    return false;
+  }
+  const performers = input.performers.slice(0, stage.spots.length);
+  const ids: string[] = [];
+  performers.forEach((performer, index) => {
+    const agent: Agent = {
+      ...newAgent(state, { id: performer.id, seed: performer.seed, status: "working", title: performer.title }, random),
+      performer: { role: performer.role, spot: stage.spots[index], bowing: false },
+    };
+    state.agents.push(agent);
+    ids.push(agent.id);
+    // They come in one after another.
+    agent.goal = { kind: "perform" };
+    setMode(state, agent, "loiter", index * 0.7);
+  });
+  state.show = {
+    kind: input.kind,
+    title: input.title,
+    stage: stage.spots[0],
+    spots: stage.spots.slice(0, performers.length),
+    phase: "arriving",
+    performerIds: ids,
+    lines: input.lines,
+    closer: input.closer,
+    spoken: 0,
+    nextLineAt: FOREVER,
+    lineGap: 0,
+    length: Math.max(5, input.length),
+    startedAt: FOREVER,
+    endsAt: FOREVER,
+    giveUpAt: state.time + 30,
+    nextGatherAt: FOREVER,
+    food: input.food ?? [],
+    lastCue: undefined,
+  };
+  return true;
+}
+
+// Ends the show now: the performers pack up and head out, and the crowd goes back to what it was doing.
+export function endShow(state: OfficeState, random: Random): void {
+  const show = state.show;
+  if (show === undefined) {
+    return;
+  }
+  state.show = undefined;
+  for (const agent of [...state.agents]) {
+    if (agent.performer !== undefined && show.performerIds.includes(agent.id)) {
+      agent.performer.bowing = false;
+      if (!agent.leaving) {
+        leave(state, agent);
+      }
+    } else if (agent.goal?.kind === "show") {
+      releaseWatcher(state, agent, random);
+    }
+  }
+}
+
+export function showPerformers(state: OfficeState): Agent[] {
+  return state.agents.filter((agent) => agent.performer !== undefined);
+}
+
+function releaseWatcher(state: OfficeState, agent: Agent, random: Random): void {
+  agent.goal = undefined;
+  agent.target = undefined;
+  agent.snack = undefined;
+  agent.react = undefined;
+  agent.cheerUntil = 0;
+  // Stagger it, so the crowd doesn't move as one.
+  setMode(state, agent, "loiter", between(random, 0.3, 2.5));
+}
+
+// Where the performers stand, in role order: the lead in the middle of a row, the others beside him, and the drummer
+// behind. Picks open floor near the middle of the room, a little toward the back, with room for a crowd in front.
+function pickStage(state: OfficeState, roles: readonly ShowRole[], random: Random): { spots: Point[] } | undefined {
+  const { layout } = state;
+  const deskTiles = new Set(layout.desks.flatMap((desk) => [desk.desk, desk.seat]).map((point) => `${point.x},${point.y}`));
+  const open = (point: Point) => layout.tiles[point.y]?.[point.x] === "floor" && point.y >= 1 && !deskTiles.has(`${point.x},${point.y}`);
+  const rowRoles = roles.filter((role) => role !== "drums");
+  const hasDrums = roles.includes("drums");
+  // Row offsets from the lead: 0, -1, +1, -2, +2.
+  const offsets = rowRoles.map((_, index) => (index === 0 ? 0 : index % 2 === 1 ? -Math.ceil(index / 2) : Math.ceil(index / 2)));
+  let best: { spots: Point[]; score: number } | undefined;
+  for (const tile of openFloorTiles(layout)) {
+    if (tile.y > layout.rows - 3) {
+      continue;
+    }
+    const row = offsets.map((offset) => ({ x: tile.x + offset, y: tile.y }));
+    if (!row.every(open)) {
+      continue;
+    }
+    const drums = { x: tile.x, y: tile.y - 1 };
+    const drumsFit = hasDrums && open(drums);
+    const spotsByRole: Point[] = [];
+    let rowIndex = 0;
+    for (const role of roles) {
+      if (role === "drums") {
+        if (drumsFit) {
+          spotsByRole.push(drums);
+        }
+      } else {
+        spotsByRole.push(row[rowIndex++]);
+      }
+    }
+    // Room for a crowd: open floor in the three rows in front of the stage.
+    let crowdRoom = 0;
+    for (let dy = 1; dy <= 3; dy++) {
+      for (let dx = -3; dx <= 3; dx++) {
+        if (open({ x: tile.x + dx, y: tile.y + dy })) {
+          crowdRoom += dy === 1 ? 1.2 : 1;
+        }
+      }
+    }
+    const score = Math.abs(tile.x - (layout.cols - 1) / 2) * 0.6 - crowdRoom + (hasDrums && !drumsFit ? 4 : 0) + random() * 0.5;
+    if (best === undefined || score < best.score) {
+      best = { spots: spotsByRole, score };
+    }
+  }
+  return best;
+}
+
+// A spot in the crowd for this guy: open floor in front of the stage first, then beside it, never on stage.
+function crowdSpot(state: OfficeState, agent: Agent, show: ShowState): Point | undefined {
+  const { layout } = state;
+  const deskTiles = new Set(layout.desks.flatMap((desk) => [desk.desk, desk.seat]).map((point) => `${point.x},${point.y}`));
+  const taken = (point: Point) => show.spots.some((spot) => spot.x === point.x && spot.y === point.y) || isTargeted(state, agent, point);
+  const near = PERFORMANCES[show.kind].effect === "food" ? 1 : 1.5;
+  const spots = openFloorTiles(layout)
+    .filter((tile) => tile.y >= 1 && !deskTiles.has(`${tile.x},${tile.y}`) && !taken(tile))
+    .map((tile) => {
+      const dx = tile.x - show.stage.x;
+      const dy = tile.y - show.stage.y;
+      const distance = Math.hypot(dx * 0.8, dy);
+      return { tile, score: distance + (dy < 0 ? 3 : dy === 0 ? 1 : 0) + (distance < near ? 5 : 0) };
+    })
+    .filter(({ score }) => score < 9)
+    .sort((first, second) => first.score - second.score);
+  return spots[0]?.tile;
+}
+
+// Sends this guy to the crowd if a show is playing and he's free to watch. Returns false when there's nothing to join.
+function joinShow(state: OfficeState, agent: Agent, random: Random): boolean {
+  const show = state.show;
+  if (show === undefined || show.phase !== "playing" || agent.leaving || agent.crew !== undefined || agent.performer !== undefined) {
+    return false;
+  }
+  if (agent.goal?.kind === "show" || agent.status === "working" || isAddressing(agent)) {
+    return agent.goal?.kind === "show";
+  }
+  const spot = crowdSpot(state, agent, show);
+  if (spot === undefined) {
+    return false;
+  }
+  endChat(state, agent);
+  agent.watch = undefined;
+  if (agent.mode === "sleep" && random() < 0.6) {
+    say(state, agent, random() < 0.5 ? "huh? a show?" : "*yawn* …ooh!", 1.6);
+  }
+  goTo(state, agent, spot, { kind: "show" }, false, random);
+  return true;
+}
+
+// Everyone free to watch heads for the crowd.
+function gatherCrowd(state: OfficeState, random: Random): void {
+  for (const agent of state.agents) {
+    if (agent.goal?.kind !== "show" && (agent.status === "idle" || agent.status === "asleep") && agent.watch === undefined) {
+      joinShow(state, agent, random);
+    }
+  }
+}
+
+function performerDecide(state: OfficeState, agent: Agent, random: Random): void {
+  const show = state.show;
+  const performer = agent.performer as PerformerState;
+  if (show === undefined || !show.performerIds.includes(agent.id)) {
+    leave(state, agent);
+    return;
+  }
+  if (!isAt(agent, performer.spot)) {
+    goTo(state, agent, performer.spot, { kind: "perform" }, false, random);
+    return;
+  }
+  agent.facing = "down";
+  setMode(state, agent, "perform", FOREVER);
+}
+
+function stepShow(state: OfficeState, random: Random): void {
+  const show = state.show;
+  if (show === undefined) {
+    return;
+  }
+  const performers = show.performerIds
+    .map((id) => state.agents.find((agent) => agent.id === id))
+    .filter((agent): agent is Agent => agent !== undefined && !agent.leaving);
+  if (performers.length === 0) {
+    endShow(state, random);
+    return;
+  }
+  const lead = performers[0];
+  if (show.phase === "arriving") {
+    const ready = performers.every((agent) => agent.mode === "perform" && agent.path.length === 0);
+    if (!ready && state.time < show.giveUpAt) {
+      return;
+    }
+    show.phase = "playing";
+    show.startedAt = state.time;
+    show.endsAt = state.time + show.length;
+    show.lineGap = show.length / Math.max(1, show.lines.length);
+    show.nextLineAt = state.time + 1;
+    show.nextGatherAt = state.time + 4;
+    gatherCrowd(state, random);
+    return;
+  }
+  if (show.phase === "playing") {
+    if (state.time >= show.nextGatherAt) {
+      // Anyone who just went idle or finished what he was doing comes over too.
+      show.nextGatherAt = state.time + 4;
+      gatherCrowd(state, random);
+    }
+    if (show.spoken < show.lines.length && state.time >= show.nextLineAt) {
+      sayShowLine(state, show, lead, show.lines[show.spoken], random);
+      show.spoken += 1;
+      show.nextLineAt = state.time + show.lineGap;
+    }
+    if (state.time >= show.endsAt) {
+      show.phase = "bows";
+      show.endsAt = state.time + 4;
+      sayShowLine(state, show, lead, show.closer, random);
+      for (const agent of performers) {
+        (agent.performer as PerformerState).bowing = true;
+      }
+    }
+    return;
+  }
+  if (state.time >= show.endsAt) {
+    endShow(state, random);
+  }
+}
+
+function sayShowLine(state: OfficeState, show: ShowState, lead: Agent, line: ShowLine, random: Random): void {
+  say(state, lead, line.text, Math.min(show.lineGap * 0.8, lineSeconds(line.text) + 0.5));
+  if (line.cue === undefined) {
+    return;
+  }
+  show.lastCue = { cue: line.cue, at: state.time };
+  for (const agent of state.agents) {
+    if (agent.mode !== "watch" || agent.goal?.kind !== "show") {
+      continue;
+    }
+    const personality = personalityOf(agent.seed);
+    // Most of the crowd answers out loud; the rest just cheer.
+    const speaks = random() < 0.65;
+    agent.react = {
+      text: speaks ? audienceLine(show.kind, line.cue, personality, agent.status === "asleep", random, agent.snack) : "",
+      at: state.time + between(random, 0.4, 1.3),
+      cheer: line.cue !== "gasp" && (line.cue !== "laugh" || random() < 0.4),
+    };
+  }
+}
+
+// A guy in the crowd: answers the last cue, and now and then says something to nobody.
+function stepWatcher(state: OfficeState, agent: Agent, random: Random): void {
+  const show = state.show;
+  if (show === undefined) {
+    return;
+  }
+  const react = agent.react;
+  if (react !== undefined && state.time >= react.at) {
+    agent.react = undefined;
+    if (react.text !== "") {
+      say(state, agent, react.text, 1.8);
+    }
+    if (react.cheer) {
+      agent.cheerUntil = state.time + between(random, 1.2, 2.2);
+    }
+    agent.nextBubbleAt = state.time + between(random, 4, 9);
+    return;
+  }
+  if (state.time >= agent.nextBubbleAt && agent.bubble === undefined) {
+    agent.nextBubbleAt = state.time + between(random, 6, 14);
+    if (random() < 0.45) {
+      say(state, agent, audienceLine(show.kind, "idle", personalityOf(agent.seed), agent.status === "asleep", random, agent.snack), 1.6);
+    }
+  }
+}
+
+function performerPose(agent: Agent, performer: PerformerState, time: number): AgentPose {
+  if (performer.bowing) {
+    return { pose: "cheer", facing: "down", frame: Math.floor(time * 3), seated: false };
+  }
+  switch (performer.role) {
+    case "guitar":
+    case "bass":
+      // Strumming.
+      return { pose: "build", facing: agent.facing, frame: Math.floor(time * 6), seated: false };
+    case "drums":
+    case "dj":
+      return { pose: "build", facing: agent.facing, frame: Math.floor(time * 8), seated: false };
+    case "cart":
+      return { pose: agent.bubble === undefined ? "build" : "talk", facing: agent.facing, frame: Math.floor(time * (agent.bubble === undefined ? 2 : 5)), seated: false };
+    default:
+      return { pose: "talk", facing: agent.facing, frame: agent.bubble === undefined ? 0 : Math.floor(time * 5), seated: false };
+  }
 }

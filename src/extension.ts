@@ -269,7 +269,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(OFFICE_PANEL_VIEW_ID, officePanelProvider, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
-    ...registerOfficeCommands(registry),
+    ...registerOfficeCommands(registry, officePanelProvider),
     jiraPanelProvider,
     vscode.window.registerWebviewViewProvider(JIRA_PANEL_VIEW_ID, jiraPanelProvider),
     ...registerJiraPanelCommands(jiraPanelProvider),

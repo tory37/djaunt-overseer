@@ -1,7 +1,8 @@
 import { SLEEP_LINES, WAKE_TO_WORK_LINES } from "../../src/officePhrases";
 import { describe, expect, it } from "vitest";
 import { buildOfficeLayout } from "../../src/officeLayout";
-import { Agent, AgentInput, agentPose, callYouBack, createOffice, crewAgents, hasDesk, isAtStation, officeCounts, OfficeState, relayoutOffice, stepOffice, syncOffice, syncYou, youAgent } from "../../src/officeSim";
+import { Agent, AgentInput, agentPose, callYouBack, createOffice, crewAgents, endShow, hasDesk, isAtStation, officeCounts, OfficeState, relayoutOffice, ShowInput, showPerformers, startShow, stepOffice, syncOffice, syncYou, youAgent } from "../../src/officeSim";
+import { PERFORMANCES, PerformanceKindId, planPerformance } from "../../src/officePerformances";
 import { seededRandom } from "../../src/pixelGuy";
 
 const input = (id: string, status: AgentInput["status"]): AgentInput => ({ id, seed: id, status, title: `Session ${id}` });
@@ -329,6 +330,121 @@ describe("officeSim", () => {
       const state = office(random);
       syncYou(state, undefined, random);
       expect(youAgent(state)).toBeUndefined();
+    });
+  });
+
+  describe("shows", () => {
+    function showInput(kind: PerformanceKindId, random: () => number): ShowInput {
+      const plan = planPerformance(random, kind);
+      return {
+        kind, title: plan.title, lines: plan.lines, closer: plan.closer, length: 30, food: plan.food,
+        performers: PERFORMANCES[kind].roles.map((role, index) => ({ id: `show-${role}`, seed: `show-${role}`, title: plan.titles[index], role })),
+      };
+    }
+
+    function settledOffice(random: () => number): OfficeState {
+      const state = createOffice(buildOfficeLayout(14, 10, "office"));
+      syncOffice(state, [input("busy", "working"), input("idle", "idle"), input("sleepy", "asleep"), input("idle2", "idle")], random, "seated");
+      run(state, 5, random);
+      return state;
+    }
+
+    it("walks the performers to the stage, gathers the idle and sleeping guys, and leaves the busy one typing", () => {
+      const random = seededRandom(11);
+      const state = settledOffice(random);
+      expect(startShow(state, showInput("band", random), random)).toBe(true);
+      expect(startShow(state, showInput("dj", random), random)).toBe(false);
+      expect(showPerformers(state).length).toBeGreaterThanOrEqual(3);
+      expect(officeCounts(state)).toEqual({ working: 1, idle: 2, asleep: 1 });
+      run(state, 20, random);
+      expect(state.show?.phase).toBe("playing");
+      for (const performer of showPerformers(state)) {
+        expect(performer.mode).toBe("perform");
+        expect(performer.x).toBe(performer.performer?.spot.x);
+        expect(performer.y).toBe(performer.performer?.spot.y);
+      }
+      run(state, 10, random);
+      for (const id of ["idle", "sleepy", "idle2"]) {
+        expect(agent(state, id).mode).toBe("watch");
+      }
+      expect(agent(state, "busy").mode).toBe("type");
+      // Nobody stands on stage.
+      const spots = new Set(state.show?.spots.map((spot) => `${spot.x},${spot.y}`));
+      for (const id of ["idle", "sleepy", "idle2"]) {
+        expect(spots.has(`${agent(state, id).x},${agent(state, id).y}`)).toBe(false);
+      }
+    });
+
+    it("runs through its lines, takes a bow, and sends everyone back", () => {
+      const random = seededRandom(12);
+      const state = settledOffice(random);
+      startShow(state, showInput("comedian", random), random);
+      run(state, 60, random);
+      expect(state.show).toBeUndefined();
+      run(state, 30, random);
+      expect(showPerformers(state)).toHaveLength(0);
+      expect(agent(state, "sleepy").mode).toBe("sleep");
+      expect(agent(state, "idle").mode).not.toBe("watch");
+    });
+
+    it("hands out food at a lunch, and the crowd eats", () => {
+      const random = seededRandom(13);
+      const state = settledOffice(random);
+      startShow(state, showInput("lunch", random), random);
+      run(state, 25, random);
+      const guy = agent(state, "idle");
+      expect(guy.mode).toBe("watch");
+      expect(guy.snack).toBeDefined();
+      expect(state.show?.food).toContain(guy.snack);
+    });
+
+    it("sends a guy who gets busy mid-show back to his desk", () => {
+      const random = seededRandom(14);
+      const state = settledOffice(random);
+      startShow(state, showInput("guitarist", random), random);
+      run(state, 25, random);
+      expect(agent(state, "idle").mode).toBe("watch");
+      syncOffice(state, [input("busy", "working"), input("idle", "working"), input("sleepy", "asleep"), input("idle2", "idle")], random);
+      run(state, 15, random);
+      expect(agent(state, "idle").mode).toBe("type");
+    });
+
+    it("ends early when asked, and the performers walk out", () => {
+      const random = seededRandom(15);
+      const state = settledOffice(random);
+      startShow(state, showInput("magician", random), random);
+      run(state, 20, random);
+      endShow(state, random);
+      expect(state.show).toBeUndefined();
+      expect(showPerformers(state).every((performer) => performer.leaving)).toBe(true);
+      run(state, 30, random);
+      expect(showPerformers(state)).toHaveLength(0);
+    });
+
+    it("cheers and eats in their own poses", () => {
+      const random = seededRandom(16);
+      const state = settledOffice(random);
+      startShow(state, showInput("dj", random), random);
+      run(state, 25, random);
+      const guy = agent(state, "idle");
+      guy.cheerUntil = state.time + 1;
+      expect(agentPose(guy, state.time).pose).toBe("cheer");
+      guy.cheerUntil = 0;
+      guy.bubble = undefined;
+      guy.snack = "pizza";
+      expect(agentPose(guy, state.time).pose).toBe("eat");
+    });
+
+    it("keeps the show going through a relayout that leaves the stage open", () => {
+      const random = seededRandom(17);
+      const state = settledOffice(random);
+      startShow(state, showInput("guitarist", random), random);
+      run(state, 20, random);
+      relayoutOffice(state, buildOfficeLayout(14, 10, "office"), random);
+      expect(state.show).toBeDefined();
+      relayoutOffice(state, buildOfficeLayout(8, 6, "office"), random);
+      run(state, 30, random);
+      expect(state.show === undefined || state.show.phase !== "arriving").toBe(true);
     });
   });
 });
