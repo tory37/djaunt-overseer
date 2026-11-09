@@ -124,6 +124,22 @@ export function visibleChatLog(log: readonly ChatLogEntry[], time: number, max: 
     });
 }
 
+// How a bubble looks, so the room can show through. solid: an opaque bubble. soft: the background at 70%. faint:
+// smaller text on a 50% background. The text stays opaque, and the hovered guy's bubble goes solid.
+export type BubbleLook = "solid" | "soft" | "faint";
+
+export const BUBBLE_LOOKS: readonly BubbleLook[] = ["solid", "soft", "faint"];
+
+export function bubbleLook(value: unknown): BubbleLook {
+  return BUBBLE_LOOKS.includes(value as BubbleLook) ? (value as BubbleLook) : "soft";
+}
+
+// The bubble's text size in room pixels and its background's opacity.
+export function bubbleStyle(look: BubbleLook, hovered: boolean): { font: number; fill: number } {
+  const style = { solid: { font: 7, fill: 1 }, soft: { font: 7, fill: 0.7 }, faint: { font: 6, fill: 0.5 } }[look];
+  return hovered ? { ...style, fill: 1 } : style;
+}
+
 // A bubble's opacity: a quick fade in, and a fade out over its last moments.
 export function bubbleAlpha(since: number, until: number, time: number): number {
   return Math.max(0, Math.min(1, (time - since) / 0.15, (until - time) / 0.3));

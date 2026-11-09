@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as vscode from "vscode";
 import type { PinnedSession } from "./grouping";
 import type { LiveSessionMonitor } from "./liveSessions";
-import { CHATTER_LABELS, CHATTER_STYLES, chatterStyle, TALK_FREQUENCIES, TalkFrequency, talkFrequency } from "./officeChatter";
+import { BUBBLE_LOOKS, BubbleLook, bubbleLook, CHATTER_LABELS, CHATTER_STYLES, chatterStyle, TALK_FREQUENCIES, TalkFrequency, talkFrequency } from "./officeChatter";
 import { OFFICE_SCENES, officeSceneId } from "./officeLayout";
 import type { AgentInput } from "./officeSim";
 import { isPerformanceKind, PERFORMANCE_KINDS, PERFORMANCES, performanceFrequency, PerformanceKindId } from "./officePerformances";
@@ -26,6 +26,7 @@ const VISITORS_SETTING = "overseer.office.visitors";
 const PERFORMANCES_SETTING = "overseer.office.performances";
 const CHATTER_SETTING = "overseer.office.chatter";
 const TALK_SETTING = "overseer.office.talk";
+const BUBBLE_LOOK_SETTING = "overseer.office.bubbleLook";
 
 export interface OfficePanelDeps {
   extensionUri: vscode.Uri;
@@ -56,7 +57,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
       deps.registry.onDidChange(() => this.postAll()),
       deps.onDidChangeFocus(() => this.postAll()),
       vscode.workspace.onDidChangeConfiguration((change) => {
-        if ([SCENE_SETTING, SLEEPERS_SETTING, YOU_SETTING, YOUR_LOOK_SETTING, CRITTERS_SETTING, FLIERS_SETTING, DAY_NIGHT_SETTING, VISITORS_SETTING, PERFORMANCES_SETTING, CHATTER_SETTING, TALK_SETTING, RACES_SETTING].some((setting) => change.affectsConfiguration(setting))) {
+        if ([SCENE_SETTING, SLEEPERS_SETTING, YOU_SETTING, YOUR_LOOK_SETTING, CRITTERS_SETTING, FLIERS_SETTING, DAY_NIGHT_SETTING, VISITORS_SETTING, PERFORMANCES_SETTING, CHATTER_SETTING, TALK_SETTING, BUBBLE_LOOK_SETTING, RACES_SETTING].some((setting) => change.affectsConfiguration(setting))) {
           this.postAll();
         }
       }),
@@ -136,6 +137,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     performances: string;
     chatter: string;
     talk: string;
+    bubbleLook: string;
     races: boolean;
     focusedId: string | null;
   } {
@@ -173,6 +175,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
       performances: performanceFrequency(configuration.get<unknown>(PERFORMANCES_SETTING)),
       chatter: chatterStyle(configuration.get<unknown>(CHATTER_SETTING)),
       talk: talkFrequency(configuration.get<unknown>(TALK_SETTING)),
+      bubbleLook: bubbleLook(configuration.get<unknown>(BUBBLE_LOOK_SETTING)),
       races: configuration.get<boolean>(RACES_SETTING, true),
       focusedId: this.deps.focusedSessionId() ?? null,
     };
@@ -210,7 +213,7 @@ export function registerOfficeCommands(registry: Registry, office: OfficePanelPr
         office.playShow(picked.id);
       }
     }),
-    // Takes a style as an argument (for a keybinding), or asks for a style or how often they talk.
+    // Takes a style as an argument (for a keybinding), or asks for a style, a bubble look, or how often they talk.
     vscode.commands.registerCommand("overseer.office.chatterStyle", async (style?: unknown) => {
       const configuration = vscode.workspace.getConfiguration();
       const given = CHATTER_STYLES.find((id) => id === style);
@@ -220,13 +223,20 @@ export function registerOfficeCommands(registry: Registry, office: OfficePanelPr
       }
       const current = chatterStyle(configuration.get<unknown>(CHATTER_SETTING));
       const talk = talkFrequency(configuration.get<unknown>(TALK_SETTING));
-      type Item = vscode.QuickPickItem & { style?: (typeof CHATTER_STYLES)[number]; talk?: TalkFrequency };
+      const look = bubbleLook(configuration.get<unknown>(BUBBLE_LOOK_SETTING));
+      type Item = vscode.QuickPickItem & { style?: (typeof CHATTER_STYLES)[number]; talk?: TalkFrequency; look?: BubbleLook };
       const items: Item[] = [
         { label: "Style", kind: vscode.QuickPickItemKind.Separator },
         ...CHATTER_STYLES.map((id) => ({
           label: id === current ? `$(check) ${CHATTER_LABELS[id].label}` : CHATTER_LABELS[id].label,
           description: CHATTER_LABELS[id].description,
           style: id,
+        })),
+        { label: "Bubbles", kind: vscode.QuickPickItemKind.Separator },
+        ...BUBBLE_LOOKS.map((id) => ({
+          label: id === look ? `$(check) ${BUBBLE_LOOK_LABELS[id].label}` : BUBBLE_LOOK_LABELS[id].label,
+          description: BUBBLE_LOOK_LABELS[id].description,
+          look: id,
         })),
         { label: "How often they talk", kind: vscode.QuickPickItemKind.Separator },
         ...TALK_FREQUENCIES.map((id) => ({
@@ -240,6 +250,8 @@ export function registerOfficeCommands(registry: Registry, office: OfficePanelPr
         await configuration.update(CHATTER_SETTING, picked.style, vscode.ConfigurationTarget.Global);
       } else if (picked?.talk !== undefined) {
         await configuration.update(TALK_SETTING, picked.talk, vscode.ConfigurationTarget.Global);
+      } else if (picked?.look !== undefined) {
+        await configuration.update(BUBBLE_LOOK_SETTING, picked.look, vscode.ConfigurationTarget.Global);
       }
     }),
     vscode.commands.registerCommand("overseer.office.switchScene", async () => {
@@ -292,6 +304,12 @@ const SHOW_DESCRIPTIONS: Record<PerformanceKindId, string> = {
   comedian: "stand-up under a spotlight",
   magician: "card tricks and a rabbit in a hat",
   dj: "a DJ, a mirror ball, and dancing",
+};
+
+const BUBBLE_LOOK_LABELS: Record<BubbleLook, { label: string; description: string }> = {
+  solid: { label: "Bubbles: Solid", description: "opaque bubbles" },
+  soft: { label: "Bubbles: Soft", description: "the room shows through a little, solid when you hover" },
+  faint: { label: "Bubbles: Faint", description: "smaller text, the room shows through more, solid when you hover" },
 };
 
 const TALK_LABELS: Record<TalkFrequency, { label: string; description: string }> = {
