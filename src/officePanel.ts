@@ -5,6 +5,7 @@ import type { PinnedSession } from "./grouping";
 import type { LiveSessionMonitor } from "./liveSessions";
 import { OFFICE_SCENES, officeSceneId } from "./officeLayout";
 import type { AgentInput } from "./officeSim";
+import { isPerformanceKind, PERFORMANCE_KINDS, PERFORMANCES, performanceFrequency, PerformanceKindId } from "./officePerformances";
 import { visitorFrequency } from "./officeVisitors";
 import { PixelGuyLook, raceOfSeed, yourLook } from "./pixelGuy";
 import { RACES, seedWithRace } from "./pixelRaces";
@@ -21,6 +22,7 @@ const FLIERS_SETTING = "overseer.office.fliers";
 const RACES_SETTING = "overseer.office.races";
 const DAY_NIGHT_SETTING = "overseer.office.dayNight";
 const VISITORS_SETTING = "overseer.office.visitors";
+const PERFORMANCES_SETTING = "overseer.office.performances";
 
 export interface OfficePanelDeps {
   extensionUri: vscode.Uri;
@@ -40,6 +42,9 @@ export interface OfficePanelDeps {
 // scene events the director plays on every decorative view.
 export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private readonly webviews = new Set<vscode.Webview>();
+  private readonly views = new Set<vscode.WebviewView>();
+  // A show asked for before the view was open, played once it says it's ready.
+  private pendingShow: { kind: PerformanceKindId | "random" } | undefined;
   private readonly listeners: vscode.Disposable[];
 
   constructor(private readonly deps: OfficePanelDeps) {
@@ -48,7 +53,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
       deps.registry.onDidChange(() => this.postAll()),
       deps.onDidChangeFocus(() => this.postAll()),
       vscode.workspace.onDidChangeConfiguration((change) => {
-        if ([SCENE_SETTING, SLEEPERS_SETTING, YOU_SETTING, YOUR_LOOK_SETTING, CRITTERS_SETTING, FLIERS_SETTING, DAY_NIGHT_SETTING, VISITORS_SETTING, RACES_SETTING].some((setting) => change.affectsConfiguration(setting))) {
+        if ([SCENE_SETTING, SLEEPERS_SETTING, YOU_SETTING, YOUR_LOOK_SETTING, CRITTERS_SETTING, FLIERS_SETTING, DAY_NIGHT_SETTING, VISITORS_SETTING, PERFORMANCES_SETTING, RACES_SETTING].some((setting) => change.affectsConfiguration(setting))) {
           this.postAll();
         }
       }),
@@ -63,12 +68,24 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     // Reinstalling the same version keeps the same URL, so the build time busts the webview's cached copy.
     webview.html = officeHtml(webview, webview.asWebviewUri(scriptUri).with({ query: `v=${scriptStamp(scriptUri)}` }));
     this.webviews.add(webview);
+    this.views.add(webviewView);
     this.deps.sceneEvents.attach(webviewView);
     const messageListener = webview.onDidReceiveMessage((message: unknown) => this.handleMessage(webview, message));
     webviewView.onDidDispose(() => {
       this.webviews.delete(webview);
+      this.views.delete(webviewView);
       messageListener.dispose();
     });
+  }
+
+  // Puts on a show in the Office now, opening the view first if it isn't showing.
+  playShow(kind: PerformanceKindId | "random"): void {
+    const message = { type: "performance", kind };
+    if (![...this.views].some((view) => view.visible)) {
+      this.pendingShow = this.webviews.size === 0 ? { kind } : undefined;
+      void vscode.commands.executeCommand(`${OFFICE_PANEL_VIEW_ID}.focus`);
+    }
+    this.webviews.forEach((webview) => void webview.postMessage(message));
   }
 
   // Titles come from the analyzer and the index, which change on their own schedule.
@@ -87,6 +104,10 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     const { type, sessionId } = message as { type?: unknown; sessionId?: unknown };
     if (type === "ready") {
       void webview.postMessage(this.message());
+      if (this.pendingShow !== undefined) {
+        void webview.postMessage({ type: "performance", kind: this.pendingShow.kind });
+        this.pendingShow = undefined;
+      }
     } else if (type === "open" && typeof sessionId === "string") {
       void vscode.commands.executeCommand("overseer.clickSession", sessionId);
     }
@@ -109,6 +130,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     fliers: boolean;
     dayNight: boolean;
     visitors: string;
+    performances: string;
     races: boolean;
     focusedId: string | null;
   } {
@@ -143,6 +165,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
       fliers: configuration.get<boolean>(FLIERS_SETTING, true),
       dayNight: configuration.get<boolean>(DAY_NIGHT_SETTING, true),
       visitors: visitorFrequency(configuration.get<unknown>(VISITORS_SETTING)),
+      performances: performanceFrequency(configuration.get<unknown>(PERFORMANCES_SETTING)),
       races: configuration.get<boolean>(RACES_SETTING, true),
       focusedId: this.deps.focusedSessionId() ?? null,
     };
@@ -161,8 +184,25 @@ function currentScene(): string {
   return officeSceneId(vscode.workspace.getConfiguration().get<string>(SCENE_SETTING));
 }
 
-export function registerOfficeCommands(registry: Registry): vscode.Disposable[] {
+export function registerOfficeCommands(registry: Registry, office: OfficePanelProvider): vscode.Disposable[] {
   return [
+    // Takes a show kind as an argument (for a keybinding), or asks.
+    vscode.commands.registerCommand("overseer.office.playShow", async (kind?: unknown) => {
+      if (isPerformanceKind(kind) || kind === "random") {
+        office.playShow(kind);
+        return;
+      }
+      const picked = await vscode.window.showQuickPick(
+        [
+          { label: "$(question) Surprise Me", id: "random" as const },
+          ...PERFORMANCE_KINDS.map((id) => ({ label: PERFORMANCES[id].label, description: SHOW_DESCRIPTIONS[id], id })),
+        ],
+        { placeHolder: "Which show?" },
+      );
+      if (picked !== undefined) {
+        office.playShow(picked.id);
+      }
+    }),
     vscode.commands.registerCommand("overseer.office.switchScene", async () => {
       const current = currentScene();
       const picked = await vscode.window.showQuickPick(
@@ -204,6 +244,16 @@ export function registerOfficeCommands(registry: Registry): vscode.Disposable[] 
     }),
   ];
 }
+
+const SHOW_DESCRIPTIONS: Record<PerformanceKindId, string> = {
+  guitarist: "a busker with an acoustic guitar",
+  band: "singer, guitar, bass, and drums",
+  lunch: "a trolley of hot lunch for everyone",
+  snacks: "donuts, cookies, ice cream, popcorn",
+  comedian: "stand-up under a spotlight",
+  magician: "card tricks and a rabbit in a hat",
+  dj: "a DJ, a mirror ball, and dancing",
+};
 
 function officeHtml(webview: vscode.Webview, scriptUri: vscode.Uri): string {
   const nonce = crypto.randomBytes(16).toString("base64");

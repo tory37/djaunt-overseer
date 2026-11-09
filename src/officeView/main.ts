@@ -7,9 +7,12 @@ import { DAYTIME_SKY, discLit, earthIllumination, lunarSunElevation, mix, SceneL
 import { critterGap, critterLines, critterPoses, CritterRun, critterRunDone, planCritterRun } from "../officeCritters";
 import { FLIERS, flierGap, flierLines, flierPoses, Flight, flightDone, planFlight } from "../officeFliers";
 import {
-  Agent, AgentInput, agentPose, callYouBack, createOffice, isAtStation, lookToward, officeCounts, reactToCritter, relayoutOffice, stepOffice, syncOffice,
-  syncYou, visitorAgents, visitorArrives, youAgent,
+  Agent, AgentInput, agentPose, callYouBack, createOffice, endShow, isAtStation, lookToward, officeCounts, reactToCritter, relayoutOffice, startShow,
+  stepOffice, syncOffice, syncYou, visitorAgents, visitorArrives, youAgent,
 } from "../officeSim";
+import {
+  isPerformanceKind, PerformanceFrequency, performanceFrequency, performanceGap, PerformanceKindId, PERFORMANCES, planPerformance, ROLE_OUTFITS,
+} from "../officePerformances";
 import { personalityOf, planVisit, VisitorFrequency, visitorFrequency, VisitorKind, visitorGap, visitorReaction, visitorSmallTalk } from "../officeVisitors";
 import { YourEvent, YourReaction, yourEventSeconds, yourReaction, roomReaction, YourScreen } from "../officeYou";
 import { Facing, FRAME_HEIGHT, FRAME_WIDTH, HEAD_ROOM, pixelGuyFrame, pixelGuyLook, PixelGuyLook, Pose } from "../pixelGuy";
@@ -19,6 +22,7 @@ import { drawCritter } from "./critters";
 import { drawFlier, drawFlierShadow, drawFlierTrail } from "./fliers";
 import { drawLuckyCat } from "./luckyCat";
 import { SCENE_PALETTES, ScenePalette } from "./palettes";
+import { drawDeskPlate, drawDisco, drawGear, drawSetPiece, drawSnack, drawSpotlight, PerformerSpot, ShowEffects, showLightLevel } from "./shows";
 import { backdropHasSky, drawAfterLight, drawBackdrop, drawGroundDetail, drawSceneryProp, drawWeather, Kit, LIBRARY_WINDOW_EVERY, propLight, skyBottom } from "./scenery";
 
 declare function acquireVsCodeApi(): { postMessage(message: unknown): void };
@@ -32,6 +36,7 @@ interface OfficeMessage {
   fliers?: boolean;
   dayNight?: boolean;
   visitors?: unknown;
+  performances?: unknown;
   // False makes every guy human.
   races?: boolean;
   // The session the Session sidebar shows: his guy wears a crown.
@@ -42,6 +47,12 @@ interface TintMessage {
   type: "tint";
   index: number;
   burst?: boolean;
+}
+
+// Play a show now (the Play Office Show command): a kind, or anything else for a random one.
+interface PerformanceMessage {
+  type: "performance";
+  kind?: string;
 }
 
 interface SceneEventMessage {
@@ -89,6 +100,12 @@ let visitCount = 0;
 let nextVisitorAt = visitorGap(Math.random, "normal", true);
 // Guys within this many tiles answer a visitor's small talk; his arrival lines reach the whole room.
 const REMARK_REACH = 4;
+
+// Shows: how often they come, when the next one does, and the notes, confetti, and sparkles in the air.
+let performancesSetting: PerformanceFrequency = "normal";
+let nextShowAt = performanceGap(Math.random, "normal", true);
+let showCount = 0;
+const showEffects = new ShowEffects();
 
 const random = Math.random;
 
@@ -154,8 +171,12 @@ new ResizeObserver(() => {
   }
 }).observe(canvas);
 
-window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEventMessage | TintMessage>) => {
+window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEventMessage | TintMessage | PerformanceMessage>) => {
   const data = event.data;
+  if (data !== null && typeof data === "object" && data.type === "performance") {
+    playShow(isPerformanceKind(data.kind) ? data.kind : undefined);
+    return;
+  }
   if (data !== null && typeof data === "object" && data.type === "sceneEvent") {
     startSceneEvent(data);
     return;
@@ -182,7 +203,7 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEve
     racesOn = nextRaces;
     // Redraw the session guys; your look and visitors already in the room keep theirs.
     for (const key of [...lookCache.keys()]) {
-      if (!key.startsWith("you|") && !key.startsWith("visitor|")) {
+      if (!key.startsWith("you|") && !key.startsWith("visitor|") && !key.startsWith("show|")) {
         lookCache.delete(key);
       }
     }
@@ -195,6 +216,11 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEve
     nextVisitorAt = Math.min(nextVisitorAt, state.time + visitorGap(random, nextVisitors, true));
   }
   visitorsSetting = nextVisitors;
+  const nextPerformances = performanceFrequency(data.performances);
+  if (nextPerformances !== performancesSetting && nextPerformances !== "off") {
+    nextShowAt = Math.min(nextShowAt, state.time + performanceGap(random, nextPerformances, true));
+  }
+  performancesSetting = nextPerformances;
   focusedId = typeof data.focusedId === "string" ? data.focusedId : undefined;
   if (nextScene !== sceneId) {
     sceneId = nextScene;
@@ -203,6 +229,7 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEve
     nextCritterAt = state.time + 3;
     flight = undefined;
     nextFlightAt = state.time + 12;
+    showEffects.clear();
     if (width > 0 && height > 0) {
       fitLayout();
     }
@@ -271,6 +298,11 @@ function stepVisitors(): void {
   if (visitorsSetting === "off" || sceneEvent !== undefined || state.time < nextVisitorAt) {
     return;
   }
+  if (state.show !== undefined) {
+    // Nobody drops by in the middle of a show; they'll come a little after.
+    nextVisitorAt = state.time + 20;
+    return;
+  }
   nextVisitorAt = state.time + visitorGap(random, visitorsSetting);
   // Nobody to talk to.
   if (!state.agents.some((agent) => agent.visitor === undefined)) {
@@ -314,6 +346,46 @@ function answerVisitor(visitor: Agent, kind: VisitorKind, wholeRoom: boolean): v
     if (text !== undefined) {
       roomReactions.push({ id: agent.id, text, at: state.time + 0.9 + random() * 1.8, seconds: 2 });
     }
+  }
+}
+
+// Puts on the next show when it's time, if anyone is free to watch.
+function stepShows(): void {
+  if (state.show !== undefined || performancesSetting === "off" || sceneEvent !== undefined || state.time < nextShowAt) {
+    return;
+  }
+  nextShowAt = state.time + performanceGap(random, performancesSetting);
+  const crowd = state.agents.some((agent) =>
+    !agent.leaving && agent.performer === undefined && agent.crew === undefined && (agent.status === "idle" || agent.status === "asleep"),
+  );
+  if (!crowd) {
+    // Everyone's busy: try again in a couple of minutes.
+    nextShowAt = state.time + 120;
+    return;
+  }
+  playShow(undefined);
+}
+
+// Starts a show of this kind, or a random one, cutting short any show already on.
+function playShow(kind: PerformanceKindId | undefined): void {
+  if (state.show !== undefined) {
+    endShow(state, random);
+  }
+  const plan = planPerformance(random, kind);
+  showCount += 1;
+  const performers = PERFORMANCES[plan.kind].roles.map((role, index) => {
+    // A few looks per role, each with its own race.
+    const seed = `show|${plan.kind}|${role}|${showCount % 5}`;
+    const look = pixelGuyLook(seed, racesOn);
+    const outfit = ROLE_OUTFITS[role];
+    lookCache.set(seed, {
+      ...look, shirt: outfit.shirt, pants: outfit.pants, accessory: outfit.accessory ?? look.accessory,
+      accessoryColor: outfit.accessoryColor ?? look.accessoryColor, tie: outfit.tie,
+    });
+    return { id: `${seed}|${showCount}`, seed, title: plan.titles[index] ?? plan.title, role };
+  });
+  if (startShow(state, { kind: plan.kind, title: plan.title, performers, lines: plan.lines, closer: plan.closer, length: plan.length, food: plan.food }, random)) {
+    nextShowAt = Math.max(nextShowAt, state.time + plan.length + 120);
   }
 }
 
@@ -1512,10 +1584,25 @@ function drawAgent(agent: Agent, seconds: number): AgentBox {
     rect(box.left + 2, Math.round(agent.y * TILE) + TILE - 2, FRAME_WIDTH - 4, 2, "#000");
     context.globalAlpha = 1;
   }
-  const bob = pose.pose === "walk" && pose.frame % 2 === 1 ? -1 : 0;
-  context.globalAlpha = agent.leaving && agent.visitor === undefined ? 0.7 : 1;
+  const show = state.show;
+  // The crowd bops to the music.
+  const dancing = agent.mode === "watch" && pose.pose !== "cheer" && show !== undefined && show.phase === "playing" &&
+    (PERFORMANCES[show.kind].effect === "notes" || PERFORMANCES[show.kind].effect === "disco") && Math.floor(seconds * 2.5 + agent.x) % 2 === 0;
+  const bob = (pose.pose === "walk" && pose.frame % 2 === 1) || dancing ? -1 : 0;
+  const performer = agent.performer;
+  const gearBox = { left: box.left, top: box.top + bob };
+  if (performer !== undefined) {
+    drawGear(kit, performer.role, gearBox, pose.facing, "behind", show, seconds, agent.mode === "perform");
+  }
+  context.globalAlpha = agent.leaving && agent.visitor === undefined && performer === undefined ? 0.7 : 1;
   context.drawImage(sprite(agent.seed, pose.pose, pose.facing, pose.frame), box.left, box.top + bob - HEAD_ROOM);
   context.globalAlpha = 1;
+  if (performer !== undefined) {
+    drawGear(kit, performer.role, gearBox, pose.facing, "front", show, seconds, agent.mode === "perform");
+  }
+  if (pose.pose === "eat" && agent.snack !== undefined) {
+    drawSnack(kit, agent.snack, gearBox, pose.facing, pose.frame % 2);
+  }
   const crew = agent.crew;
   // Setting a desk down, it's drawn at its spot instead.
   const settingDown = crew?.phase === "build" && crew.job?.kind === "deliver";
@@ -1777,6 +1864,27 @@ function draw(seconds: number): void {
     }
     layers.push({ depth: agent.y + 0.5, paint: () => nextBoxes.push(drawAgent(agent, seconds)) });
   });
+  const show = state.show;
+  if (show !== undefined) {
+    // The drummer is last, and left out when there's no room behind the stage.
+    const roles = PERFORMANCES[show.kind].roles.slice(0, show.spots.length);
+    show.spots.forEach((spot, index) => {
+      const role = roles[index];
+      if (role !== undefined) {
+        layers.push({ depth: spot.y + 0.55, paint: () => drawSetPiece(kit, role, spot, show, seconds) });
+      }
+    });
+    if (show.food.length > 0 && show.phase !== "arriving") {
+      // Lunch for the busy guys, left on their desks.
+      state.placed.forEach((_, index) => {
+        const owner = owners.get(index);
+        const desk = layout.desks[index];
+        if (owner !== undefined && owner.status === "working" && desk !== undefined) {
+          layers.push({ depth: desk.desk.y + 0.45, paint: () => drawDeskPlate(kit, show.food[index % show.food.length], desk.desk.x, desk.desk.y) });
+        }
+      });
+    }
+  }
   const run = critterRun;
   if (run !== undefined) {
     layers.push({ depth: run.row + 0.6, paint: () => drawCritters(run, palette, seconds) });
@@ -1794,6 +1902,7 @@ function draw(seconds: number): void {
   drawWeather(kit, sceneId, layout.cols * TILE, layout.rows * TILE, seconds);
   drawLighting(layout, owners, atStation || event !== undefined, seconds);
   drawAfterLight(kit, sceneId, layout.cols * TILE, light);
+  drawShowLights(seconds);
   if (overhead !== undefined) {
     drawFlight(overhead, seconds, true);
   }
@@ -1832,6 +1941,33 @@ function draw(seconds: number): void {
   const counts = officeCounts(state);
   const countText = [`${counts.working} working`, `${counts.idle} idle`, ...(counts.asleep > 0 ? [`${counts.asleep} asleep`] : [])];
   statusLabel.textContent = state.agents.length === 0 ? "quiet" : countText.join(" · ");
+}
+
+// The show's lights and particles, over the light map so they shine at night too.
+function drawShowLights(seconds: number): void {
+  const show = state.show;
+  const roomWidth = state.layout.cols * TILE;
+  const roomHeight = state.layout.rows * TILE;
+  if (show !== undefined) {
+    const level = showLightLevel(show, seconds);
+    const effect = PERFORMANCES[show.kind].effect;
+    if (effect === "spotlight") {
+      drawSpotlight(kit, show, roomWidth, roomHeight, level);
+    } else if (effect === "disco") {
+      drawDisco(kit, show, roomWidth, roomHeight, seconds, level);
+    }
+  }
+  // The lead first.
+  const performers: PerformerSpot[] = [];
+  for (const id of show?.performerIds ?? []) {
+    const box = boxes.find((candidate) => candidate.agent.id === id);
+    const performer = box?.agent.performer;
+    if (box !== undefined && performer !== undefined) {
+      performers.push({ role: performer.role, box, performing: box.agent.mode === "perform" });
+    }
+  }
+  showEffects.step(show, performers, roomWidth, seconds, random);
+  showEffects.draw(kit, seconds);
 }
 
 // Multiplies the room by the scene's light: the ambient tint for the time of day, open sky left as it is, and
@@ -1912,6 +2048,14 @@ function drawLighting(layout: OfficeLayout, owners: Map<number, Agent>, stationO
   });
   if (layout.door !== undefined && palette().doorStyle === "hatch") {
     pool(layout.door.x * TILE + 8, 8, 14, "#9AD0FF", 0.4);
+  }
+  const show = state.show;
+  const stageLevel = showLightLevel(show, seconds);
+  if (show !== undefined && stageLevel > 0 && PERFORMANCES[show.kind].effect !== "spotlight") {
+    // Stage lights: the whole act lit warm, a little wider than the stage.
+    const spots = show.spots;
+    const middleX = (Math.min(...spots.map((spot) => spot.x)) + Math.max(...spots.map((spot) => spot.x))) / 2;
+    pool(middleX * TILE + 8, show.stage.y * TILE + 6, 26 + spots.length * 6, "#FFE2B0", 0.75 * stageLevel);
   }
   map.globalCompositeOperation = "source-over";
   context.save();
@@ -2074,6 +2218,7 @@ function loop(now: number): void {
   if (lastTime !== undefined) {
     stepOffice(state, seconds - lastTime, random);
     stepVisitors();
+    stepShows();
     playRoomReactions();
     stepCritters();
     stepFliers();
@@ -2120,7 +2265,7 @@ canvas.addEventListener("mousemove", (event) => {
   const agent = hit?.you ? undefined : hit;
   hoveredId = agent?.id;
   youHovered = hit?.you === true || (agent === undefined && isOverYou(event.clientX, event.clientY));
-  canvas.style.cursor = agent === undefined || agent.visitor !== undefined || agent.crew !== undefined ? "default" : "pointer";
+  canvas.style.cursor = agent === undefined || agent.visitor !== undefined || agent.crew !== undefined || agent.performer !== undefined ? "default" : "pointer";
   if (youHovered) {
     tooltip.hidden = false;
     tooltip.textContent = sceneEvent !== undefined ? `you · ${sceneEvent.kind}!` : hit?.you ? "you · on break" : "you · on watch";
@@ -2133,6 +2278,10 @@ canvas.addEventListener("mousemove", (event) => {
   tooltip.hidden = false;
   if (agent.visitor !== undefined) {
     tooltip.textContent = `${agent.title} · visiting`;
+    return;
+  }
+  if (agent.performer !== undefined) {
+    tooltip.textContent = `${agent.title} · ${agent.performer.role === "cart" ? "serving" : "performing"}`;
     return;
   }
   if (agent.crew !== undefined) {
@@ -2150,7 +2299,7 @@ canvas.addEventListener("mouseleave", () => {
 
 canvas.addEventListener("click", (event) => {
   const agent = agentAt(event.clientX, event.clientY);
-  if (agent !== undefined && !agent.you && agent.visitor === undefined && agent.crew === undefined) {
+  if (agent !== undefined && !agent.you && agent.visitor === undefined && agent.crew === undefined && agent.performer === undefined) {
     vscode.postMessage({ type: "open", sessionId: agent.id });
   }
 });
