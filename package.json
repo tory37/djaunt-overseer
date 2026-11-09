@@ -137,6 +137,12 @@
         "icon": "$(megaphone)"
       },
       {
+        "command": "overseer.office.chatterStyle",
+        "title": "Office Chatter Style…",
+        "category": "Overseer",
+        "icon": "$(comment-discussion)"
+      },
+      {
         "command": "overseer.rerollPixelGuy",
         "title": "Re-roll Pixel Guy",
         "category": "Overseer"
@@ -639,6 +645,11 @@
           "command": "overseer.office.playShow",
           "when": "view == overseer.office",
           "group": "navigation@2"
+        },
+        {
+          "command": "overseer.office.chatterStyle",
+          "when": "view == overseer.office",
+          "group": "navigation@3"
         },
         {
           "command": "overseer.jira.refresh",
@@ -1594,6 +1605,23 @@
           ],
           "default": "normal",
           "description": "How often people from other departments (sometimes a manager) drop into the Office. Up to five hang around at once: some say something and leave, others stay a minute or two, and some settle in for a good while to chat, get coffee, and loom over busy guys. Each guy answers in his own way: the suck-up says \"OK BOSS!\", the reasonable ones grumble."
+        },
+        "overseer.office.chatter": {
+          "type": "string",
+          "enum": [
+            "tidy",
+            "bubbles",
+            "log",
+            "quiet"
+          ],
+          "enumDescriptions": [
+            "A few speech bubbles at once (more in a wider room). Everyone else talking shows a small \"...\" bubble until a slot frees up.",
+            "Every line in a speech bubble over its speaker.",
+            "Lines go to a chat log above the room with the speaker's face, and fade after a few seconds. The room shows small \"...\" bubbles.",
+            "Only small \"...\" bubbles. Hover a guy to read his line."
+          ],
+          "default": "tidy",
+          "markdownDescription": "How the Office shows what the guys say. In every style, hovering a guy shows his line, and your own lines during an event and a show's act are always in bubbles. **Overseer: Office Chatter Style…** switches it from the Office view."
         },
         "overseer.office.performances": {
           "type": "string",
