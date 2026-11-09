@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AFTERMATH_SECONDS, defenseProgress, roomReaction, ROOM_REACTIONS, yourEventSeconds, yourIdleReaction, yourReaction } from "../../src/officeYou";
-import { DEFENSE_BEATS, DEFENSE_SCRIPTS, EVENT_SECONDS, HACK_PHRASES } from "../../src/sceneEventSchedule";
+import { DEFENSE_BEATS, DEFENSE_SCRIPTS, EVENT_SECONDS, eventPick, HACK_PHRASES } from "../../src/sceneEventSchedule";
 
 describe("yourReaction", () => {
   it("types at his desk with nothing going on", () => {
@@ -22,9 +22,10 @@ describe("yourReaction", () => {
   });
 
   it("hacks at full speed on falling code, then cheers the HACK's lines", () => {
-    const [line, answer] = HACK_PHRASES[2];
+    const [line, answer] = eventPick(HACK_PHRASES, 2);
     const typing = yourReaction({ kind: "hack", variant: 2, age: 2 }, 1);
-    expect(typing).toMatchObject({ pose: "type", screen: "matrix", bubble: "I'm in." });
+    expect(typing).toMatchObject({ pose: "type", screen: "matrix" });
+    expect(typing.bubble).toBeTruthy();
     expect(yourReaction({ kind: "hack", variant: 2, age: 3 }, 1)).toMatchObject({ seated: false, screen: "granted", bubble: line });
     expect(yourReaction({ kind: "hack", variant: 2, age: 4.5 }, 1).bubble).toBe(answer);
   });

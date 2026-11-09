@@ -36,16 +36,33 @@ export interface YourReaction {
 // A short beat after each event before he's back to work.
 export const AFTERMATH_SECONDS = 1.8;
 
-const ERROR_LINES = ["WHAT?!", "NOOO", "not again", "it worked yesterday", "who pushed?!", "ugh"];
-const ERROR_AFTER = ["*sigh*", "fine.", "git blame…", "rollback"];
-const HACK_AFTER = ["B-)", "too easy", "heh", "nailed it"];
-const DEFENSE_AFTER = ["phew", "close one", "B-)", "gg"];
+const ERROR_LINES = [
+  "WHAT?!", "NOOO", "not again", "it worked yesterday", "who pushed?!", "ugh", "WHY", "it was ONE line", "I didn't touch it!",
+  "oh no oh no", "my code!", "it's on fire", "ctrl+z!!", "on a Friday?!", "but the tests!", "AAAA",
+];
+const ERROR_AFTER = [
+  "*sigh*", "fine.", "git blame…", "rollback", "it's fine.", "coffee first", "it was DNS", "who wrote this? oh.",
+  "revert revert", "I need a minute", "hotfix time", "*stares*",
+];
+const HACK_START = ["hmm", "watch this", "hold my coffee", "easy", "ok ok", "stand back", "let me try", "*cracks knuckles*"];
+const HACK_IN = ["I'm in.", "we're in.", "I'm in. I think.", "too easy.", "bingo.", "and… in.", "jackpot.", "access!"];
+const HACK_AFTER = ["B-)", "too easy", "heh", "nailed it", "hacker voice: I'm in", "10x dev", "mic drop", "no big deal", "ez", "*bows*"];
+const DEFENSE_AFTER = ["phew", "close one", "B-)", "gg", "not on my watch", "I need a nap", "*wipes brow*", "back to work", "that was fun", "again? no."];
 
 // What the rest of the room says when an event hits.
 export const ROOM_REACTIONS: Record<SceneEventKind, readonly string[]> = {
-  error: ["?!", "o_O", "!", "uh oh", "not me"],
-  hack: ["!", "whoa", "o_O", "★", "lol"],
-  defense: ["!!", "eek", "!", "?!", "go go"],
+  error: [
+    "?!", "o_O", "!", "uh oh", "not me", "wasn't me", "who did it", "rip", "F", "oof", "yikes", "I saw nothing",
+    "*hides*", "rollback!", "blame QA", "it's DNS", "my stuff's fine", "*backs away*",
+  ],
+  hack: [
+    "!", "whoa", "o_O", "★", "lol", "nice!", "teach me", "is that legal?", "hacker!", "so cool", "matrix!",
+    "I'm calling legal", "wow", "how?!", "show off", "+1",
+  ],
+  defense: [
+    "!!", "eek", "!", "?!", "go go", "hurry!", "type faster!", "we're under attack!", "unplug it!", "*panics*",
+    "you got this!", "help!", "I'll get the extinguisher", "is it safe?", "HOLD IT",
+  ],
 };
 
 // The event plays for its length plus the aftermath.
@@ -125,10 +142,10 @@ function hackReaction({ age, variant }: YourEvent, time: number): YourReaction {
     return { ...reaction, pose: "sit", frame: 0, bubble: pickLine(HACK_AFTER, variant), screen: "granted" };
   }
   if (age < 0.6) {
-    return { ...reaction, frame: typing(time, 10), bubble: "hmm", screen: "matrix" };
+    return { ...reaction, frame: typing(time, 10), bubble: pickLine(HACK_START, variant), screen: "matrix" };
   }
   if (age < HACK_REVEAL_SECONDS) {
-    return { ...reaction, frame: typing(time, 16), bubble: age >= 1.4 ? "I'm in." : undefined, screen: "matrix" };
+    return { ...reaction, frame: typing(time, 16), bubble: age >= 1.4 ? pickLine(HACK_IN, variant) : undefined, screen: "matrix" };
   }
   // Up out of the chair, arms in the air.
   const cheering = Math.floor(age / 0.3) % 2 === 0;

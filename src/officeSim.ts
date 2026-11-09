@@ -14,6 +14,11 @@
 // time is in seconds.
 
 import { DRINK_PROPS, findPath, isWalkable, nearestWalkable, OfficeLayout, openFloorTiles, Point } from "./officeLayout";
+import {
+  BACK_LINES, BREAK_LINES, chatPhrase, CREW_BUILD_LINES, CREW_DONE_LINES, CREW_HELP_LINES, CREW_NEVER_MIND_LINES, CREW_REMOVE_LINES,
+  CREW_START_LINES, exchangeAnswer, MUSE_LINES, MuseMode, pickExchange, pickPhrase, RUSH_LINES, SLEEP_LINES, THANKS_LINES, TYPING_LINES,
+  WAIT_LINES, WAKE_IDLE_LINES, WAKE_TO_WORK_LINES,
+} from "./officePhrases";
 import { MAX_VISITORS, personalityOf, visitorReaction } from "./officeVisitors";
 import type { Facing, Pose } from "./pixelGuy";
 
@@ -77,6 +82,8 @@ export interface Agent {
   visitor: VisitorState | undefined;
   // A maintenance guy, not a session.
   crew: CrewState | undefined;
+  // The answer he owes the guy he's chatting with, said on his next turn if it's still fresh.
+  reply?: { text: string; until: number };
 }
 
 export interface CrewJob {
@@ -141,12 +148,8 @@ const RUN_SPEED = 5.5;
 const FOREVER = Number.POSITIVE_INFINITY;
 const CHAT_WAIT_SECONDS = 10;
 
-const CHATTER = ["!", "?", "#", "@", "$", "%", "&", "*", "♪", "…", "^_^", "o_O", "lol", "?!", "<3", "☕", "★", "~"];
-const CODE_CHATTER = ["{ }", "</>", "=>", "[ ]", "0x", "#!", "&&", ";", "//", "++"];
 
 export const YOU_AGENT_ID = "you";
-const BREAK_LINES = ["brb", "coffee?", "☕", "stretch", "…", "sup"];
-const BACK_LINES = ["ok ok", "back to it", "♪", "…"];
 
 const between = (random: Random, low: number, high: number) => low + random() * (high - low);
 
@@ -157,13 +160,6 @@ export function createOffice(layout: OfficeLayout): OfficeState {
 
 export const CREW_IDS = ["crew-1", "crew-2"] as const;
 const CREW_TITLE = "Maintenance";
-const CREW_START_LINES = ["comin' through!", "mind your backs", "desk delivery", "where's this one go?"];
-const CREW_BUILD_LINES = ["*clank*", "*bonk bonk*", "*whirr*", "*tap tap*"];
-const CREW_DONE_LINES = ["all yours", "there ya go", "done!", "enjoy"];
-const CREW_REMOVE_LINES = ["this one's going", "*grunt*", "outta here", "heavy one"];
-const CREW_HELP_LINES = ["left a bit", "lift with your legs", "careful!", "little more…", "^_^", "looks good"];
-const WAIT_LINES = ["desk?", "…", "any minute now", "*taps foot*", "I'll stand"];
-const THANKS_LINES = ["thanks!", "finally", "nice", "♪"];
 
 // A session's guy: not you, not a visitor, not the crew.
 function isSession(agent: Agent): boolean {
@@ -467,14 +463,14 @@ function stepYou(state: OfficeState, agent: Agent, random: Random): void {
     }
     agent.status = "idle";
     agent.nextBreakAt = state.time + between(random, 20, 40);
-    say(state, agent, BREAK_LINES[Math.floor(random() * BREAK_LINES.length)], 1.4);
+    say(state, agent, pickPhrase(BREAK_LINES, random), 1.4);
     pickIdleActivity(state, agent, random);
     return;
   }
   endChat(state, agent);
   agent.status = "working";
   agent.nextBreakAt = state.time + between(random, 45, 100);
-  say(state, agent, BACK_LINES[Math.floor(random() * BACK_LINES.length)], 1.4);
+  say(state, agent, pickPhrase(BACK_LINES, random), 1.4);
   goTo(state, agent, agent.workSpot, { kind: "work" }, false, random);
 }
 
@@ -557,30 +553,37 @@ export function stepOffice(state: OfficeState, seconds: number, random: Random):
       // At a busy guy's desk, he answers over his shoulder about half the time.
       const speaker = visited !== undefined && visited.bubble === undefined && random() < 0.45 ? visited : agent;
       const listener = speaker === agent ? visited ?? chatPartnerOf(state, agent) : agent;
-      const line = chatLine(speaker, listener, random);
+      const line = chatLine(state, speaker, listener, random);
       say(state, speaker, line, line.length > 4 ? lineSeconds(line) : between(random, 1, 1.8));
       agent.nextBubbleAt = state.time + between(random, 1.6, 3.4) + (line.length > 4 ? 1.2 : 0);
     }
     if (agent.goal?.kind === "waitDesk" && agent.mode === "wait") {
       if (hasDesk(state, agent)) {
-        say(state, agent, THANKS_LINES[Math.floor(random() * THANKS_LINES.length)], 1.4);
+        say(state, agent, pickPhrase(THANKS_LINES, random), 1.4);
         decide(state, agent, random);
         continue;
       }
       if (state.time >= agent.nextBubbleAt) {
-        say(state, agent, WAIT_LINES[Math.floor(random() * WAIT_LINES.length)], 1.4);
+        say(state, agent, pickPhrase(WAIT_LINES, random), 1.4);
         agent.nextBubbleAt = state.time + between(random, 4, 9);
       }
     }
     if (agent.crew?.phase === "help" && state.time >= agent.nextBubbleAt) {
-      say(state, agent, CREW_HELP_LINES[Math.floor(random() * CREW_HELP_LINES.length)], 1.4);
+      say(state, agent, pickPhrase(CREW_HELP_LINES, random), 1.4);
       agent.nextBubbleAt = state.time + between(random, 2.5, 5);
     }
     if (agent.mode === "type" && state.time >= agent.nextBubbleAt) {
       if (random() < 0.35) {
-        say(state, agent, CODE_CHATTER[Math.floor(random() * CODE_CHATTER.length)], 1.4);
+        say(state, agent, pickPhrase(TYPING_LINES, random), 1.4);
       }
       agent.nextBubbleAt = state.time + between(random, 10, 25);
+    }
+    const muse = museMode(agent);
+    if (muse !== undefined && agent.bubble === undefined && state.time >= agent.nextBubbleAt) {
+      if (random() < 0.3) {
+        say(state, agent, pickPhrase(MUSE_LINES[muse], random), 1.4);
+      }
+      agent.nextBubbleAt = state.time + between(random, 8, 20);
     }
     if (state.time >= agent.modeUntil) {
       decide(state, agent, random);
@@ -741,10 +744,10 @@ function onStatusChange(state: OfficeState, agent: Agent, random: Random): void 
   endChat(state, agent);
   const wasAsleep = agent.mode === "sleep";
   if (wasAsleep) {
-    say(state, agent, agent.status === "working" ? "!?" : "~", 1.4);
+    say(state, agent, pickPhrase(agent.status === "working" ? WAKE_TO_WORK_LINES : WAKE_IDLE_LINES, random), 1.6);
   }
   if (agent.status === "asleep") {
-    say(state, agent, "*yawn*", 1.6);
+    say(state, agent, pickPhrase(SLEEP_LINES, random), 1.6);
     goTo(state, agent, agent.workSpot, { kind: "sleep" }, false, random);
     return;
   }
@@ -756,7 +759,7 @@ function onStatusChange(state: OfficeState, agent: Agent, random: Random): void 
   if (agent.status === "working") {
     const atWork = agent.path.length === 0 && isAt(agent, agent.workSpot);
     if (!atWork) {
-      say(state, agent, "!", 1);
+      say(state, agent, pickPhrase(RUSH_LINES, random), 1.2);
     }
     goTo(state, agent, agent.workSpot, { kind: "work" }, !atWork, random);
     return;
@@ -1092,25 +1095,49 @@ function endChat(state: OfficeState, agent: Agent): void {
   }
 }
 
+// A longer line stays up long enough to read, whatever the caller asked for.
 function say(state: OfficeState, agent: Agent, text: string, seconds: number): void {
-  agent.bubble = { text, until: state.time + seconds };
+  agent.bubble = { text, until: state.time + (text.length > 8 ? Math.max(seconds, lineSeconds(text)) : seconds) };
 }
 
-// A chat line: a visitor makes small talk, a guy talking to a visitor answers in character, everyone else chatters.
-function chatLine(speaker: Agent, listener: Agent | undefined, random: Random): string {
+// What an idle session guy (or you, on a break) is doing that he might say something to nobody about.
+function museMode(agent: Agent): MuseMode | undefined {
+  if (agent.status !== "idle" || agent.visitor !== undefined || agent.crew !== undefined || agent.leaving || agent.path.length > 0) {
+    return undefined;
+  }
+  switch (agent.mode) {
+    case "drink":
+    case "couch":
+    case "sit":
+    case "stretch":
+    case "loiter":
+      return agent.mode;
+    default:
+      return undefined;
+  }
+}
+
+// A chat line: a guy owed an answer gives it, a visitor makes small talk, a guy talking to a visitor answers in
+// character, and everyone else chatters, now and then opening an exchange the other guy answers on his next turn.
+function chatLine(state: OfficeState, speaker: Agent, listener: Agent | undefined, random: Random): string {
+  const reply = speaker.reply;
+  speaker.reply = undefined;
+  if (reply !== undefined && state.time < reply.until) {
+    return reply.text;
+  }
   const talk = speaker.visitor?.smallTalk ?? [];
   if (talk.length > 0 && random() < 0.6) {
     return talk[Math.floor(random() * talk.length)];
   }
   if (speaker.visitor === undefined && listener?.visitor !== undefined && random() < 0.6) {
-    return visitorReaction(personalityOf(speaker.seed), listener.visitor.boss, false, random) ?? chatter(random);
+    return visitorReaction(personalityOf(speaker.seed), listener.visitor.boss, false, random) ?? chatPhrase(state.layout.scene, random);
   }
-  return chatter(random);
-}
-
-function chatter(random: Random): string {
-  const count = 1 + Math.floor(random() * 3);
-  return Array.from({ length: count }, () => CHATTER[Math.floor(random() * CHATTER.length)]).join(" ");
+  const line = random() < 0.12 ? pickExchange(random) : chatPhrase(state.layout.scene, random);
+  const answer = exchangeAnswer(line);
+  if (answer !== undefined && listener !== undefined && listener.visitor === undefined) {
+    listener.reply = { text: answer, until: state.time + 8 };
+  }
+  return line;
 }
 
 function removeAgent(state: OfficeState, agent: Agent): void {
@@ -1189,7 +1216,7 @@ function startJob(state: OfficeState, agent: Agent, job: CrewJob, random: Random
   agent.leaving = false;
   if (job.kind === "remove") {
     crew.phase = "toSlot";
-    say(state, agent, CREW_REMOVE_LINES[Math.floor(random() * CREW_REMOVE_LINES.length)], 1.6);
+    say(state, agent, pickPhrase(CREW_REMOVE_LINES, random), 1.6);
     goTo(state, agent, state.layout.desks[job.deskIndex].seat, { kind: "crew" }, false, random);
     return;
   }
@@ -1209,7 +1236,7 @@ function crewArrive(state: OfficeState, agent: Agent, random: Random): void {
       // Picks up the desk at the door, and his partner grabs the chair if he's free.
       crew.carrying = job.seed;
       crew.phase = "toSlot";
-      say(state, agent, CREW_START_LINES[Math.floor(random() * CREW_START_LINES.length)], 1.6);
+      say(state, agent, pickPhrase(CREW_START_LINES, random), 1.6);
       goTo(state, agent, state.layout.desks[job.deskIndex].seat, { kind: "crew" }, false, random);
       const partner = crewAgents(state).find((other) => other !== agent && other.crew?.job === undefined && other.path.length === 0 && isAt(other, state.layout.door));
       if (partner?.crew !== undefined) {
@@ -1225,7 +1252,7 @@ function crewArrive(state: OfficeState, agent: Agent, random: Random): void {
         return;
       }
       crew.phase = "build";
-      say(state, agent, CREW_BUILD_LINES[Math.floor(random() * CREW_BUILD_LINES.length)], 1.2);
+      say(state, agent, pickPhrase(CREW_BUILD_LINES, random), 1.2);
       setMode(state, agent, "build", between(random, 1.6, 2.4));
       return;
     case "haul":
@@ -1264,7 +1291,7 @@ function crewDecide(state: OfficeState, agent: Agent, random: Random): void {
     const owner = state.agents.find((other) => isSession(other) && !other.leaving && other.deskIndex === job.deskIndex);
     if (owner === undefined) {
       // Nobody needs it anymore: back out it goes.
-      say(state, agent, "never mind", 1.4);
+      say(state, agent, pickPhrase(CREW_NEVER_MIND_LINES, random), 1.4);
       crew.phase = "haul";
       goTo(state, agent, state.layout.door, { kind: "crew" }, false, random);
       return;
@@ -1273,7 +1300,7 @@ function crewDecide(state: OfficeState, agent: Agent, random: Random): void {
     crew.carrying = undefined;
     crew.job = undefined;
     crew.phase = "idle";
-    say(state, agent, CREW_DONE_LINES[Math.floor(random() * CREW_DONE_LINES.length)], 1.4);
+    say(state, agent, pickPhrase(CREW_DONE_LINES, random), 1.4);
     for (const other of crewAgents(state)) {
       if (other.crew?.phase === "help") {
         other.crew.chair = false;

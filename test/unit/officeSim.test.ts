@@ -1,3 +1,4 @@
+import { SLEEP_LINES, WAKE_TO_WORK_LINES } from "../../src/officePhrases";
 import { describe, expect, it } from "vitest";
 import { buildOfficeLayout } from "../../src/officeLayout";
 import { Agent, AgentInput, agentPose, callYouBack, createOffice, crewAgents, hasDesk, isAtStation, officeCounts, OfficeState, relayoutOffice, stepOffice, syncOffice, syncYou, youAgent } from "../../src/officeSim";
@@ -119,7 +120,7 @@ describe("officeSim", () => {
     run(state, 20, random);
     syncOffice(state, [input("a", "asleep")], random);
     const guy = agent(state, "a");
-    expect(guy.bubble?.text).toBe("*yawn*");
+    expect(SLEEP_LINES).toContain(guy.bubble?.text);
     run(state, 20, random);
     expect(atWorkSpot(guy)).toBe(true);
     expect(guy.mode).toBe("sleep");
@@ -128,7 +129,7 @@ describe("officeSim", () => {
     expect(guy.mode).toBe("sleep");
     expect(officeCounts(state)).toEqual({ working: 0, idle: 0, asleep: 1 });
     syncOffice(state, [input("a", "working")], random);
-    expect(guy.bubble?.text).toBe("!?");
+    expect(WAKE_TO_WORK_LINES).toContain(guy.bubble?.text);
     expect(guy.mode).toBe("type");
   });
 
