@@ -1,5 +1,8 @@
-// Decorative only: a western dragon and three legendary birds (Moltres, Zapdos, Articuno) that cross the Core
-// view now and then, one at a time, in front of or behind the globe. A scene script for the decorative shell; the scene calls drawCreatures(seconds, "behind" | "front").
+import { LEGENDS_SCRIPT } from "./coreLegends";
+
+// Decorative only: a western dragon, the legendary birds (Moltres, Zapdos, Articuno), and the legendaries in
+// coreLegends.ts cross the Core view now and then, one at a time, in front of or behind the globe. A scene script for
+// the decorative shell; the scene calls drawCreatures(seconds, "behind" | "front").
 // Each creature is drawn facing +x in units of its body size, y down. Wings are drawn spread flat, then squashed
 // by the flap so the span tips up and down past the body.
 export const CREATURES_SCRIPT = `
@@ -11,12 +14,26 @@ export const CREATURES_SCRIPT = `
   // Lightning bolts: device-pixel polylines that last a few frames.
   const bolts = [];
   let lastCreatureSeconds;
+  // size scales the body, seconds is the crossing time range, path the way it moves, setup adds to its pass.
   const creatures = [
-    { draw: drawDragon, nextAt: 5, pass: null },
-    { draw: drawMoltres, nextAt: 14, pass: null },
-    { draw: drawZapdos, nextAt: 24, pass: null },
-    { draw: drawArticuno, nextAt: 34, pass: null },
+    { draw: drawDragon },
+    { draw: drawMoltres },
+    { draw: drawZapdos },
+    { draw: drawArticuno },
+    { draw: drawCelebi, size: 0.75, seconds: [6, 8], path: "flit" },
+    { draw: drawRaikou, seconds: [4.5, 6] },
+    { draw: drawEntei, seconds: [5, 6.5] },
+    { draw: drawSuicune, seconds: [5, 6.5] },
+    { draw: drawJirachi, size: 0.8, seconds: [9, 12], path: "drift" },
+    { draw: drawKyogre, size: 1.3, seconds: [11, 14], path: "swim" },
+    { draw: drawGroudon, size: 1.2, seconds: [6, 7.5], path: "leap" },
+    { draw: drawUnown, seconds: [9, 12], path: "drift", setup: unownFormation, weight: 1.5 },
   ];
+  // How each path bobs: waves across the crossing and their height as a share of the view.
+  const PATH_WAVES = { glide: [1, 0.06], flit: [7, 0.06], drift: [1.5, 0.05], swim: [1.5, 0.08] };
+  let pass = null;
+  let nextPassAt = 5;
+  let lastCreature = null;
 
   function fillPolygon(points) {
     context.beginPath();
@@ -65,9 +82,10 @@ export const CREATURES_SCRIPT = `
   }
 
   // gravity is in device pixels per second squared; negative rises like a spark, positive falls like frost.
-  function emit(layer, [x, y], [velocityX, velocityY], color, life, size, gravity = -20, flake = false) {
+  // shape is "square", "flake", "star", or "bubble".
+  function emit(layer, [x, y], [velocityX, velocityY], color, life, size, gravity = -20, shape = "square") {
     if (particles.length >= MAX_PARTICLES) particles.shift();
-    particles.push({ layer, x, y, velocityX, velocityY, color, life, maxLife: life, size, gravity, flake });
+    particles.push({ layer, x, y, velocityX, velocityY, color, life, maxLife: life, size, gravity, shape });
   }
 
   // A jagged bolt from a local point, outward along a local angle.
@@ -325,7 +343,7 @@ export const CREATURES_SCRIPT = `
       fillTube(streamer, taper(22, 0.05, 0.014));
       if (Math.random() < 0.35) {
         const [x, y] = streamer[Math.floor(10 + Math.random() * 12)];
-        emit(layer, toDevice([x, y]), [(Math.random() - 0.5) * 10, 4 + Math.random() * 8], palette.ice[Math.floor(Math.random() * 2)], 1.2 + Math.random() * 1, 2 + Math.random() * 2, 12, true);
+        emit(layer, toDevice([x, y]), [(Math.random() - 0.5) * 10, 4 + Math.random() * 8], palette.ice[Math.floor(Math.random() * 2)], 1.2 + Math.random() * 1, 2 + Math.random() * 2, 12, "flake");
       }
     });
 
@@ -346,31 +364,48 @@ export const CREATURES_SCRIPT = `
     drawFeatherWing([0.02, -0.03], flap, shade(light, tone), shade(blue, tone), shade(pale, tone));
     if (Math.random() < 0.5) {
       const tip = toDevice(wingMapper([0.02, -0.03], flap)([-0.25, 0.6]));
-      emit(layer, tip, [(Math.random() - 0.5) * 12, 6 + Math.random() * 10], palette.ice[0], 1.4 + Math.random() * 0.8, 2 + Math.random() * 2, 10, true);
+      emit(layer, tip, [(Math.random() - 0.5) * 12, 6 + Math.random() * 10], palette.ice[0], 1.4 + Math.random() * 0.8, 2 + Math.random() * 2, 10, "flake");
     }
   }
 
+  // Any creature but the last one, the Unown a little more often.
+  function pickCreature() {
+    const choices = creatures.filter((creature) => creature !== lastCreature);
+    let roll = Math.random() * choices.reduce((total, creature) => total + (creature.weight || 1), 0);
+    return choices.find((creature) => (roll -= creature.weight || 1) < 0) || choices[choices.length - 1];
+  }
+
   function launch(creature, seconds) {
-    creature.pass = {
+    const [shortest, longest] = creature.seconds || [7, 10];
+    pass = {
+      creature,
       start: seconds,
-      duration: 7 + Math.random() * 3,
+      duration: shortest + Math.random() * (longest - shortest),
       direction: Math.random() < 0.5 ? 1 : -1,
       behind: Math.random() < 0.35,
       fromY: 0.25 + Math.random() * 0.5,
       toY: 0.2 + Math.random() * 0.6,
       bobPhase: Math.random() * Math.PI * 2,
       breatheAt: Math.random() < 0.6 ? 0.3 + Math.random() * 0.35 : -1,
+      reach: 0.9,
       progress: 0,
     };
+    if (creature.setup) creature.setup(pass);
+    lastCreature = creature;
   }
 
-  // Crosses the view edge to edge with a gentle bob; the climb tilts the nose along the path.
+  // Crosses the view edge to edge with a bob by its path, or a leap that rises from the bottom and falls back;
+  // the climb tilts the nose along the path.
   function passPose(pass, size) {
-    const margin = size * 0.9;
+    const margin = size * pass.reach;
     const travel = width + margin * 2;
+    const path = pass.creature.path || "glide";
+    const [waves, bob] = PATH_WAVES[path] || PATH_WAVES.glide;
     const along = (progress) => [
       pass.direction > 0 ? -margin + progress * travel : width + margin - progress * travel,
-      height * (pass.fromY + (pass.toY - pass.fromY) * easeInOut(clamp01(progress))) + Math.sin(progress * Math.PI * 2 + pass.bobPhase) * height * 0.06,
+      path === "leap"
+        ? height * (1 - 0.75 * 4 * progress * (1 - progress)) + size * 0.2
+        : height * (pass.fromY + (pass.toY - pass.fromY) * easeInOut(clamp01(progress))) + Math.sin(progress * Math.PI * 2 * waves + pass.bobPhase) * height * bob,
     ];
     const [x, y] = along(pass.progress);
     const [aheadX, aheadY] = along(pass.progress + 0.01);
@@ -394,34 +429,28 @@ export const CREATURES_SCRIPT = `
         bolts[index].life -= elapsed;
         if (bolts[index].life <= 0) bolts.splice(index, 1);
       }
-      creatures.forEach((creature) => {
-        if (creature.pass === null && seconds >= creature.nextAt) {
-          if (creatures.some((other) => other.pass !== null)) creature.nextAt = seconds + 3 + Math.random() * 4;
-          else launch(creature, seconds);
+      if (pass === null && seconds >= nextPassAt) launch(pickCreature(), seconds);
+      if (pass !== null) {
+        pass.progress = (seconds - pass.start) / pass.duration;
+        if (pass.progress > 1) {
+          pass = null;
+          nextPassAt = seconds + 15 + Math.random() * 25;
         }
-        if (creature.pass !== null) {
-          creature.pass.progress = (seconds - creature.pass.start) / creature.pass.duration;
-          if (creature.pass.progress > 1) {
-            creature.pass = null;
-            creature.nextAt = seconds + 15 + Math.random() * 25;
-          }
-        }
-      });
+      }
     }
 
     const behind = layer === "behind";
-    creatures.forEach((creature) => {
-      if (creature.pass === null || creature.pass.behind !== behind) return;
-      const size = Math.max(48, Math.min(width, height) * 0.45) * (behind ? 0.55 : 1);
-      const { x, y, climb } = passPose(creature.pass, size);
+    if (pass !== null && pass.behind === behind) {
+      const size = Math.max(48, Math.min(width, height) * 0.45) * (pass.creature.size || 1) * (behind ? 0.55 : 1);
+      const { x, y, climb } = passPose(pass, size);
       context.save();
       context.globalAlpha = 1;
       context.translate(x, y);
-      context.scale(size * creature.pass.direction, size);
+      context.scale(size * pass.direction, size);
       context.rotate(climb);
-      creature.draw(seconds, behind ? 0.6 : 1, creature.pass, layer);
+      pass.creature.draw(seconds, behind ? 0.6 : 1, pass, layer);
       context.restore();
-    });
+    }
 
     context.save();
     context.setTransform(1, 0, 0, 1, 0, 0);
@@ -432,9 +461,19 @@ export const CREATURES_SCRIPT = `
       context.globalAlpha = remaining * (behind ? 0.6 : 1);
       context.fillStyle = particle.color;
       const size = particle.size * scale * (0.4 + 0.6 * remaining);
-      if (particle.flake) {
+      if (particle.shape === "flake") {
         context.fillRect(particle.x - size / 2, particle.y - size / 6, size, size / 3);
         context.fillRect(particle.x - size / 6, particle.y - size / 2, size / 3, size);
+      } else if (particle.shape === "star") {
+        context.fillRect(particle.x - size, particle.y - size / 8, size * 2, size / 4);
+        context.fillRect(particle.x - size / 8, particle.y - size, size / 4, size * 2);
+        context.fillRect(particle.x - size / 4, particle.y - size / 4, size / 2, size / 2);
+      } else if (particle.shape === "bubble") {
+        context.strokeStyle = particle.color;
+        context.lineWidth = scale;
+        context.beginPath();
+        context.arc(particle.x, particle.y, size / 2, 0, Math.PI * 2);
+        context.stroke();
       } else {
         context.fillRect(particle.x - size / 2, particle.y - size / 2, size, size);
       }
@@ -454,4 +493,4 @@ export const CREATURES_SCRIPT = `
     context.restore();
     context.globalAlpha = 1;
   }
-`;
+` + LEGENDS_SCRIPT;
