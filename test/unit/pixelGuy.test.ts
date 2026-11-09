@@ -3,6 +3,7 @@ import {
   FRAME_HEIGHT,
   FRAME_WIDTH,
   DEFAULT_YOUR_LOOK,
+  HEAD_ROOM,
   hashSeed,
   mixHex,
   pixelGuyFrame,
@@ -123,18 +124,18 @@ describe("your guy", () => {
     expect(colors).toContain(look.eyes);
     expect(colors).toContain(look.beard);
     // Arms at the sides are skin, the shins below the shorts too, and the middle of each flip flop.
-    expect(front[9][2]).toBe(look.skin);
-    expect(front[15][4]).toBe(look.skin);
-    expect(front[16][4]).toBe(look.skin);
+    expect(front[9 + HEAD_ROOM][2]).toBe(look.skin);
+    expect(front[15 + HEAD_ROOM][4]).toBe(look.skin);
+    expect(front[16 + HEAD_ROOM][4]).toBe(look.skin);
     const dressed = pixelGuyFrame({ ...look, sleeveless: false, shorts: false, flipFlops: false }, "stand", "down", 0);
-    expect(dressed[9][2]).toBe(look.shirt);
-    expect(dressed[15][4]).toBe(look.pants);
-    expect(dressed[16][4]).toBe(look.shoes);
+    expect(dressed[9 + HEAD_ROOM][2]).toBe(look.shirt);
+    expect(dressed[15 + HEAD_ROOM][4]).toBe(look.pants);
+    expect(dressed[16 + HEAD_ROOM][4]).toBe(look.shoes);
   });
 
   it("shows the ponytail down the back, and the shaved side", () => {
     const back = pixelGuyFrame(DEFAULT_YOUR_LOOK, "stand", "up", 0);
-    expect(back[7][5]).toBe(DEFAULT_YOUR_LOOK.hair);
+    expect(back[7 + HEAD_ROOM][5]).toBe(DEFAULT_YOUR_LOOK.hair);
     expect(back.flat()).toContain(mixHex(DEFAULT_YOUR_LOOK.skin, DEFAULT_YOUR_LOOK.hair, 0.4));
   });
 

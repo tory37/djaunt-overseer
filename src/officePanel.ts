@@ -6,7 +6,8 @@ import type { LiveSessionMonitor } from "./liveSessions";
 import { OFFICE_SCENES, officeSceneId } from "./officeLayout";
 import type { AgentInput } from "./officeSim";
 import { visitorFrequency } from "./officeVisitors";
-import { PixelGuyLook, yourLook } from "./pixelGuy";
+import { PixelGuyLook, raceOfSeed, yourLook } from "./pixelGuy";
+import { RACES, seedWithRace } from "./pixelRaces";
 import type { Registry } from "./registry";
 import type { SceneEventDirector } from "./sceneEvents";
 
@@ -16,6 +17,7 @@ const SLEEPERS_SETTING = "overseer.office.sleepers";
 const YOU_SETTING = "overseer.office.you";
 const YOUR_LOOK_SETTING = "overseer.office.yourLook";
 const CRITTERS_SETTING = "overseer.office.critters";
+const RACES_SETTING = "overseer.office.races";
 const DAY_NIGHT_SETTING = "overseer.office.dayNight";
 const VISITORS_SETTING = "overseer.office.visitors";
 
@@ -45,7 +47,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
       deps.registry.onDidChange(() => this.postAll()),
       deps.onDidChangeFocus(() => this.postAll()),
       vscode.workspace.onDidChangeConfiguration((change) => {
-        if ([SCENE_SETTING, SLEEPERS_SETTING, YOU_SETTING, YOUR_LOOK_SETTING, CRITTERS_SETTING, DAY_NIGHT_SETTING, VISITORS_SETTING].some((setting) => change.affectsConfiguration(setting))) {
+        if ([SCENE_SETTING, SLEEPERS_SETTING, YOU_SETTING, YOUR_LOOK_SETTING, CRITTERS_SETTING, DAY_NIGHT_SETTING, VISITORS_SETTING, RACES_SETTING].some((setting) => change.affectsConfiguration(setting))) {
           this.postAll();
         }
       }),
@@ -105,6 +107,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     critters: boolean;
     dayNight: boolean;
     visitors: string;
+    races: boolean;
     focusedId: string | null;
   } {
     const agents: AgentInput[] = [];
@@ -137,6 +140,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
       critters: configuration.get<boolean>(CRITTERS_SETTING, true),
       dayNight: configuration.get<boolean>(DAY_NIGHT_SETTING, true),
       visitors: visitorFrequency(configuration.get<unknown>(VISITORS_SETTING)),
+      races: configuration.get<boolean>(RACES_SETTING, true),
       focusedId: this.deps.focusedSessionId() ?? null,
     };
   }
@@ -170,6 +174,23 @@ export function registerOfficeCommands(registry: Registry): vscode.Disposable[] 
       const sessionId = node?.pinned?.sessionId;
       if (sessionId !== undefined) {
         await registry.setAvatarSeed(sessionId, crypto.randomBytes(8).toString("hex"));
+      }
+    }),
+    vscode.commands.registerCommand("overseer.pickPixelGuyRace", async (node?: { pinned?: PinnedSession }) => {
+      const sessionId = node?.pinned?.sessionId;
+      if (sessionId === undefined) {
+        return;
+      }
+      // Only the race changes; the rest of the look stays.
+      const seed = registry.avatarSeed(sessionId);
+      const races = vscode.workspace.getConfiguration().get<boolean>(RACES_SETTING, true);
+      const current = raceOfSeed(seed, races);
+      const picked = await vscode.window.showQuickPick(
+        RACES.map((race) => ({ label: race.id === current ? `$(check) ${race.label}` : race.label, id: race.id })),
+        { placeHolder: "Race for this session's pixel guy" },
+      );
+      if (picked !== undefined) {
+        await registry.setAvatarSeed(sessionId, seedWithRace(seed, picked.id));
       }
     }),
     vscode.commands.registerCommand("overseer.resetPixelGuy", async (node?: { pinned?: PinnedSession }) => {

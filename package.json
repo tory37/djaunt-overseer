@@ -123,6 +123,11 @@
         "category": "Overseer"
       },
       {
+        "command": "overseer.pickPixelGuyRace",
+        "title": "Pick Race…",
+        "category": "Overseer"
+      },
+      {
         "command": "overseer.resetPixelGuy",
         "title": "Reset Pixel Guy",
         "category": "Overseer"
@@ -984,6 +989,10 @@
           "when": "false"
         },
         {
+          "command": "overseer.pickPixelGuyRace",
+          "when": "false"
+        },
+        {
           "command": "overseer.resetPixelGuy",
           "when": "false"
         }
@@ -1033,8 +1042,12 @@
           "group": "1_look@1"
         },
         {
-          "command": "overseer.resetPixelGuy",
+          "command": "overseer.pickPixelGuyRace",
           "group": "1_look@2"
+        },
+        {
+          "command": "overseer.resetPixelGuy",
+          "group": "1_look@3"
         }
       ]
     },
@@ -1453,6 +1466,11 @@
           "default": true,
           "markdownDescription": "Show each session's pixel guy as its row icon in Sessions and Terminals, with the session's state as a badge in his corner. Turn off to use the `overseer.sessionIcons.*` codicons. Re-roll a guy from the row's menu."
         },
+        "overseer.office.races": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Give the pixel guys races: orcs, elves, aliens, robots, centaurs, ghosts, and 30 more, each as likely as human. Visitors get them too. Pick one for a session with **Pixel Guy → Pick Race…** on its row's menu. Off makes everyone human, except guys you picked a race for."
+        },
         "overseer.office.you": {
           "type": "boolean",
           "default": true,
@@ -1489,6 +1507,49 @@
                 "curly"
               ],
               "default": "ponytail"
+            },
+            "race": {
+              "type": "string",
+              "enum": [
+                "human",
+                "orc",
+                "goblin",
+                "elf",
+                "darkElf",
+                "dwarf",
+                "greyAlien",
+                "greenAlien",
+                "demon",
+                "vampire",
+                "zombie",
+                "skeleton",
+                "troll",
+                "gnome",
+                "fae",
+                "undine",
+                "lizardfolk",
+                "catfolk",
+                "wolffolk",
+                "minotaur",
+                "robot",
+                "cyclops",
+                "squidfolk",
+                "mushroom",
+                "golem",
+                "ghost",
+                "slime",
+                "dryad",
+                "jackalfolk",
+                "harpy",
+                "centaur",
+                "naga",
+                "merfolk",
+                "satyr",
+                "dragonkin",
+                "ogre"
+              ],
+              "default": "human",
+              "description": "Race. Skin, hair, hair style, and eyes you leave out come from the race."
             },
             "eyes": {
               "type": "string",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildOfficeLayout } from "../../src/officeLayout";
-import { Agent, AgentInput, agentPose, callYouBack, createOffice, isAtStation, officeCounts, OfficeState, relayoutOffice, stepOffice, syncOffice, syncYou, youAgent } from "../../src/officeSim";
+import { Agent, AgentInput, agentPose, callYouBack, createOffice, crewAgents, hasDesk, isAtStation, officeCounts, OfficeState, relayoutOffice, stepOffice, syncOffice, syncYou, youAgent } from "../../src/officeSim";
 import { seededRandom } from "../../src/pixelGuy";
 
 const input = (id: string, status: AgentInput["status"]): AgentInput => ({ id, seed: id, status, title: `Session ${id}` });
@@ -162,7 +162,8 @@ describe("officeSim", () => {
     const overflow = state.agents[deskCount];
     expect(overflow.deskIndex).toBeUndefined();
     expect(state.layout.couchSeats).toContainEqual(overflow.workSpot);
-    run(state, 20, random);
+    // The crew brings the desks in one trip at a time.
+    run(state, 90, random);
     expect(state.agents.every((guy) => guy.mode === "type")).toBe(true);
   });
 
@@ -179,6 +180,88 @@ describe("officeSim", () => {
     }
     const working = state.agents.filter((guy) => guy.status === "working");
     expect(working.every((guy) => guy.mode === "type")).toBe(true);
+  });
+
+  describe("desks and the crew", () => {
+    const deskTile = (state: OfficeState, index: number) => {
+      const desk = state.layout.desks[index];
+      return [state.layout.tiles[desk.desk.y][desk.desk.x], state.layout.tiles[desk.seat.y][desk.seat.x]];
+    };
+
+    it("starts with bare floor where the desks go", () => {
+      const state = createOffice(buildOfficeLayout(12, 8, "office"));
+      expect(state.placed.size).toBe(0);
+      state.layout.desks.forEach((_, index) => expect(deskTile(state, index)).toEqual(["floor", "floor"]));
+    });
+
+    it("sends the crew in with a new guy's desk while he waits beside its spot, then sends them home", () => {
+      const random = seededRandom(21);
+      const state = createOffice(buildOfficeLayout(12, 8, "office"));
+      syncOffice(state, [input("a", "working")], random);
+      const guy = agent(state, "a");
+      stepOffice(state, 0.05, random);
+      expect(crewAgents(state)).toHaveLength(2);
+      let sawWaiting = false;
+      let sawCarrying = false;
+      let sawChair = false;
+      for (let elapsed = 0; elapsed < 40 && !(hasDesk(state, guy) && guy.mode === "type"); elapsed += 0.05) {
+        stepOffice(state, 0.05, random);
+        sawWaiting ||= guy.goal?.kind === "waitDesk" && guy.mode === "wait";
+        sawCarrying ||= crewAgents(state).some((member) => member.crew?.carrying === "a" && agentPose(member, state.time).pose === "carry");
+        sawChair ||= crewAgents(state).some((member) => member.crew?.chair === true);
+      }
+      expect(sawWaiting).toBe(true);
+      expect(sawCarrying).toBe(true);
+      expect(sawChair).toBe(true);
+      expect(hasDesk(state, guy)).toBe(true);
+      expect(state.placed.get(guy.deskIndex as number)).toBe("a");
+      expect(deskTile(state, guy.deskIndex as number)).toEqual(["desk", "seat"]);
+      expect(guy.mode).toBe("type");
+      run(state, 30, random);
+      expect(crewAgents(state)).toHaveLength(0);
+    });
+
+    it("has the crew carry an ended session's desk out", () => {
+      const random = seededRandom(22);
+      const state = createOffice(buildOfficeLayout(12, 8, "office"));
+      syncOffice(state, [input("a", "working"), input("b", "working")], random, "seated");
+      expect(crewAgents(state)).toHaveLength(0);
+      const index = agent(state, "a").deskIndex as number;
+      syncOffice(state, [input("b", "working")], random);
+      stepOffice(state, 0.05, random);
+      expect(crewAgents(state)).toHaveLength(2);
+      let sawHauling = false;
+      for (let elapsed = 0; elapsed < 60 && crewAgents(state).length > 0; elapsed += 0.05) {
+        stepOffice(state, 0.05, random);
+        sawHauling ||= crewAgents(state).some((member) => member.crew?.phase === "haul" && member.crew.carrying === "a");
+      }
+      expect(sawHauling).toBe(true);
+      expect(state.placed.has(index)).toBe(false);
+      expect(deskTile(state, index)).toEqual(["floor", "floor"]);
+      expect(hasDesk(state, agent(state, "b"))).toBe(true);
+      expect(crewAgents(state)).toHaveLength(0);
+    });
+
+    it("hands a newcomer a desk that's still standing instead of hauling it out", () => {
+      const random = seededRandom(23);
+      const state = createOffice(buildOfficeLayout(12, 8, "office"));
+      syncOffice(state, [input("a", "working")], random, "seated");
+      const index = agent(state, "a").deskIndex;
+      syncOffice(state, [input("c", "working")], random);
+      expect(agent(state, "c").deskIndex).toBe(index);
+      expect(hasDesk(state, agent(state, "c"))).toBe(true);
+    });
+
+    it("puts everyone's desk in at once when the room changes shape", () => {
+      const random = seededRandom(24);
+      const state = createOffice(buildOfficeLayout(20, 12, "office"));
+      syncOffice(state, [input("a", "working"), input("b", "idle")], random);
+      run(state, 1, random);
+      relayoutOffice(state, buildOfficeLayout(14, 9, "office"), random);
+      expect(state.agents.filter((guy) => guy.crew === undefined).every((guy) => hasDesk(state, guy))).toBe(true);
+      run(state, 30, random);
+      expect(crewAgents(state)).toHaveLength(0);
+    });
   });
 
   describe("you", () => {

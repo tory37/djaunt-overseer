@@ -6,6 +6,7 @@ import { badgeColor, badgeStyle } from "./portraitBadge";
 import { SessionIconState } from "./sessionIcons";
 
 const PORTRAITS_SETTING = "overseer.office.portraits";
+const RACES_SETTING = "overseer.office.races";
 
 interface ContributedTheme {
   label?: unknown;
@@ -25,7 +26,7 @@ export class PortraitIcons implements vscode.Disposable {
   constructor(private readonly extension: vscode.Extension<unknown>) {
     this.configListener = vscode.workspace.onDidChangeConfiguration((change) => {
       if (change.affectsConfiguration("workbench.colorCustomizations") || change.affectsConfiguration("workbench.colorTheme") ||
-        change.affectsConfiguration(PORTRAITS_SETTING)) {
+        change.affectsConfiguration(PORTRAITS_SETTING) || change.affectsConfiguration(RACES_SETTING)) {
         this.icons.clear();
         this.changeEmitter.fire();
       }
@@ -47,7 +48,8 @@ export class PortraitIcons implements vscode.Disposable {
       return cached;
     }
     const { pulse, dimmed } = badgeStyle(state);
-    const svg = portraitSvg(pixelGuyLook(seed), { color: this.badgeColor(state), pulse }, dimmed);
+    const races = vscode.workspace.getConfiguration().get<boolean>(RACES_SETTING, true);
+    const svg = portraitSvg(pixelGuyLook(seed, races), { color: this.badgeColor(state), pulse }, dimmed);
     const icon = vscode.Uri.parse(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
     this.icons.set(key, icon);
     return icon;

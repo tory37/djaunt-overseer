@@ -7,6 +7,9 @@
 // Now and then someone from another department visits: walks in and says his lines to the room. Some walk right back
 // out; others hang around like an idle guy (chats, coffee, the couch, looming over a busy guy's desk) and make small
 // talk, then say bye and go.
+// Desks aren't there until they're needed: when a session joins, two maintenance guys walk in, one carrying the desk
+// and the other his chair, set it down at the guy's spot while he waits beside it, and walk out. When a session ends
+// they come back for its desk. Only your station is always there.
 // The webview calls syncOffice when the sessions change, syncYou when you come or go, and stepOffice every frame;
 // time is in seconds.
 
@@ -23,7 +26,7 @@ export interface AgentInput {
   title: string;
 }
 
-export type AgentMode = "walk" | "type" | "sit" | "stretch" | "drink" | "loiter" | "chat" | "wait" | "couch" | "sleep" | "address";
+export type AgentMode = "walk" | "type" | "sit" | "stretch" | "drink" | "loiter" | "chat" | "wait" | "couch" | "sleep" | "address" | "build";
 
 export type AgentGoal =
   | { kind: "work" }
@@ -37,6 +40,10 @@ export type AgentGoal =
   | { kind: "visit"; agentId: string }
   // A visitor, headed to the middle of the room to say his piece.
   | { kind: "address" }
+  // A session's guy whose desk isn't in yet, waiting beside its spot.
+  | { kind: "waitDesk" }
+  // A maintenance guy on a job; his crew phase says which step.
+  | { kind: "crew" }
   | { kind: "door" };
 
 export interface Agent {
@@ -68,6 +75,28 @@ export interface Agent {
   watch: { facing: Facing; until: number } | undefined;
   // A visitor from another department, not a session.
   visitor: VisitorState | undefined;
+  // A maintenance guy, not a session.
+  crew: CrewState | undefined;
+}
+
+export interface CrewJob {
+  kind: "deliver" | "remove";
+  deskIndex: number;
+  // The seed of the guy the desk is for, which sets its style.
+  seed: string;
+}
+
+// fetch: to the door for a desk. toSlot: to the desk's spot. build: setting it down or taking it apart. haul: carrying
+// it out. help: standing by while his partner works. out: leaving, nothing to do.
+export type CrewPhase = "idle" | "fetch" | "toSlot" | "build" | "haul" | "help" | "out";
+
+export interface CrewState {
+  job: CrewJob | undefined;
+  phase: CrewPhase;
+  // The seed of the desk he's carrying, or undefined when his hands are empty.
+  carrying: string | undefined;
+  // Carrying the chair for his partner's desk.
+  chair: boolean;
 }
 
 export interface VisitorState {
@@ -101,6 +130,8 @@ export interface OfficeState {
   layout: OfficeLayout;
   agents: Agent[];
   time: number;
+  // The desks standing in the room, by index into layout.desks, each with the seed of the guy it came in for.
+  placed: Map<number, string>;
 }
 
 export type Random = () => number;
@@ -120,7 +151,76 @@ const BACK_LINES = ["ok ok", "back to it", "♪", "…"];
 const between = (random: Random, low: number, high: number) => low + random() * (high - low);
 
 export function createOffice(layout: OfficeLayout): OfficeState {
-  return { layout, agents: [], time: 0 };
+  clearDeskSpots(layout);
+  return { layout, agents: [], time: 0, placed: new Map() };
+}
+
+export const CREW_IDS = ["crew-1", "crew-2"] as const;
+const CREW_TITLE = "Maintenance";
+const CREW_START_LINES = ["comin' through!", "mind your backs", "desk delivery", "where's this one go?"];
+const CREW_BUILD_LINES = ["*clank*", "*bonk bonk*", "*whirr*", "*tap tap*"];
+const CREW_DONE_LINES = ["all yours", "there ya go", "done!", "enjoy"];
+const CREW_REMOVE_LINES = ["this one's going", "*grunt*", "outta here", "heavy one"];
+const CREW_HELP_LINES = ["left a bit", "lift with your legs", "careful!", "little more…", "^_^", "looks good"];
+const WAIT_LINES = ["desk?", "…", "any minute now", "*taps foot*", "I'll stand"];
+const THANKS_LINES = ["thanks!", "finally", "nice", "♪"];
+
+// A session's guy: not you, not a visitor, not the crew.
+function isSession(agent: Agent): boolean {
+  return !agent.you && agent.visitor === undefined && agent.crew === undefined;
+}
+
+export function crewAgents(state: OfficeState): Agent[] {
+  return state.agents.filter((agent) => agent.crew !== undefined);
+}
+
+// Every desk spot starts as bare floor.
+function clearDeskSpots(layout: OfficeLayout): void {
+  for (const desk of layout.desks) {
+    layout.tiles[desk.desk.y][desk.desk.x] = "floor";
+    layout.tiles[desk.seat.y][desk.seat.x] = "floor";
+  }
+}
+
+export function hasDesk(state: OfficeState, agent: Agent): boolean {
+  return agent.deskIndex !== undefined && state.placed.has(agent.deskIndex);
+}
+
+// Puts a desk and its chair at a spot. Anyone standing where the desk goes steps out of the way.
+function placeDesk(state: OfficeState, index: number, seed: string): void {
+  const desk = state.layout.desks[index];
+  if (desk === undefined) {
+    return;
+  }
+  state.layout.tiles[desk.desk.y][desk.desk.x] = "desk";
+  state.layout.tiles[desk.seat.y][desk.seat.x] = "seat";
+  state.placed.set(index, seed);
+  for (const agent of state.agents) {
+    if (isAt(agent, desk.desk) || (agent.path.length > 0 && agent.path.some((step) => step.x === desk.desk.x && step.y === desk.desk.y))) {
+      const moved = nearestWalkable(state.layout, here(agent));
+      if (isAt(agent, desk.desk)) {
+        agent.x = moved.x;
+        agent.y = moved.y;
+      }
+      agent.path = [];
+      agent.modeUntil = state.time;
+    }
+  }
+}
+
+function removeDesk(state: OfficeState, index: number): void {
+  const desk = state.layout.desks[index];
+  state.placed.delete(index);
+  if (desk !== undefined) {
+    state.layout.tiles[desk.desk.y][desk.desk.x] = "floor";
+    state.layout.tiles[desk.seat.y][desk.seat.x] = "floor";
+  }
+}
+
+// Where a guy waits for his desk: just below his chair's spot, facing it.
+function deskWaitSpot(state: OfficeState, agent: Agent): Point {
+  const below = { x: agent.workSpot.x, y: agent.workSpot.y + 1 };
+  return state.layout.tiles[below.y]?.[below.x] === "floor" ? below : agent.workSpot;
 }
 
 // Adds guys for new sessions, sends ended sessions' guys out, and reacts to busy and idle flips. New guys walk in from
@@ -133,7 +233,7 @@ export function syncOffice(
 ): void {
   const inputsById = new Map(inputs.map((input) => [input.id, input]));
   for (const agent of state.agents) {
-    if (agent.you || agent.visitor !== undefined) {
+    if (!isSession(agent)) {
       continue;
     }
     const input = inputsById.get(agent.id);
@@ -157,12 +257,16 @@ export function syncOffice(
       onStatusChange(state, agent, random);
     }
   }
-  const known = new Set(state.agents.filter((agent) => !agent.you && agent.visitor === undefined).map((agent) => agent.id));
+  const known = new Set(state.agents.filter(isSession).map((agent) => agent.id));
   const newcomers = inputs.filter((input) => !known.has(input.id)).map((input) => newAgent(state, input, random));
   state.agents.push(...newcomers);
   assignWorkSpots(state);
   for (const agent of newcomers) {
     if (entrance === "seated") {
+      // They were here all along, desks and all.
+      if (agent.deskIndex !== undefined) {
+        placeDesk(state, agent.deskIndex, agent.seed);
+      }
       agent.x = agent.workSpot.x;
       agent.y = agent.workSpot.y;
       agent.facing = "up";
@@ -376,7 +480,9 @@ function stepYou(state: OfficeState, agent: Agent, random: Random): void {
 
 // Swaps in a new floor plan after a resize, keeps desks where it can, and has everyone pick up again from where they are.
 export function relayoutOffice(state: OfficeState, layout: OfficeLayout, random: Random): void {
+  clearDeskSpots(layout);
   state.layout = layout;
+  state.placed = new Map();
   for (const agent of state.agents) {
     const here = { x: Math.round(agent.x), y: Math.round(agent.y) };
     if (!isWalkable(layout, here)) {
@@ -391,8 +497,19 @@ export function relayoutOffice(state: OfficeState, layout: OfficeLayout, random:
     }
   }
   assignWorkSpots(state);
+  // The room changed shape: everyone's desk is just there, and the crew has nothing left to carry.
   for (const agent of state.agents) {
-    if (agent.leaving) {
+    if (agent.deskIndex !== undefined && isSession(agent) && !agent.leaving) {
+      placeDesk(state, agent.deskIndex, agent.seed);
+    }
+    if (agent.crew !== undefined) {
+      agent.crew = { job: undefined, phase: "idle", carrying: undefined, chair: false };
+    }
+  }
+  for (const agent of state.agents) {
+    if (agent.crew !== undefined) {
+      crewDecide(state, agent, random);
+    } else if (agent.leaving) {
       leave(state, agent);
     } else if (!isAddressing(agent)) {
       // A visitor mid-speech keeps talking from where he stands; one still walking in gives up (stepVisitor).
@@ -404,6 +521,7 @@ export function relayoutOffice(state: OfficeState, layout: OfficeLayout, random:
 export function stepOffice(state: OfficeState, seconds: number, random: Random): void {
   const dt = Math.max(0, Math.min(seconds, 0.25));
   state.time += dt;
+  manageCrew(state, random);
   for (const agent of [...state.agents]) {
     if (agent.bubble !== undefined && state.time >= agent.bubble.until) {
       agent.bubble = undefined;
@@ -442,6 +560,21 @@ export function stepOffice(state: OfficeState, seconds: number, random: Random):
       const line = chatLine(speaker, listener, random);
       say(state, speaker, line, line.length > 4 ? lineSeconds(line) : between(random, 1, 1.8));
       agent.nextBubbleAt = state.time + between(random, 1.6, 3.4) + (line.length > 4 ? 1.2 : 0);
+    }
+    if (agent.goal?.kind === "waitDesk" && agent.mode === "wait") {
+      if (hasDesk(state, agent)) {
+        say(state, agent, THANKS_LINES[Math.floor(random() * THANKS_LINES.length)], 1.4);
+        decide(state, agent, random);
+        continue;
+      }
+      if (state.time >= agent.nextBubbleAt) {
+        say(state, agent, WAIT_LINES[Math.floor(random() * WAIT_LINES.length)], 1.4);
+        agent.nextBubbleAt = state.time + between(random, 4, 9);
+      }
+    }
+    if (agent.crew?.phase === "help" && state.time >= agent.nextBubbleAt) {
+      say(state, agent, CREW_HELP_LINES[Math.floor(random() * CREW_HELP_LINES.length)], 1.4);
+      agent.nextBubbleAt = state.time + between(random, 2.5, 5);
     }
     if (agent.mode === "type" && state.time >= agent.nextBubbleAt) {
       if (random() < 0.35) {
@@ -498,10 +631,16 @@ export function agentPose(agent: Agent, time: number): AgentPose {
   if (agent.watch !== undefined && time < agent.watch.until && !SEATED_MODES.has(agent.mode)) {
     return { pose: "stand", facing: agent.watch.facing, frame: 0, seated: false };
   }
+  const carrying = agent.crew !== undefined && (agent.crew.carrying !== undefined || agent.crew.chair);
   if (agent.path.length > 0) {
-    return { pose: "walk", facing: agent.facing, frame: Math.floor(time * (agent.running ? 12 : 7)), seated: false };
+    return { pose: carrying ? "carry" : "walk", facing: agent.facing, frame: Math.floor(time * (agent.running ? 12 : 7)), seated: false };
+  }
+  if (carrying && agent.mode !== "build") {
+    return { pose: "carry", facing: agent.facing, frame: 0, seated: false };
   }
   switch (agent.mode) {
+    case "build":
+      return { pose: "build", facing: agent.facing, frame: Math.floor(time * 4), seated: false };
     case "type":
       return { pose: "type", facing: agent.facing, frame: Math.floor(time * 6 + phase * 2), seated: true };
     case "sit":
@@ -523,7 +662,7 @@ export function agentPose(agent: Agent, time: number): AgentPose {
 }
 
 export function officeCounts(state: OfficeState): { working: number; idle: number; asleep: number } {
-  const present = state.agents.filter((agent) => !agent.leaving && !agent.you && agent.visitor === undefined);
+  const present = state.agents.filter((agent) => !agent.leaving && isSession(agent));
   return {
     working: present.filter((agent) => agent.status === "working").length,
     idle: present.filter((agent) => agent.status === "idle").length,
@@ -556,6 +695,7 @@ function newAgent(state: OfficeState, input: AgentInput, random: Random): Agent 
     nextBreakAt: FOREVER,
     watch: undefined,
     visitor: undefined,
+    crew: undefined,
   };
 }
 
@@ -566,12 +706,12 @@ function assignWorkSpots(state: OfficeState): void {
     if (agent.you) {
       agent.deskIndex = undefined;
       agent.workSpot = state.layout.station?.seat ?? state.layout.door;
-    } else if (agent.visitor !== undefined) {
+    } else if (!isSession(agent)) {
       agent.deskIndex = undefined;
       agent.workSpot = state.layout.door;
     }
   }
-  const present = state.agents.filter((agent) => !agent.leaving && !agent.you && agent.visitor === undefined);
+  const present = state.agents.filter((agent) => !agent.leaving && isSession(agent));
   const takenDesks = new Set<number>();
   for (const agent of present) {
     if (agent.deskIndex !== undefined && !takenDesks.has(agent.deskIndex) && agent.deskIndex < desks.length) {
@@ -580,7 +720,9 @@ function assignWorkSpots(state: OfficeState): void {
       agent.deskIndex = undefined;
     }
   }
-  const freeDesks = desks.map((_, index) => index).filter((index) => !takenDesks.has(index));
+  // A desk still standing from a guy who left goes to the next one in, before the crew brings a new one.
+  const freeDesks = desks.map((_, index) => index).filter((index) => !takenDesks.has(index))
+    .sort((first, second) => Number(state.placed.has(second)) - Number(state.placed.has(first)) || first - second);
   const overflowSpots = [...couchSeats, ...openFloorTiles(state.layout).filter((tile) => tile.y >= state.layout.rows - 2)];
   let overflowIndex = 0;
   for (const agent of present) {
@@ -635,6 +777,10 @@ function onStatusChange(state: OfficeState, agent: Agent, random: Random): void 
 
 function decide(state: OfficeState, agent: Agent, random: Random): void {
   agent.running = false;
+  if (agent.crew !== undefined) {
+    crewDecide(state, agent, random);
+    return;
+  }
   if (agent.leaving) {
     leave(state, agent);
     return;
@@ -661,7 +807,7 @@ function decide(state: OfficeState, agent: Agent, random: Random): void {
 }
 
 function pickIdleActivity(state: OfficeState, agent: Agent, random: Random): void {
-  const atDesk = agent.deskIndex !== undefined && agent.path.length === 0 && isAt(agent, agent.workSpot);
+  const atDesk = hasDesk(state, agent) && agent.path.length === 0 && isAt(agent, agent.workSpot);
   const freeProps = state.layout.props
     .map((prop, propIndex) => ({ prop, propIndex }))
     .filter(({ prop }) => prop.stand !== undefined && !isTargeted(state, agent, prop.stand));
@@ -670,7 +816,7 @@ function pickIdleActivity(state: OfficeState, agent: Agent, random: Random): voi
   const options: { weight: number; run: () => void }[] = [
     { weight: 2, run: () => wander(state, agent, random) },
   ];
-  if (agent.deskIndex !== undefined && !atDesk) {
+  if (hasDesk(state, agent) && !atDesk) {
     options.push({ weight: 2, run: () => goTo(state, agent, agent.workSpot, { kind: "desk" }, false, random) });
   }
   if (atDesk) {
@@ -765,6 +911,11 @@ function leave(state: OfficeState, agent: Agent): void {
 }
 
 function goTo(state: OfficeState, agent: Agent, target: Point, goal: AgentGoal, running: boolean, random: Random): void {
+  // No desk yet: wait beside its spot instead of sitting on air.
+  if ((goal.kind === "work" || goal.kind === "sleep" || goal.kind === "desk") && agent.deskIndex !== undefined && !hasDesk(state, agent)) {
+    goal = { kind: "waitDesk" };
+    target = deskWaitSpot(state, agent);
+  }
   agent.goal = goal;
   agent.target = target;
   agent.running = running;
@@ -875,6 +1026,14 @@ function arrive(state: OfficeState, agent: Agent, random: Random): void {
       agent.nextBubbleAt = state.time + between(random, 0.2, 0.8);
       return;
     }
+    case "waitDesk":
+      agent.facing = "up";
+      setMode(state, agent, "wait", FOREVER);
+      agent.nextBubbleAt = state.time + between(random, 1, 3);
+      return;
+    case "crew":
+      crewArrive(state, agent, random);
+      return;
     case "address":
       agent.facing = "down";
       setMode(state, agent, "address", FOREVER);
@@ -973,4 +1132,226 @@ function isTargeted(state: OfficeState, self: Agent, point: Point): boolean {
 
 function isWorkSpotOfOther(state: OfficeState, self: Agent, point: Point): boolean {
   return state.agents.some((other) => other !== self && other.workSpot.x === point.x && other.workSpot.y === point.y);
+}
+
+// ----- The maintenance crew -----
+
+// Works out which desks need bringing in or taking out, sends the crew in when there's work, hands out jobs, and sends
+// them home when it's all done.
+function manageCrew(state: OfficeState, random: Random): void {
+  const wanted = new Map<number, string>();
+  for (const agent of state.agents) {
+    if (isSession(agent) && !agent.leaving && agent.deskIndex !== undefined) {
+      wanted.set(agent.deskIndex, agent.seed);
+    }
+  }
+  let crew = crewAgents(state);
+  const claimed = new Set(crew.flatMap((member) => (member.crew?.job === undefined ? [] : [member.crew.job.deskIndex])));
+  const jobs: CrewJob[] = [];
+  for (const [deskIndex, seed] of wanted) {
+    if (!state.placed.has(deskIndex) && !claimed.has(deskIndex)) {
+      jobs.push({ kind: "deliver", deskIndex, seed });
+    }
+  }
+  for (const [deskIndex, seed] of state.placed) {
+    if (!wanted.has(deskIndex) && !claimed.has(deskIndex)) {
+      jobs.push({ kind: "remove", deskIndex, seed });
+    }
+  }
+  if (jobs.length > 0 && crew.length === 0) {
+    crew = CREW_IDS.map((id, index) => newCrew(state, id, index, random));
+  }
+  for (const member of crew) {
+    const job = jobs[0];
+    const free = member.crew !== undefined && member.crew.job === undefined && (member.crew.phase === "idle" || member.crew.phase === "out" || member.crew.phase === "help");
+    if (job !== undefined && free && !(member.crew?.phase === "help" && member.crew.chair)) {
+      jobs.shift();
+      startJob(state, member, job, random);
+    }
+  }
+}
+
+function newCrew(state: OfficeState, id: string, index: number, random: Random): Agent {
+  const agent: Agent = {
+    ...newAgent(state, { id, seed: `crew|${index}`, status: "working", title: CREW_TITLE }, random),
+    crew: { job: undefined, phase: "idle", carrying: undefined, chair: false },
+  };
+  state.agents.push(agent);
+  // The second one follows a moment behind.
+  setMode(state, agent, "loiter", index * 0.6);
+  return agent;
+}
+
+function startJob(state: OfficeState, agent: Agent, job: CrewJob, random: Random): void {
+  const crew = agent.crew as CrewState;
+  crew.job = job;
+  crew.chair = false;
+  agent.leaving = false;
+  if (job.kind === "remove") {
+    crew.phase = "toSlot";
+    say(state, agent, CREW_REMOVE_LINES[Math.floor(random() * CREW_REMOVE_LINES.length)], 1.6);
+    goTo(state, agent, state.layout.desks[job.deskIndex].seat, { kind: "crew" }, false, random);
+    return;
+  }
+  crew.phase = "fetch";
+  goTo(state, agent, state.layout.door, { kind: "crew" }, false, random);
+}
+
+function crewArrive(state: OfficeState, agent: Agent, random: Random): void {
+  const crew = agent.crew as CrewState;
+  const job = crew.job;
+  switch (crew.phase) {
+    case "fetch": {
+      if (job === undefined) {
+        crewDecide(state, agent, random);
+        return;
+      }
+      // Picks up the desk at the door, and his partner grabs the chair if he's free.
+      crew.carrying = job.seed;
+      crew.phase = "toSlot";
+      say(state, agent, CREW_START_LINES[Math.floor(random() * CREW_START_LINES.length)], 1.6);
+      goTo(state, agent, state.layout.desks[job.deskIndex].seat, { kind: "crew" }, false, random);
+      const partner = crewAgents(state).find((other) => other !== agent && other.crew?.job === undefined && other.path.length === 0 && isAt(other, state.layout.door));
+      if (partner?.crew !== undefined) {
+        partner.crew.chair = true;
+        helpPartner(state, partner, agent, random);
+      }
+      return;
+    }
+    case "toSlot":
+      agent.facing = "up";
+      if (job === undefined) {
+        crewDecide(state, agent, random);
+        return;
+      }
+      crew.phase = "build";
+      say(state, agent, CREW_BUILD_LINES[Math.floor(random() * CREW_BUILD_LINES.length)], 1.2);
+      setMode(state, agent, "build", between(random, 1.6, 2.4));
+      return;
+    case "haul":
+      crew.carrying = undefined;
+      crew.job = undefined;
+      crew.phase = "idle";
+      setMode(state, agent, "loiter", 0.3);
+      return;
+    case "help":
+      agent.facing = agent.target === undefined ? "up" : facingToward(agent, partnerSpot(state, agent) ?? agent.target);
+      setMode(state, agent, "loiter", 1);
+      agent.nextBubbleAt = state.time + between(random, 0.5, 1.5);
+      return;
+    case "out":
+      removeAgent(state, agent);
+      return;
+    default:
+      setMode(state, agent, "loiter", 0.3);
+  }
+}
+
+// Called when a crew member's mode runs out: finishes setting down or taking apart a desk, keeps standing by while his
+// partner works, or heads out when there's nothing left.
+function crewDecide(state: OfficeState, agent: Agent, random: Random): void {
+  const crew = agent.crew as CrewState;
+  const job = crew.job;
+  agent.running = false;
+  if (crew.phase === "build" && job !== undefined) {
+    if (job.kind === "remove") {
+      removeDesk(state, job.deskIndex);
+      crew.carrying = job.seed;
+      crew.phase = "haul";
+      goTo(state, agent, state.layout.door, { kind: "crew" }, false, random);
+      return;
+    }
+    const owner = state.agents.find((other) => isSession(other) && !other.leaving && other.deskIndex === job.deskIndex);
+    if (owner === undefined) {
+      // Nobody needs it anymore: back out it goes.
+      say(state, agent, "never mind", 1.4);
+      crew.phase = "haul";
+      goTo(state, agent, state.layout.door, { kind: "crew" }, false, random);
+      return;
+    }
+    placeDesk(state, job.deskIndex, job.seed);
+    crew.carrying = undefined;
+    crew.job = undefined;
+    crew.phase = "idle";
+    say(state, agent, CREW_DONE_LINES[Math.floor(random() * CREW_DONE_LINES.length)], 1.4);
+    for (const other of crewAgents(state)) {
+      if (other.crew?.phase === "help") {
+        other.crew.chair = false;
+        other.crew.phase = "idle";
+      }
+    }
+    setMode(state, agent, "loiter", 0.6);
+    return;
+  }
+  if ((crew.phase === "toSlot" || crew.phase === "fetch" || crew.phase === "haul") && job !== undefined) {
+    // Interrupted on the way (pushed aside by a desk): carry on.
+    const target = crew.phase === "toSlot" ? state.layout.desks[job.deskIndex].seat : state.layout.door;
+    goTo(state, agent, target, { kind: "crew" }, false, random);
+    return;
+  }
+  if (crew.phase === "help") {
+    const partner = crewAgents(state).find((other) => other !== agent && other.crew?.job !== undefined);
+    if (partner !== undefined) {
+      setMode(state, agent, "loiter", 1);
+      return;
+    }
+    crew.chair = false;
+    crew.phase = "idle";
+  }
+  if (crew.phase === "out") {
+    goTo(state, agent, state.layout.door, { kind: "crew" }, false, random);
+    return;
+  }
+  // Nothing of his own: stand by a partner who's working, or go home once both are done.
+  const partner = crewAgents(state).find((other) => other !== agent && other.crew?.job !== undefined);
+  if (partner !== undefined) {
+    helpPartner(state, agent, partner, random);
+    return;
+  }
+  if (crewAgents(state).some((other) => other !== agent && other.crew?.phase === "build")) {
+    setMode(state, agent, "loiter", 0.5);
+    return;
+  }
+  crew.phase = "out";
+  goTo(state, agent, state.layout.door, { kind: "crew" }, false, random);
+}
+
+function partnerSpot(state: OfficeState, agent: Agent): Point | undefined {
+  const partner = crewAgents(state).find((other) => other !== agent && other.crew?.job !== undefined);
+  const job = partner?.crew?.job;
+  return job === undefined ? undefined : state.layout.desks[job.deskIndex]?.seat;
+}
+
+// Stands on an open tile beside the spot his partner is headed for.
+function helpPartner(state: OfficeState, agent: Agent, partner: Agent, random: Random): void {
+  const crew = agent.crew as CrewState;
+  const job = partner.crew?.job;
+  const spot = job === undefined ? undefined : state.layout.desks[job.deskIndex]?.seat;
+  if (spot === undefined) {
+    crew.phase = "idle";
+    setMode(state, agent, "loiter", 0.5);
+    return;
+  }
+  const owner = state.agents.find((other) => isSession(other) && other.deskIndex === job?.deskIndex);
+  const waitSpot = owner === undefined ? undefined : deskWaitSpot(state, owner);
+  const candidates = [
+    { x: spot.x - 1, y: spot.y }, { x: spot.x + 1, y: spot.y },
+    { x: spot.x - 1, y: spot.y + 1 }, { x: spot.x + 1, y: spot.y + 1 }, { x: spot.x, y: spot.y + 1 },
+  ].filter((tile) =>
+    state.layout.tiles[tile.y]?.[tile.x] === "floor" && !isTargeted(state, agent, tile) &&
+    !(waitSpot !== undefined && tile.x === waitSpot.x && tile.y === waitSpot.y) &&
+    !state.layout.desks.some((desk) => desk.desk.x === tile.x && desk.desk.y === tile.y),
+  );
+  crew.phase = "help";
+  if (candidates.length === 0) {
+    setMode(state, agent, "loiter", 1);
+    return;
+  }
+  goTo(state, agent, candidates[Math.floor(random() * candidates.length)], { kind: "crew" }, false, random);
+}
+
+function facingToward(agent: Agent, point: Point): Facing {
+  const dx = point.x - agent.x;
+  const dy = point.y - agent.y;
+  return Math.abs(dx) >= Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
 }
