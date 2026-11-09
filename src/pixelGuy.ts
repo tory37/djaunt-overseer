@@ -1,6 +1,11 @@
-// Pure: a session's pixel guy. A seed (the session id, or a re-roll) picks skin, hair, clothes, and an accessory, so
-// the same session always gets the same guy. Frames are small grids of colors that the Office view draws, and the
-// portrait is an SVG for the session row with a state badge in its corner.
+// Pure: a session's pixel guy. A seed (the session id, or a re-roll) picks a race, skin, hair, clothes, and an
+// accessory, so the same session always gets the same guy. Frames are small grids of colors that the Office view
+// draws, and the portrait is an SVG for the session row with a state badge in its corner.
+
+import { Canvas, HEAD_ROOM, INNER_HEIGHT, INNER_WIDTH, mixHex, PaletteKey, shadeHex } from "./pixelCanvas";
+import { isRaceId, pickedRace, RACE_IDS, RaceId, RaceSide, raceSpec, RaceSpec, seedWithoutRace } from "./pixelRaces";
+
+export { HEAD_ROOM, mixHex, shadeHex };
 
 // Ponytail (with one side shaved) is only for your own guy; random guys never get it.
 export type HairStyle = "short" | "long" | "spiky" | "bob" | "bald" | "mohawk" | "bun" | "curly" | "ponytail";
@@ -24,13 +29,17 @@ export interface PixelGuyLook {
   sleeveless?: boolean;
   shorts?: boolean;
   flipFlops?: boolean;
+  // Missing means human. Marks are the race's own three colors (horns, scales, wings); missing uses its defaults.
+  race?: RaceId;
+  marks?: [string, string, string];
+  // A boss's tie, down the middle of the shirt from the front.
+  tie?: string;
 }
 
 // A frame: rows of CSS colors, or null where the pixel is empty. Every frame is FRAME_WIDTH by FRAME_HEIGHT.
 export type PixelGrid = (string | null)[][];
 
-const INNER_WIDTH = 10;
-const INNER_HEIGHT = 16;
+// The frame is the body plus the head room above it, outlined.
 export const FRAME_WIDTH = INNER_WIDTH + 2;
 export const FRAME_HEIGHT = INNER_HEIGHT + 2;
 // Walk frames loop over four steps; type and talk over two.
@@ -74,10 +83,14 @@ export function seededRandom(seed: number): () => number {
   };
 }
 
-export function pixelGuyLook(seed: string): PixelGuyLook {
-  const random = seededRandom(hashSeed(seed));
-  const pick = <Item>(items: readonly Item[]): Item => items[Math.floor(random() * items.length) % items.length];
-  return {
+const pickFrom = (random: () => number) => <Item>(items: readonly Item[]): Item => items[Math.floor(random() * items.length) % items.length];
+
+// The race comes from its own stream of the hash, every race as likely as any other, so the clothes a seed picked
+// before races stay the same. A seed with a picked race (`seedWithRace`) keeps it. With races off, everyone's human.
+export function pixelGuyLook(seed: string, races = true): PixelGuyLook {
+  const base = seedWithoutRace(seed);
+  const pick = pickFrom(seededRandom(hashSeed(base)));
+  const look: PixelGuyLook = {
     skin: pick(SKINS),
     hair: pick(HAIRS),
     hairStyle: pick(HAIR_STYLES),
@@ -87,83 +100,108 @@ export function pixelGuyLook(seed: string): PixelGuyLook {
     accessory: pick(ACCESSORIES),
     accessoryColor: pick(ACCESSORY_COLORS),
   };
+  const race = pickedRace(seed) ?? (races ? RACE_IDS[hashSeed(`${base}|race`) % RACE_IDS.length] : "human");
+  return withRace(look, race, seededRandom(hashSeed(`${base}|${race}`)));
 }
 
-// Darkens or lightens a #rrggbb color by a factor.
-export function shadeHex(hex: string, factor: number): string {
-  const match = /^#([0-9a-f]{6})$/i.exec(hex);
-  if (match === null) {
-    return hex;
-  }
-  const value = parseInt(match[1], 16);
-  const channels = [(value >> 16) & 255, (value >> 8) & 255, value & 255].map((channel) =>
-    Math.max(0, Math.min(255, Math.round(channel * factor))),
-  );
-  return "#" + channels.map((channel) => channel.toString(16).padStart(2, "0")).join("").toUpperCase();
+export function raceOfSeed(seed: string, races = true): RaceId {
+  return pixelGuyLook(seed, races).race ?? "human";
 }
 
-// A blend of two #rrggbb colors: 0 is all the first, 1 all the second.
-export function mixHex(first: string, second: string, amount: number): string {
-  const parse = (hex: string) => {
-    const match = /^#([0-9a-f]{6})$/i.exec(hex);
-    return match === null ? undefined : [16, 8, 0].map((shift) => (parseInt(match[1], 16) >> shift) & 255);
-  };
-  const from = parse(first);
-  const to = parse(second);
-  if (from === undefined || to === undefined) {
-    return first;
+// Puts a race on a look: its skin, hair, eyes, and marks from its own lists. A human look comes back unchanged.
+function withRace(look: PixelGuyLook, race: RaceId, random: () => number): PixelGuyLook {
+  if (race === "human") {
+    return look;
   }
-  return "#" + from.map((channel, index) => Math.round(channel + (to[index] - channel) * amount).toString(16).padStart(2, "0")).join("").toUpperCase();
+  const spec = raceSpec(race);
+  const pick = pickFrom(random);
+  const next: PixelGuyLook = { ...look, race, marks: defaultMarks(spec, pick) };
+  if (spec.skins !== undefined) {
+    next.skin = pick(spec.skins);
+  }
+  if (spec.hairs !== undefined) {
+    next.hair = pick(spec.hairs);
+  }
+  if (spec.hairStyles !== undefined) {
+    next.hairStyle = pick(spec.hairStyles);
+  }
+  if (spec.eyes !== undefined) {
+    next.eyes = pick(spec.eyes);
+  }
+  if (spec.sleeveless === true) {
+    next.sleeveless = true;
+  }
+  return next;
 }
 
-type PaletteKey =
-  | "skin" | "skinShade" | "hair" | "eye" | "mouth" | "shirt" | "shirtShade" | "pants" | "pantsShade" | "shoes"
-  | "accessory" | "accessoryLight" | "cup" | "sleeve" | "sleeveShade" | "stubble" | "beard" | "hairTie";
-
-class Canvas {
-  readonly cells: (PaletteKey | null)[][] = Array.from({ length: INNER_HEIGHT }, () => Array<PaletteKey | null>(INNER_WIDTH).fill(null));
-
-  set(x: number, y: number, key: PaletteKey | null): void {
-    if (x >= 0 && y >= 0 && x < INNER_WIDTH && y < INNER_HEIGHT) {
-      this.cells[y][x] = key;
-    }
-  }
-
-  rect(x: number, y: number, width: number, height: number, key: PaletteKey | null): void {
-    for (let row = y; row < y + height; row++) {
-      for (let column = x; column < x + width; column++) {
-        this.set(column, row, key);
-      }
-    }
-  }
-
-  mirrored(): Canvas {
-    const mirror = new Canvas();
-    this.cells.forEach((row, y) => row.forEach((key, x) => mirror.set(INNER_WIDTH - 1 - x, y, key)));
-    return mirror;
-  }
+function defaultMarks(spec: RaceSpec, pick: <Item>(items: readonly Item[]) => Item = (items) => items[0]): [string, string, string] {
+  const marks = spec.marks ?? [["#FFFFFF"], ["#FFFFFF"], ["#FFFFFF"]];
+  return [pick(marks[0]), pick(marks[1]), pick(marks[2])];
 }
 
 // One frame of the guy, outlined, as colors. Left is the right-facing frame mirrored.
 export function pixelGuyFrame(look: PixelGuyLook, pose: Pose, facing: Facing, frame: number): PixelGrid {
   const step = ((Math.floor(frame) % POSE_FRAMES[pose]) + POSE_FRAMES[pose]) % POSE_FRAMES[pose];
+  const race = raceSpec(look.race);
+  const side = facing === "left" || facing === "right";
   let canvas: Canvas;
-  if (facing === "left" || facing === "right") {
-    canvas = drawSide(look, pose, step);
+  if (side) {
+    canvas = drawSide(look, race, pose, step);
     if (facing === "left") {
       canvas = canvas.mirrored();
     }
   } else {
-    canvas = drawFront(look, pose, step, facing === "up");
+    canvas = drawFront(look, race, pose, step, facing === "up");
   }
   dressed(canvas, look, pose, facing);
   if (pose === "sleep") {
     canvas = slumped(canvas, step);
   }
+  if (race.size === "short") {
+    canvas = shortened(canvas);
+  } else if (race.size === "big" && !side) {
+    widened(canvas);
+  }
   return outlined(colorize(canvas, look));
 }
 
-function drawFront(look: PixelGuyLook, pose: Pose, step: number, isBack: boolean): Canvas {
+function drawRace(canvas: Canvas, look: PixelGuyLook, race: RaceSpec, pose: Pose, step: number, side: RaceSide): void {
+  race.draw?.(canvas, { side, pose, step, seated: isSeatedPose(pose), hairStyle: look.hairStyle });
+}
+
+// A short guy loses a row of body and a row of leg; everything above them drops.
+function shortened(canvas: Canvas): Canvas {
+  const result = new Canvas();
+  canvas.each((key, x, y) => {
+    if (y >= 14) {
+      result.set(x, y, key);
+    } else if (y >= 11 && y <= 12) {
+      result.set(x, y + 1, key);
+    } else if (y <= 9) {
+      result.set(x, y + 2, key);
+    }
+  });
+  return result;
+}
+
+// A big guy's arms move out to the frame's edges and his body fills in behind them.
+function widened(canvas: Canvas): void {
+  for (let y = 7; y <= 12; y++) {
+    for (const [arm, edge, inner] of [[1, 0, 2], [8, 9, 7]] as const) {
+      const key = canvas.get(arm, y);
+      if (key !== null && canvas.get(edge, y) === null) {
+        canvas.set(edge, y, key);
+        canvas.set(arm, y, canvas.get(inner, y) ?? key);
+      }
+    }
+  }
+}
+
+function canWear(race: RaceSpec, accessory: Accessory): Accessory {
+  return race.blocks?.includes(accessory) === true ? "none" : accessory;
+}
+
+function drawFront(look: PixelGuyLook, race: RaceSpec, pose: Pose, step: number, isBack: boolean): Canvas {
   const canvas = new Canvas();
   // Head, with its two bottom corners cut for a chin.
   canvas.rect(2, 1, 6, 6, "skin");
@@ -185,7 +223,17 @@ function drawFront(look: PixelGuyLook, pose: Pose, step: number, isBack: boolean
     }
     drawFrontHair(canvas, look.hairStyle);
   }
-  drawFrontAccessory(canvas, look.accessory, isBack);
+  if (race.beard === true) {
+    drawFrontAccessory(canvas, "fullBeard", isBack);
+  }
+  drawFrontAccessory(canvas, canWear(race, look.accessory), isBack);
+  drawRace(canvas, look, race, pose, step, isBack ? "back" : "front");
+  if (look.tie !== undefined && !isBack) {
+    // A knot, then the blade.
+    canvas.rect(4, 7, 2, 1, "tieShade");
+    canvas.rect(4, 8, 2, 2, "tie");
+    canvas.set(4, 10, "tie");
+  }
   if (pose === "drink" && !isBack) {
     canvas.set(7, 5, "cup");
     canvas.set(7, 6, "cup");
@@ -198,16 +246,17 @@ const isSeatedPose = (pose: Pose) => pose === "type" || pose === "sit" || pose =
 // Shorts bare the shins, and flip flops bare the toes: the middle of each shoe from the front, its tip from the side.
 function dressed(canvas: Canvas, look: PixelGuyLook, pose: Pose, facing: Facing): void {
   const seated = isSeatedPose(pose);
-  canvas.cells.forEach((row, y) => row.forEach((key, x) => {
+  canvas.each((key, x, y) => {
     if (look.shorts === true && !seated && y >= 14 && (key === "pants" || key === "pantsShade")) {
       canvas.set(x, y, key === "pants" ? "skin" : "skinShade");
     }
-  }));
+  });
   if (look.flipFlops !== true || seated) {
     return;
   }
   const side = facing === "left" || facing === "right";
-  canvas.cells.forEach((row, y) => {
+  canvas.cells.forEach((row, index) => {
+    const y = index - HEAD_ROOM;
     let runStart = -1;
     for (let x = 0; x <= row.length; x++) {
       const isShoe = x < row.length && row[x] === "shoes";
@@ -228,16 +277,16 @@ function dressed(canvas: Canvas, look: PixelGuyLook, pose: Pose, facing: Facing)
 function slumped(canvas: Canvas, step: number): Canvas {
   const drop = 2 + step;
   const result = new Canvas();
-  canvas.cells.forEach((row, y) => row.forEach((key, x) => {
+  canvas.each((key, x, y) => {
     if (y >= 7) {
       result.set(x, y, key);
     }
-  }));
-  canvas.cells.forEach((row, y) => row.forEach((key, x) => {
+  });
+  canvas.each((key, x, y) => {
     if (y < 7 && key !== null) {
       result.set(x, y + drop, key);
     }
-  }));
+  });
   return result;
 }
 
@@ -440,7 +489,7 @@ function drawFrontAccessory(canvas: Canvas, accessory: Accessory, isBack: boolea
 }
 
 // Facing right. The left frames mirror these.
-function drawSide(look: PixelGuyLook, pose: Pose, step: number): Canvas {
+function drawSide(look: PixelGuyLook, race: RaceSpec, pose: Pose, step: number): Canvas {
   const canvas = new Canvas();
   canvas.rect(3, 1, 5, 6, "skin");
   canvas.set(3, 6, null);
@@ -455,7 +504,11 @@ function drawSide(look: PixelGuyLook, pose: Pose, step: number): Canvas {
   drawSideLegs(canvas, pose, step);
   drawSideArm(canvas, pose, step);
   drawSideHair(canvas, look.hairStyle);
-  drawSideAccessory(canvas, look.accessory);
+  if (race.beard === true) {
+    drawSideAccessory(canvas, "fullBeard");
+  }
+  drawSideAccessory(canvas, canWear(race, look.accessory));
+  drawRace(canvas, look, race, pose, step, "side");
   return canvas;
 }
 
@@ -562,6 +615,7 @@ function drawSideAccessory(canvas: Canvas, accessory: Accessory): void {
 }
 
 function colorize(canvas: Canvas, look: PixelGuyLook): PixelGrid {
+  const [markA, markB, markC] = look.marks ?? defaultMarks(raceSpec(look.race));
   const colors: Record<PaletteKey, string> = {
     skin: look.skin,
     skinShade: shadeHex(look.skin, 0.82),
@@ -581,6 +635,12 @@ function colorize(canvas: Canvas, look: PixelGuyLook): PixelGrid {
     stubble: mixHex(look.skin, look.hair, 0.4),
     beard: look.beard ?? look.hair,
     hairTie: shadeHex(look.hair, 0.6),
+    markA,
+    markAShade: shadeHex(markA, 0.75),
+    markB,
+    markC,
+    tie: look.tie ?? MOUTH,
+    tieShade: shadeHex(look.tie ?? MOUTH, 0.7),
   };
   return canvas.cells.map((row) => row.map((key) => (key === null ? null : colors[key])));
 }
@@ -607,7 +667,8 @@ export interface PortraitBadge {
 }
 
 const PORTRAIT_SIZE = 16;
-const PORTRAIT_ROWS = 13;
+// The outline row, the head room, and the body down to the shirt.
+const PORTRAIT_ROWS = 13 + HEAD_ROOM;
 
 // The guy from the shoulders up, centered in a 16x16 icon. The badge says the session's state; a dimmed portrait is a
 // session that isn't running.
@@ -687,6 +748,25 @@ export function yourLook(setting: unknown): PixelGuyLook {
   }
   if (ALL_ACCESSORIES.includes(fields.accessory as Accessory)) {
     look.accessory = fields.accessory as Accessory;
+  }
+  if (isRaceId(fields.race) && fields.race !== "human") {
+    // The race's first skin, hair, style, and eyes, for whichever of them the setting doesn't give.
+    const spec = raceSpec(fields.race);
+    look.race = fields.race;
+    look.marks = defaultMarks(spec);
+    const given = (field: string) => look[field as keyof PixelGuyLook] !== DEFAULT_YOUR_LOOK[field as keyof PixelGuyLook];
+    if (!given("skin") && spec.skins !== undefined) {
+      look.skin = spec.skins[0];
+    }
+    if (!given("hair") && spec.hairs !== undefined) {
+      look.hair = spec.hairs[0];
+    }
+    if (!given("hairStyle") && spec.hairStyles !== undefined && !spec.hairStyles.includes(look.hairStyle)) {
+      look.hairStyle = spec.hairStyles[0];
+    }
+    if (!given("eyes") && spec.eyes !== undefined) {
+      look.eyes = spec.eyes[0];
+    }
   }
   return look;
 }

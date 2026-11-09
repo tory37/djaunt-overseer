@@ -11,7 +11,7 @@ import {
 } from "../officeSim";
 import { personalityOf, planVisit, VisitorFrequency, visitorFrequency, VisitorKind, visitorGap, visitorReaction, visitorSmallTalk } from "../officeVisitors";
 import { YourEvent, YourReaction, yourEventSeconds, yourReaction, roomReaction, YourScreen } from "../officeYou";
-import { Facing, FRAME_HEIGHT, FRAME_WIDTH, pixelGuyFrame, pixelGuyLook, PixelGuyLook, Pose } from "../pixelGuy";
+import { Facing, FRAME_HEIGHT, FRAME_WIDTH, HEAD_ROOM, pixelGuyFrame, pixelGuyLook, PixelGuyLook, Pose } from "../pixelGuy";
 import { DEFENSE_BEATS, ERROR_BEAT_SECONDS, ERROR_FLASH_SECONDS, EVENT_SECONDS, SCENE_EVENT_KINDS, SceneEventKind } from "../sceneEventSchedule";
 import { drawCritter } from "./critters";
 import { drawLuckyCat } from "./luckyCat";
@@ -27,6 +27,8 @@ interface OfficeMessage {
   critters?: boolean;
   dayNight?: boolean;
   visitors?: unknown;
+  // False makes every guy human.
+  races?: boolean;
   // The session the Session sidebar shows: his guy wears a crown.
   focusedId?: string | null;
 }
@@ -45,6 +47,8 @@ interface SceneEventMessage {
 
 const TILE = 16;
 const SEATED_LIFT = 5;
+// A guy's box starts at the top of his head; his sprite has room above that for horns and ears.
+const GUY_HEIGHT = FRAME_HEIGHT - HEAD_ROOM;
 
 const vscode = acquireVsCodeApi();
 const canvas = document.getElementById("office") as HTMLCanvasElement;
@@ -83,6 +87,7 @@ const random = Math.random;
 
 // The critter troupe crossing the room now, who has reacted to it, and when the next one starts.
 let crittersOn = true;
+let racesOn = true;
 let critterRun: CritterRun | undefined;
 let critterWatchers = new Set<string>();
 let nextCritterAt = 5;
@@ -158,6 +163,17 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEve
   }
   const nextScene = officeSceneId(data.scene);
   crittersOn = data.critters !== false;
+  const nextRaces = data.races !== false;
+  if (nextRaces !== racesOn) {
+    racesOn = nextRaces;
+    // Redraw the session guys; your look and visitors already in the room keep theirs.
+    for (const key of [...lookCache.keys()]) {
+      if (!key.startsWith("you|") && !key.startsWith("visitor|")) {
+        lookCache.delete(key);
+      }
+    }
+    spriteCache.clear();
+  }
   dayNightOn = data.dayNight !== false;
   const nextVisitors = visitorFrequency(data.visitors);
   if (nextVisitors !== visitorsSetting && nextVisitors !== "off") {
@@ -246,10 +262,11 @@ function stepVisitors(): void {
   }
   const plan = planVisit(random);
   visitCount += 1;
-  const seed = `visitor|${plan.kind.id}|${visitCount % 6}`;
+  // A dozen looks per department, each with its own race.
+  const seed = `visitor|${plan.kind.id}|${visitCount % 12}`;
   const id = `${seed}|${visitCount}`;
-  const look = pixelGuyLook(seed);
-  lookCache.set(seed, { ...look, shirt: plan.kind.shirt, pants: plan.kind.pants, accessory: plan.kind.accessory ?? look.accessory });
+  const look = pixelGuyLook(seed, racesOn);
+  lookCache.set(seed, { ...look, shirt: plan.kind.shirt, pants: plan.kind.pants, accessory: plan.kind.accessory ?? look.accessory, tie: plan.kind.tie });
   const arrived = visitorArrives(state, {
     id,
     seed,
@@ -308,7 +325,7 @@ function sprite(seed: string, pose: Pose, facing: Facing, frame: number): HTMLCa
   }
   let look = lookCache.get(seed);
   if (look === undefined) {
-    look = pixelGuyLook(seed);
+    look = pixelGuyLook(seed, racesOn);
     lookCache.set(seed, look);
   }
   const image = document.createElement("canvas");
@@ -1300,7 +1317,7 @@ interface AgentBox {
 
 function agentBox(agent: Agent, seated: boolean): AgentBox {
   const left = Math.round((agent.x + stationSlide(agent)) * TILE + (TILE - FRAME_WIDTH) / 2);
-  const top = Math.round(agent.y * TILE + TILE - FRAME_HEIGHT - (seated ? SEATED_LIFT : 0));
+  const top = Math.round(agent.y * TILE + TILE - GUY_HEIGHT - (seated ? SEATED_LIFT : 0));
   return { agent, left, top };
 }
 
@@ -1325,20 +1342,9 @@ function drawAgent(agent: Agent, seconds: number): AgentBox {
   }
   const bob = pose.pose === "walk" && pose.frame % 2 === 1 ? -1 : 0;
   context.globalAlpha = agent.leaving && agent.visitor === undefined ? 0.7 : 1;
-  context.drawImage(sprite(agent.seed, pose.pose, pose.facing, pose.frame), box.left, box.top + bob);
+  context.drawImage(sprite(agent.seed, pose.pose, pose.facing, pose.frame), box.left, box.top + bob - HEAD_ROOM);
   context.globalAlpha = 1;
-  const tie = agent.visitor === undefined ? undefined : visits.get(agent.id)?.kind.tie;
-  if (tie !== undefined && pose.facing === "down") {
-    drawTie(box.left, box.top + bob, tie);
-  }
   return box;
-}
-
-// A boss's tie down the middle of his shirt: a knot, then the blade.
-function drawTie(left: number, top: number, color: string): void {
-  rect(left + 5, top + 8, 2, 1, shadeColor(color));
-  rect(left + 5, top + 9, 2, 2, color);
-  rect(left + 5, top + 11, 1, 1, color);
 }
 
 // The selected session's guy wears a little gold crown.
@@ -1374,14 +1380,14 @@ function drawCrown(box: AgentBox, seconds: number): void {
 // You sit centered between your station's two seats.
 function drawYou(station: Station, reaction: YourReaction): { left: number; top: number } {
   const left = Math.round(station.seat.x * TILE + TILE / 2 + (TILE - FRAME_WIDTH) / 2);
-  const top = Math.round(station.seat.y * TILE + TILE - FRAME_HEIGHT - (reaction.seated ? SEATED_LIFT : 0) - reaction.hop);
+  const top = Math.round(station.seat.y * TILE + TILE - GUY_HEIGHT - (reaction.seated ? SEATED_LIFT : 0) - reaction.hop);
   if (!reaction.seated) {
     context.globalAlpha = 0.25;
     rect(left + 2, station.seat.y * TILE + TILE - 2, FRAME_WIDTH - 4, 2, "#000");
     context.globalAlpha = 1;
   }
   if (youKey !== undefined) {
-    context.drawImage(sprite(youKey, reaction.pose, reaction.facing, reaction.frame), left, top);
+    context.drawImage(sprite(youKey, reaction.pose, reaction.facing, reaction.frame), left, top - HEAD_ROOM);
   }
   return { left, top };
 }
@@ -1485,7 +1491,7 @@ function drawNameTag(box: AgentBox, palette: ScenePalette): void {
   context.font = "7px monospace";
   const textWidth = Math.ceil(context.measureText(text).width);
   const tagLeft = Math.max(1, Math.min(state.layout.cols * TILE - textWidth - 5, Math.round(box.left + FRAME_WIDTH / 2 - textWidth / 2 - 2)));
-  const tagTop = box.top + FRAME_HEIGHT + 1;
+  const tagTop = box.top + GUY_HEIGHT + 1;
   rect(tagLeft, tagTop, textWidth + 4, 9, palette.bubbleEdge);
   context.fillStyle = palette.bubble;
   context.textBaseline = "top";
@@ -1799,7 +1805,7 @@ function agentAt(clientX: number, clientY: number): Agent | undefined {
   const roomY = (clientY - bounds.top - originY) / scale;
   // Front-most first.
   return [...boxes].reverse().find((box) =>
-    roomX >= box.left && roomX < box.left + FRAME_WIDTH && roomY >= box.top && roomY < box.top + FRAME_HEIGHT,
+    roomX >= box.left && roomX < box.left + FRAME_WIDTH && roomY >= box.top && roomY < box.top + GUY_HEIGHT,
   )?.agent;
 }
 
@@ -1810,7 +1816,7 @@ function isOverYou(clientX: number, clientY: number): boolean {
   const bounds = canvas.getBoundingClientRect();
   const roomX = (clientX - bounds.left - originX) / scale;
   const roomY = (clientY - bounds.top - originY) / scale;
-  return roomX >= youArea.left && roomX < youArea.left + FRAME_WIDTH && roomY >= youArea.top && roomY < youArea.top + FRAME_HEIGHT;
+  return roomX >= youArea.left && roomX < youArea.left + FRAME_WIDTH && roomY >= youArea.top && roomY < youArea.top + GUY_HEIGHT;
 }
 
 canvas.addEventListener("mousemove", (event) => {
