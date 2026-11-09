@@ -17,6 +17,7 @@ const SLEEPERS_SETTING = "overseer.office.sleepers";
 const YOU_SETTING = "overseer.office.you";
 const YOUR_LOOK_SETTING = "overseer.office.yourLook";
 const CRITTERS_SETTING = "overseer.office.critters";
+const FLIERS_SETTING = "overseer.office.fliers";
 const RACES_SETTING = "overseer.office.races";
 const DAY_NIGHT_SETTING = "overseer.office.dayNight";
 const VISITORS_SETTING = "overseer.office.visitors";
@@ -47,7 +48,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
       deps.registry.onDidChange(() => this.postAll()),
       deps.onDidChangeFocus(() => this.postAll()),
       vscode.workspace.onDidChangeConfiguration((change) => {
-        if ([SCENE_SETTING, SLEEPERS_SETTING, YOU_SETTING, YOUR_LOOK_SETTING, CRITTERS_SETTING, DAY_NIGHT_SETTING, VISITORS_SETTING, RACES_SETTING].some((setting) => change.affectsConfiguration(setting))) {
+        if ([SCENE_SETTING, SLEEPERS_SETTING, YOU_SETTING, YOUR_LOOK_SETTING, CRITTERS_SETTING, FLIERS_SETTING, DAY_NIGHT_SETTING, VISITORS_SETTING, RACES_SETTING].some((setting) => change.affectsConfiguration(setting))) {
           this.postAll();
         }
       }),
@@ -105,6 +106,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
     agents: AgentInput[];
     you: PixelGuyLook | null;
     critters: boolean;
+    fliers: boolean;
     dayNight: boolean;
     visitors: string;
     races: boolean;
@@ -138,6 +140,7 @@ export class OfficePanelProvider implements vscode.WebviewViewProvider, vscode.D
       agents,
       you,
       critters: configuration.get<boolean>(CRITTERS_SETTING, true),
+      fliers: configuration.get<boolean>(FLIERS_SETTING, true),
       dayNight: configuration.get<boolean>(DAY_NIGHT_SETTING, true),
       visitors: visitorFrequency(configuration.get<unknown>(VISITORS_SETTING)),
       races: configuration.get<boolean>(RACES_SETTING, true),

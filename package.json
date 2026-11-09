@@ -1437,6 +1437,11 @@
           "default": true,
           "description": "Every so often a few critters for the scene run across the Office: mice in the office, foxes and rabbits in the forest, chickens in the field, ducks and frogs by the river, bats in the cave, little aliens on the moon. Idle guys stop to watch."
         },
+        "overseer.office.fliers": {
+          "type": "boolean",
+          "default": true,
+          "description": "Every so often something for the scene flies over the Office: pigeons and paper planes in the office, drones and ghosts in the server room, owls and hawks in the forest, geese and hot-air balloons over the field, herons and dragonflies by the river, a dragon or a phoenix in the cave, rockets, meteors, and a space whale on the moon. Some only come out by day or by night. Idle guys look up."
+        },
         "overseer.office.dayNight": {
           "type": "boolean",
           "default": true,

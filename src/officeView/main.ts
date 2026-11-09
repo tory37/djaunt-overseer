@@ -5,6 +5,7 @@
 import { buildOfficeLayout, Desk, desksNeeded, OFFICE_SCENES, officeShape, OfficeLayout, OfficeSceneId, officeSceneId, Point, Prop, Station, STATION_DESKS } from "../officeLayout";
 import { DAYTIME_SKY, discLit, earthIllumination, lunarSunElevation, mix, SceneLight, sceneLight, SkyState, skyNow } from "../officeDaylight";
 import { critterGap, critterLines, critterPoses, CritterRun, critterRunDone, planCritterRun } from "../officeCritters";
+import { FLIERS, flierGap, flierLines, flierPoses, Flight, flightDone, planFlight } from "../officeFliers";
 import {
   Agent, AgentInput, agentPose, callYouBack, createOffice, isAtStation, lookToward, officeCounts, reactToCritter, relayoutOffice, stepOffice, syncOffice,
   syncYou, visitorAgents, visitorArrives, youAgent,
@@ -15,6 +16,7 @@ import { Facing, FRAME_HEIGHT, FRAME_WIDTH, HEAD_ROOM, pixelGuyFrame, pixelGuyLo
 import { DeskStyle, deskStyleFor } from "../deskStyles";
 import { DEFENSE_BEATS, ERROR_BEAT_SECONDS, ERROR_FLASH_SECONDS, EVENT_SECONDS, SCENE_EVENT_KINDS, SceneEventKind } from "../sceneEventSchedule";
 import { drawCritter } from "./critters";
+import { drawFlier, drawFlierShadow, drawFlierTrail } from "./fliers";
 import { drawLuckyCat } from "./luckyCat";
 import { SCENE_PALETTES, ScenePalette } from "./palettes";
 
@@ -26,6 +28,7 @@ interface OfficeMessage {
   agents: AgentInput[];
   you: PixelGuyLook | null;
   critters?: boolean;
+  fliers?: boolean;
   dayNight?: boolean;
   visitors?: unknown;
   // False makes every guy human.
@@ -92,6 +95,12 @@ let racesOn = true;
 let critterRun: CritterRun | undefined;
 let critterWatchers = new Set<string>();
 let nextCritterAt = 5;
+
+// The flight passing over the room now, who has looked up at it, and when the next one comes.
+let fliersOn = true;
+let flight: Flight | undefined;
+let flightWatchers = new Set<string>();
+let nextFlightAt = 20;
 
 // The real sky, worked out again every few seconds, and the light it gives this scene.
 let dayNightOn = true;
@@ -164,6 +173,7 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEve
   }
   const nextScene = officeSceneId(data.scene);
   crittersOn = data.critters !== false;
+  fliersOn = data.fliers !== false;
   const nextRaces = data.races !== false;
   if (nextRaces !== racesOn) {
     racesOn = nextRaces;
@@ -188,6 +198,8 @@ window.addEventListener("message", (event: MessageEvent<OfficeMessage | SceneEve
     sceneChanged = true;
     critterRun = undefined;
     nextCritterAt = state.time + 3;
+    flight = undefined;
+    nextFlightAt = state.time + 12;
     if (width > 0 && height > 0) {
       fitLayout();
     }
@@ -1741,9 +1753,20 @@ function draw(seconds: number): void {
   if (run !== undefined) {
     layers.push({ depth: run.row + 0.6, paint: () => drawCritters(run, palette, seconds) });
   }
+  const overhead = flight;
+  if (overhead !== undefined) {
+    // Shadows land on the floor under everything standing on it.
+    layers.push({ depth: -1, paint: () => drawFlightShadows(overhead, palette, seconds) });
+  }
   layers.sort((first, second) => first.depth - second.depth).forEach((layer) => layer.paint());
   boxes = nextBoxes;
+  if (overhead !== undefined) {
+    drawFlight(overhead, seconds, false);
+  }
   drawLighting(layout, owners, atStation || event !== undefined, seconds);
+  if (overhead !== undefined) {
+    drawFlight(overhead, seconds, true);
+  }
   drawFireflies(layout.cols * TILE, seconds);
 
   const bubbles: Bubble[] = [];
@@ -1927,6 +1950,75 @@ function drawCritters(run: CritterRun, palette: ScenePalette, seconds: number): 
   context.restore();
 }
 
+// Night outdoors, for the fliers that keep hours; undefined indoors.
+function fliersNight(): boolean | undefined {
+  const outdoors = sceneId === "forest" || sceneId === "field" || sceneId === "riverbed" || sceneId === "moon";
+  return outdoors ? light.stars > 0.3 : undefined;
+}
+
+// Starts a flight when it's due, has idle guys under it look up, and clears it once it's gone.
+function stepFliers(): void {
+  const now = state.time;
+  if (flight !== undefined && (flightDone(flight, now) || !fliersOn)) {
+    flight = undefined;
+    nextFlightAt = now + flierGap(random);
+  }
+  if (flight === undefined) {
+    if (fliersOn && now >= nextFlightAt && width > 0) {
+      flight = planFlight(state.layout, sceneId, now, random, TILE, fliersNight());
+      flightWatchers = new Set();
+      if (flight === undefined) {
+        nextFlightAt = now + flierGap(random);
+      }
+    }
+    return;
+  }
+  for (const pose of flierPoses(flight, now)) {
+    // Guys a little below it notice: they're looking up.
+    const at = { x: pose.x / TILE - 0.5, y: pose.y / TILE + 1 };
+    reactToCritter(state, at, flierLines(pose.kind), flightWatchers, random).forEach((id) => flightWatchers.add(id));
+  }
+}
+
+function clipToRoom(): void {
+  context.save();
+  context.beginPath();
+  context.rect(0, 0, state.layout.cols * TILE, state.layout.rows * TILE);
+  context.clip();
+}
+
+function drawFlightShadows(current: Flight, palette: ScenePalette, seconds: number): void {
+  clipToRoom();
+  for (const pose of flierPoses(current, seconds)) {
+    if (FLIERS[pose.kind].shadow === true) {
+      drawFlierShadow(rect, context, pose, current.shadowY, palette.shadow);
+    }
+  }
+  context.restore();
+}
+
+// Fliers that light themselves draw after the night tint (glowing), the rest before it.
+function drawFlight(current: Flight, seconds: number, glowing: boolean): void {
+  clipToRoom();
+  const poses = flierPoses(current, seconds);
+  poses.forEach((pose, index) => {
+    const spec = FLIERS[pose.kind];
+    if ((spec.glow === true) !== glowing) {
+      return;
+    }
+    if (spec.trail !== undefined) {
+      const points: { x: number; y: number }[] = [];
+      for (let step = 1; step <= 10; step++) {
+        const back = flierPoses(current, seconds - step * 0.035)[index];
+        points.push({ x: back.x - back.facing * (spec.width / 2 - 1), y: back.y + Math.sin(seconds * 20 + step) * 0.6 });
+      }
+      drawFlierTrail(rect, context, points, spec.trail);
+    }
+    drawFlier(rect, context, pose);
+  });
+  context.restore();
+}
+
 let frameHandle = 0;
 let lastTime: number | undefined;
 function loop(now: number): void {
@@ -1937,6 +2029,7 @@ function loop(now: number): void {
     stepVisitors();
     playRoomReactions();
     stepCritters();
+    stepFliers();
   }
   lastTime = seconds;
   if (width > 0 && height > 0) {
