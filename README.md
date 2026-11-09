@@ -1,6 +1,6 @@
 # Overseer
 
-Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
+Mission control for Claude CLI sessions in VS Code. Find, group, suspend, and resume them from any repo, and see where each one's PRs, tickets, and work stand. Sessions stay real terminals.
 
 [Site](https://tory37.github.io/djaunt-overseer/) · [Download the .vsix](https://github.com/tory37/djaunt-overseer/releases/latest)
 
@@ -12,6 +12,9 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - Idle sessions waiting on review still hold memory. Closing one means remembering its ID to get it back.
 - Ten terminal tabs across the top don't say which ticket each one is for.
 - The PR and ticket a session worked on are buried in its transcript.
+- Knowing where a session's work stands means scrolling back through it.
+- Checking if a PR merged or a ticket moved means leaving the editor.
+- A long session carries stale context. Starting fresh loses what it knew.
 
 ## Features
 
@@ -61,6 +64,16 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - **Remove from Sidebar** only unpins.
 - Hovering over a session shows its name, state, and status. Everything else is in the Session sidebar.
 - Right-click a session for its actions, in groups: Resume or Suspend and Handoff; the **Claude** submenu (Compact, Clear Context, Switch Model, Show Cost, Commands), shown when the session runs here and is idle; Rename, Unlock Title, and Set Status; Update Now, Recheck, and Flag; Open Repo; Move to Workspace; the **Pixel Guy** submenu; and Remove or Kill.
+
+### Handoff
+- **Handoff…** (right-click a session) asks the session to write a handoff document, so a fresh session can pick up the work. It asks for extra rules first, like "include the test plan". Leave it empty to skip.
+- The session must run in this window and be idle.
+- The session writes the draft to `~/.claude/overseer/handoffs/drafts/`. Overseer opens it in a tab when it shows up. You can edit it there.
+- The draft tab's title bar has three buttons:
+  - **Approve Handoff…** asks where the new session goes. **Start below** starts it under the old one, in the same group, with the same name. The old session stays. **Replace** exits the old session, and the new one takes its place in the sidebar.
+  - **Revise Handoff…** asks what should change and sends it to the session. The session rewrites the draft.
+  - **Cancel Handoff** closes the tab and deletes the draft.
+- The new session starts in the old one's folder with one prompt: read the handoff and continue. The approved handoff moves to `~/.claude/overseer/handoffs/`.
 
 ### Statuses
 - **Set Status…** (right-click a session, or **Set Status…** in the palette for the selected rows) marks a session or terminal with a status. **Clear Status** removes it.
@@ -125,21 +138,6 @@ Vertical tabs for Claude CLI sessions in VS Code. Sessions stay real terminals.
 - Click a status pill, assignee, priority, sprint, or fix version to filter by it. Clicking "No Sprint" sets `sprint:none`. Example: click `r2026.11.12` to see what is tagged for that release.
 - Section counts show matched over total. Sections with no match hide. Esc clears the filter.
 
-### Office
-- The **Office** view, below Session, gives every session in the sidebar a pixel guy. The session's id picks his looks, so he stays the same guy across reloads.
-- Each guy has a race, every one as likely as human: orc, goblin, elf, dark elf, dwarf, grey and green aliens, demon, vampire, zombie, skeleton, troll, gnome, fae, undine, lizardfolk, catfolk, wolffolk, minotaur, robot, cyclops, squidfolk, mushroom folk, golem, ghost, slime, dryad, jackalfolk, harpy, centaur, naga, merfolk, satyr, dragonkin, and ogre. Visitors get races too. **Pixel Guy → Pick Race…** on a row's menu picks one and keeps the rest of his look; `overseer.office.races` off makes everyone human.
-- While his session is busy he types at his desk. When it goes idle he leans back, then gets up: the water cooler, the coffee machine, the couch, a walk, or a chat with another idle guy. When the session gets busy again he runs back to his desk. A suspended session's guy falls asleep on his desk until it resumes. A session that leaves the sidebar walks out the door.
-- His portrait is the session's row icon in Sessions and Terminals, with the state as a badge in the corner. It pulses while working; a suspended session's guy is dimmed. **Re-roll Pixel Guy** on a row's menu gives the session a new one, race and all, and **Reset Pixel Guy** brings the first one back.
-- The room has room for ten desks, plus a couple past your sessions as more open, and takes the shape that shows the most at the biggest zoom. The only desk standing from the start is yours. When a session joins, two maintenance guys in hi-vis walk in, one carrying the desk overhead and the other its chair, and set it down while the new guy waits beside the spot ("desk?"). When a session ends they come back and carry its desk out. A desk a guy left behind goes to the next one in. When the view opens, the sessions already running have their desks.
-- Each desk suits its owner's race: crates for orcs, goblins, trolls, and ogres; a workbench with a hammer for dwarves and gnomes; a stump with leaves for elves, dryads, fae, satyrs, centaurs, mushroom folk, and wolffolk; black with a candle for dark elves, demons, vampires, skeletons, zombies, and ghosts; a glowing console for aliens and squidfolk; black with a running LED for robots; coral and a shell for undines, merfolk, nagas, and slimes; a rune-lit stone slab for golems, cyclopes, minotaurs, lizardfolk, and jackalfolk; a pile of gold for dragonkin; a ball of yarn for catfolk; a twig nest with an egg for harpies; and the plain office desk for humans.
-- You're in the room too, at your own station in the middle: a double desk with two monitors. You type, lean back, and every so often take a break to wander, grab a coffee, or shoot the breeze with someone, idle or busy at their desk. When an event hits you run back to your desk and act out the ERROR, HACK, and DEFENSE scene events with the other views: your main monitor flashes red, rains green code, or runs the defense bar up to a shield, and the second one shows the error log, more code, or a radar sweep. Between events its graph takes Core's color, and changes with it when Core's scan sweeps a new one across the globe. You jump up, hack like mad, and cheer. The room's screens flash with it, and the others look up. A lucky cat clock waves from the back wall. `overseer.office.yourLook` sets your look (a blonde ponytail with a shaved side, blue eyes, a thick orange beard, a black muscle shirt, white shorts, and black flip flops by default); `overseer.office.you` takes you out.
-- Click a guy to open his session. Hover for its name. The guy of the session the Session sidebar shows wears a little gold crown.
-- **Switch Office Scene…** (the button on the view) picks the room: Office, Server Room, Forest, Field, Riverbed, Cave, Moon, Beach, Snowfield, Desert, Reef, Library, or Rooftop.
-- Every 10-25 seconds a few critters for the scene run across the room, five kinds per scene: a mouse, cat, roomba, corgi, and hamster ball in the office; a mouse, rat, roomba, spider, and drone in the server room; a fox, rabbit, squirrel, hedgehog, and raccoon in the forest; a hen and her chicks, sheep, rabbit, pig, and butterflies in the field; frogs, a duck and her ducklings, a turtle, otter, and crabs by the river; bats, a rat, beetle, spider, and slimes in the cave; aliens, a rover, moon bunny, UFO, and astronaut on the moon. Idle guys they pass stop to watch and say something.
-- Every 25-60 seconds something for the scene flies over: pigeons, a paper plane, moths, a lost balloon, and sparrows in the office; flies, a drone swarm, a robot bird, and a ghost in the server room; owls (at night), crows, bluebirds (by day), a swooping hawk, and fireflies (at night) in the forest; a V of geese, swallows, bees, crows, and a hot-air balloon over the field; a heron, dragonflies, a kingfisher, gulls, and mallards by the river; a dragon, wisps, a phoenix, a ghost, and moths in the cave; a rocket, a satellite, a space whale, meteors, and star jellies on the moon. Big ones cast a shadow, glowing ones light up at night, and idle guys under them look up.
-- The light follows your clock and the season: sunrise, golden hour, sunset, and night, with the sun and the moon in its real phase crossing the field's sky. Outdoor scenes go dark at night, lit by the screens, lamps, and campfires; the office keeps its lights on and its windows go dark; the server room and the cave never see the sky. On the moon a day lasts a month, and the Earth overhead shows the opposite phase.
-- People from other departments drop in: HR, IT, Sales, Marketing, Facilities, Accounting, Legal, an intern, and now and then a manager in a tie ("Are you all getting work done in here?", "Keep up the synergy!"). Up to five hang around at once. Each says his piece in the middle of the room; some leave right away, most stay a minute or two, and some settle in for up to ten, chatting with the guys, getting coffee, sitting on the couch, and looming over whoever's busy ("Any blockers?"). `overseer.office.visitors` sets how often they come. Everyone answers in his own way, set by his looks' seed: the suck-up says "OK BOSS!", the reasonable ones grumble, others go "Wow ok.", roll their eyes, or jump on it, and sleepers mumble.
-
 ### Session preview
 - A session with no terminal in this window opens in one reused **Session Preview** tab. Clicking another session replaces it.
 - It shows where the session left off, its last turns, its prompts, the commits and pull requests the transcript shows it made or worked on, and the other repos it touched.
@@ -177,6 +175,49 @@ Type "Overseer" in the command palette (Cmd+Shift+P) for every setting:
 - Live status comes from `claude agents --json`: working, running here, running in another window, or suspended.
 - Resuming a session that runs elsewhere offers a fork instead. Two processes on one transcript corrupt it.
 
+### Themes
+- **Preferences: Color Theme** lists four Overseer themes: **Overseer Hoard**, **Overseer Ember**, and **Overseer Frost** (dark), and **Overseer Parchment** (light).
+- Each edges the window and the focused tab, list, and widgets in its accent color.
+- VS Code's modern UI reads tab colors only from settings. So with an Overseer theme active, Overseer adds the focused tab's tint and edge to your user `workbench.colorCustomizations`, under that theme's block only.
+- It keeps your own values. It upgrades only the values an earlier release added.
+- `overseer.theme.tabSpotlight` off removes the values Overseer added.
+
+### Office
+- The **Office** view, below Session, gives every session in the sidebar a pixel guy. The session's id picks his looks, so he stays the same guy across reloads.
+- Each guy has a race, every one as likely as human: orc, goblin, elf, dark elf, dwarf, grey and green aliens, demon, vampire, zombie, skeleton, troll, gnome, fae, undine, lizardfolk, catfolk, wolffolk, minotaur, robot, cyclops, squidfolk, mushroom folk, golem, ghost, slime, dryad, jackalfolk, harpy, centaur, naga, merfolk, satyr, dragonkin, and ogre. Visitors get races too. **Pixel Guy → Pick Race…** on a row's menu picks one and keeps the rest of his look; `overseer.office.races` off makes everyone human.
+- While his session is busy he types at his desk. When it goes idle he leans back, then gets up: the water cooler, the coffee machine, the couch, a walk, or a chat with another idle guy. When the session gets busy again he runs back to his desk. A suspended session's guy falls asleep on his desk until it resumes. A session that leaves the sidebar walks out the door.
+- His portrait is the session's row icon in Sessions and Terminals, with the state as a badge in the corner. It pulses while working; a suspended session's guy is dimmed. **Re-roll Pixel Guy** on a row's menu gives the session a new one, race and all, and **Reset Pixel Guy** brings the first one back.
+- The room has room for ten desks, plus a couple past your sessions as more open, and takes the shape that shows the most at the biggest zoom. The only desk standing from the start is yours. When a session joins, two maintenance guys in hi-vis walk in, one carrying the desk overhead and the other its chair, and set it down while the new guy waits beside the spot ("desk?"). When a session ends they come back and carry its desk out. A desk a guy left behind goes to the next one in. When the view opens, the sessions already running have their desks.
+- Each desk suits its owner's race: crates for orcs, goblins, trolls, and ogres; a workbench with a hammer for dwarves and gnomes; a stump with leaves for elves, dryads, fae, satyrs, centaurs, mushroom folk, and wolffolk; black with a candle for dark elves, demons, vampires, skeletons, zombies, and ghosts; a glowing console for aliens and squidfolk; black with a running LED for robots; coral and a shell for undines, merfolk, nagas, and slimes; a rune-lit stone slab for golems, cyclopes, minotaurs, lizardfolk, and jackalfolk; a pile of gold for dragonkin; a ball of yarn for catfolk; a twig nest with an egg for harpies; and the plain office desk for humans.
+- You're in the room too, at your own station in the middle: a double desk with two monitors. You type, lean back, and every so often take a break to wander, grab a coffee, or shoot the breeze with someone, idle or busy at their desk. When an event hits you run back to your desk and act out the ERROR, HACK, and DEFENSE scene events with the other views: your main monitor flashes red, rains green code, or runs the defense bar up to a shield, and the second one shows the error log, more code, or a radar sweep. Between events its graph takes Core's color, and changes with it when Core's scan sweeps a new one across the globe. You jump up, hack like mad, and cheer. The room's screens flash with it, and the others look up. A lucky cat clock waves from the back wall. `overseer.office.yourLook` sets your look (a blonde ponytail with a shaved side, blue eyes, a thick orange beard, a black muscle shirt, white shorts, and black flip flops by default); `overseer.office.you` takes you out.
+- Click a guy to open his session. Hover for its name. The guy of the session the Session sidebar shows wears a little gold crown.
+- **Switch Office Scene…** (the button on the view) picks the room: Office, Server Room, Forest, Field, Riverbed, Cave, Moon, Beach, Snowfield, Desert, Reef, Library, or Rooftop.
+- Every 10-25 seconds a few critters for the scene run across the room, five kinds per scene: a mouse, cat, roomba, corgi, and hamster ball in the office; a mouse, rat, roomba, spider, and drone in the server room; a fox, rabbit, squirrel, hedgehog, and raccoon in the forest; a hen and her chicks, sheep, rabbit, pig, and butterflies in the field; frogs, a duck and her ducklings, a turtle, otter, and crabs by the river; bats, a rat, beetle, spider, and slimes in the cave; aliens, a rover, moon bunny, UFO, and astronaut on the moon; crabs, a hermit crab, sandpipers, a turtle, and a corgi on the beach; penguins, an arctic fox, polar bear, seal, and rabbit in the snowfield; lizards, a scorpion, camels, a tumbleweed, and a roadrunner in the desert; crabs, a starfish, octopus, hermit crab, and seahorses on the reef; a cat, mouse, hopping books, a broom, and a slime in the library; rats, a cat, raccoons, a drone, and a corgi on the rooftop. Idle guys they pass stop to watch and say something.
+- Every 25-60 seconds something for the scene flies over: pigeons, a paper plane, moths, a lost balloon, and sparrows in the office; flies, a drone swarm, a robot bird, and a ghost in the server room; owls (at night), crows, bluebirds (by day), a swooping hawk, and fireflies (at night) in the forest; a V of geese, swallows, bees, crows, and a hot-air balloon over the field; a heron, dragonflies, a kingfisher, gulls, and mallards by the river; a dragon, wisps, a phoenix, a ghost, and moths in the cave; a rocket, a satellite, a space whale, meteors, and star jellies on the moon; gulls, pelicans, parrots, a kite, and meteors over the beach; a snowy owl, a V of geese, crows, a hawk, and a sleigh (at night) over the snowfield; vultures, a hawk, an owl (at night), a hot-air balloon, and meteors over the desert; schools of fish, jellyfish, a shark, a manta, and a sea turtle on the reef; flying books, an owl (at night), a ghost, wisps, and a paper plane in the library; pigeons, a crow, a helicopter, a blimp, and a paper plane over the rooftop. Big ones cast a shadow, glowing ones light up at night, and idle guys under them look up.
+- The light follows your clock and the season: sunrise, golden hour, sunset, and night, with the sun and the moon in its real phase crossing the field's sky. Outdoor scenes go dark at night, lit by the screens, lamps, and campfires; the office keeps its lights on and its windows go dark; the server room and the cave never see the sky. On the moon a day lasts a month, and the Earth overhead shows the opposite phase.
+- People from other departments drop in: HR, IT, Sales, Marketing, Facilities, Accounting, Legal, an intern, and now and then a manager in a tie ("Are you all getting work done in here?", "Keep up the synergy!"). Up to five hang around at once. Each says his piece in the middle of the room; some leave right away, most stay a minute or two, and some settle in for up to ten, chatting with the guys, getting coffee, sitting on the couch, and looming over whoever's busy ("Any blockers?"). `overseer.office.visitors` sets how often they come. Everyone answers in his own way, set by his looks' seed: the suck-up says "OK BOSS!", the reasonable ones grumble, others go "Wow ok.", roll their eyes, or jump on it, and sleepers mumble.
+
+### Core and Djaunt views
+Decorative only. They read nothing and do nothing.
+
+- **Core**, at the bottom of the Overseer sidebar, spins a lattice globe with solid logos orbiting it and fake telemetry.
+- Every so often a scan ring sweeps the globe and repaints it the next color of a spectrum. When the sweep ends, the globe bursts and recolors the logos. The Djaunt view and your second monitor in the Office take the new color.
+- Every 15-40 seconds a creature crosses the Core, in front of or behind the globe: a purple dragon breathing fire, Moltres, Zapdos, Articuno, Celebi, Raikou, Entei, Suicune, Jirachi, Kyogre, Groudon, or a few Unown that sometimes spell a word.
+- **Djaunt**, above Session, draws the djaunt dragon as a 3D point cloud that assembles, spins, ripples, glitches, and scatters.
+- A strip along its bottom shows one line of fake hacker status at a time. Each line decrypts in and scrambles out.
+- `overseer.views.core`, `overseer.views.dragon`, and `overseer.views.ticker` turn each off.
+
+### Scene events
+- Now and then Core, Djaunt, and the Office play a scene event together:
+  - **ERROR**: the views flash red and shake.
+  - **HACK**: matrix rain and a line like HACK SUCCEEDED. On Core, an infection spreads over the globe.
+  - **DEFENSE**: an incoming hack in four beats: alert, shields up, almost there, safe. On Core, packets hit the globe until a lattice shield goes up.
+- In the Office you run back to your desk and act it out. See [Office](#office).
+- `overseer.views.eventMinutes` sets the average gap, 5 minutes by default. Each gap is a random 0.6x to 1.6x of it.
+- **Set Event Frequency** picks Chaos (30 s), Frequent (2 min), Normal (5), Rare (15), Very rare (45), or a custom value from 0.5 to 60 minutes.
+- `overseer.views.errorEvents`, `overseer.views.hackEvents`, and `overseer.views.defenseEvents` turn each kind off. **Toggle Error Events**, **Toggle Hack Events**, and **Toggle Defense Events** flip them.
+- **Play Error Event**, **Play Hack Event**, and **Play Defense Event** play one now.
+
 ## Install
 
 ```bash
@@ -188,9 +229,7 @@ If `code` isn't on your PATH, use `"/Applications/Visual Studio Code.app/Content
 
 Then run **Developer: Reload Window**. Cmd+R only reloads in the F5 development host.
 
-For the matching look, run **Preferences: Color Theme** and pick **Overseer Hoard** (or Ember, Frost, Parchment). Each edges the window and the focused tab, list, and widgets in its accent color.
-
-VS Code's modern UI reads tab colors only from settings, so with an Overseer theme active Overseer adds the focused tab's tint and edge to your user `workbench.colorCustomizations`. It keeps your own values. Turn it off with `overseer.theme.tabSpotlight`.
+For the matching look, pick an Overseer color theme. See [Themes](#themes).
 
 ## Requirements
 
