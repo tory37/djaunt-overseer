@@ -8,6 +8,7 @@ import {
   pickSceneEvent,
   SCENE_EVENT_SETTING,
   SceneEventKind,
+  SceneEventMessage,
   sceneEventMessage,
   validateEventMinutes,
 } from "./sceneEventSchedule";
@@ -22,6 +23,12 @@ export class SceneEventDirector implements vscode.Disposable {
   private tintIndex = 0;
   private readonly configListener: vscode.Disposable;
   private timer: ReturnType<typeof setTimeout>;
+  private readonly playEmitter = new vscode.EventEmitter<SceneEventMessage>();
+  // Every event played, for views the director doesn't post to itself (the Office, through its API).
+  readonly onDidPlay = this.playEmitter.event;
+  private readonly tintEmitter = new vscode.EventEmitter<number>();
+  // Every tint Core's bursts set.
+  readonly onDidTint = this.tintEmitter.event;
 
   constructor() {
     this.timer = setTimeout(() => this.playScheduled(), firstSceneEventDelayMs(currentEventMinutes()));
@@ -42,14 +49,22 @@ export class SceneEventDirector implements vscode.Disposable {
     });
   }
 
+  // The tint Core last set, for a view that starts late.
+  currentTint(): number {
+    return this.tintIndex;
+  }
+
   play(kind: SceneEventKind): void {
     const message = sceneEventMessage(kind, Math.random);
     this.webviews.forEach((webview) => void webview.postMessage(message));
+    this.playEmitter.fire(message);
   }
 
   dispose(): void {
     clearTimeout(this.timer);
     this.configListener.dispose();
+    this.playEmitter.dispose();
+    this.tintEmitter.dispose();
   }
 
   private receive(sender: vscode.Webview, message: unknown): void {
@@ -61,6 +76,7 @@ export class SceneEventDirector implements vscode.Disposable {
     }
     if (type !== "tint" || !Number.isInteger(index)) return;
     this.tintIndex = index as number;
+    this.tintEmitter.fire(this.tintIndex);
     const relayed = { type: "tint", index, burst: true };
     this.webviews.forEach((webview) => {
       if (webview !== sender) void webview.postMessage(relayed);

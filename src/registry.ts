@@ -50,6 +50,7 @@ const SESSION_WORKSPACE_KEY = "overseer.workspaceOfSession";
 const GROUP_WORKSPACE_KEY = "overseer.workspaceOfGroup";
 const WORKSPACE_SNAPSHOTS_KEY = "overseer.workspaceSnapshots";
 const AVATAR_SEEDS_KEY = "overseer.avatarSeeds";
+const AVATAR_LOOKS_KEY = "overseer.avatarLooks";
 
 export type LinkMark = "pinned" | "removed";
 export type LinkMarks = Record<string, LinkMark>;
@@ -202,6 +203,20 @@ export class Registry {
 
   async setAvatarSeed(sessionId: string, seed: string): Promise<void> {
     await this.write(AVATAR_SEEDS_KEY, { ...this.avatarSeeds(), [sessionId]: seed });
+  }
+
+  // A look made in the character maker for a session's guy, in place of his seed's look. The Office checks it.
+  avatarLook(sessionId: string): unknown {
+    return this.avatarLooks()[sessionId];
+  }
+
+  async setAvatarLook(sessionId: string, look: unknown): Promise<void> {
+    const { [sessionId]: _old, ...others } = this.avatarLooks();
+    await this.write(AVATAR_LOOKS_KEY, look === undefined ? others : { ...others, [sessionId]: look });
+  }
+
+  private avatarLooks(): Record<string, unknown> {
+    return this.store.get<Record<string, unknown>>(AVATAR_LOOKS_KEY) ?? {};
   }
 
   private avatarSeeds(): Record<string, string> {
@@ -451,6 +466,7 @@ export class Registry {
       await this.write(SESSION_WORKSPACE_KEY, moveEntry(this.sessionWorkspaces(), fromSessionId, toSessionId));
       const { [fromSessionId]: _movedSeed, ...otherSeeds } = this.avatarSeeds();
       await this.write(AVATAR_SEEDS_KEY, { ...otherSeeds, [toSessionId]: this.avatarSeed(fromSessionId) });
+      await this.write(AVATAR_LOOKS_KEY, moveEntry(this.avatarLooks(), fromSessionId, toSessionId));
       const movedSnapshots = Object.fromEntries(
         Object.entries(this.workspaceSnapshots()).map(([workspaceId, snapshot]) => [
           workspaceId,
@@ -478,6 +494,7 @@ export class Registry {
     await this.write(SESSION_STATUS_KEY, withoutForgotten(this.sessionStatusIds()));
     await this.write(SESSION_STATUS_REASON_KEY, withoutForgotten(this.sessionStatusReasons()));
     await this.write(AVATAR_SEEDS_KEY, withoutForgotten(this.avatarSeeds()));
+    await this.write(AVATAR_LOOKS_KEY, withoutForgotten(this.avatarLooks()));
   }
 
   private async write(key: string, value: unknown): Promise<void> {

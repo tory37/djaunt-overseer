@@ -1,20 +1,28 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { pixelGuyLook, portraitSvg } from "./pixelGuy";
+import type { OfficeLook, OfficeSimulationApi } from "./officeSimulationApi";
 import { badgeColor, badgeStyle } from "./portraitBadge";
 import { SessionIconState } from "./sessionIcons";
 
 const PORTRAITS_SETTING = "overseer.office.portraits";
-const RACES_SETTING = "overseer.office.races";
+// The Office's setting: with races off, everyone's human.
+const RACES_SETTING = "officeSim.races";
+
+// Where the portraits come from: the Office's API while it's hooked in.
+export interface PortraitSource {
+  readonly api: OfficeSimulationApi | undefined;
+  readonly onDidChangeConnection: vscode.Event<void>;
+}
 
 interface ContributedTheme {
   label?: unknown;
   path?: unknown;
 }
 
-// The session rows' pixel-guy portraits, as data URIs, cached by seed and state. The badge colors are read once per
-// theme or color customization change.
+// The session rows' pixel-guy portraits, as data URIs, cached by seed, look, and state, drawn by the Office Simulation
+// extension. Without it the rows keep their codicons. The badge colors are read once per theme or color customization
+// change.
 export class PortraitIcons implements vscode.Disposable {
   private readonly icons = new Map<string, vscode.Uri>();
   private readonly themeColorsByName = new Map<string, Record<string, unknown> | undefined>();
@@ -23,7 +31,13 @@ export class PortraitIcons implements vscode.Disposable {
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChange = this.changeEmitter.event;
 
-  constructor(private readonly extension: vscode.Extension<unknown>) {
+  private readonly officeListener: vscode.Disposable;
+
+  constructor(private readonly extension: vscode.Extension<unknown>, private readonly office: PortraitSource) {
+    this.officeListener = office.onDidChangeConnection(() => {
+      this.icons.clear();
+      this.changeEmitter.fire();
+    });
     this.configListener = vscode.workspace.onDidChangeConfiguration((change) => {
       if (change.affectsConfiguration("workbench.colorCustomizations") || change.affectsConfiguration("workbench.colorTheme") ||
         change.affectsConfiguration(PORTRAITS_SETTING) || change.affectsConfiguration(RACES_SETTING)) {
@@ -38,18 +52,23 @@ export class PortraitIcons implements vscode.Disposable {
   }
 
   isEnabled(): boolean {
-    return vscode.workspace.getConfiguration().get<boolean>(PORTRAITS_SETTING, true);
+    return this.office.api !== undefined && vscode.workspace.getConfiguration().get<boolean>(PORTRAITS_SETTING, true);
   }
 
-  icon(seed: string, state: SessionIconState): vscode.Uri {
-    const key = `${seed}|${state}`;
+  // A session's portrait: his custom look if he has one, else his seed's. Undefined without the Office.
+  icon(seed: string, look: unknown, state: SessionIconState): vscode.Uri | undefined {
+    const office = this.office.api;
+    if (office === undefined) {
+      return undefined;
+    }
+    const custom = look !== null && typeof look === "object" ? (look as OfficeLook) : undefined;
+    const key = `${seed}|${custom === undefined ? "" : JSON.stringify(custom)}|${state}`;
     const cached = this.icons.get(key);
     if (cached !== undefined) {
       return cached;
     }
     const { pulse, dimmed } = badgeStyle(state);
-    const races = vscode.workspace.getConfiguration().get<boolean>(RACES_SETTING, true);
-    const svg = portraitSvg(pixelGuyLook(seed, races), { color: this.badgeColor(state), pulse }, dimmed);
+    const svg = office.portraitSvg(custom ?? office.lookFromSeed(seed), { color: this.badgeColor(state), pulse }, dimmed);
     const icon = vscode.Uri.parse(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
     this.icons.set(key, icon);
     return icon;
@@ -58,6 +77,7 @@ export class PortraitIcons implements vscode.Disposable {
   dispose(): void {
     this.configListener.dispose();
     this.themeListener.dispose();
+    this.officeListener.dispose();
     this.changeEmitter.dispose();
   }
 

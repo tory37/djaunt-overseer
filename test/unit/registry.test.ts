@@ -328,6 +328,20 @@ describe("Registry", () => {
     expect(registry.avatarSeed("rerolled")).toBe("rerolled");
   });
 
+  it("keeps a custom look with the row when it moves, clears it, and forgets it", async () => {
+    const registry = new Registry(memoryStore());
+    await registry.pin("old");
+    await registry.setAvatarLook("old", { shirt: "#123456" });
+    await registry.moveSession("old", "new");
+    expect(registry.avatarLook("new")).toEqual({ shirt: "#123456" });
+    expect(registry.avatarLook("old")).toBeUndefined();
+    await registry.setAvatarLook("new", undefined);
+    expect(registry.avatarLook("new")).toBeUndefined();
+    await registry.setAvatarLook("new", { shirt: "#654321" });
+    await registry.forgetSessions(["new"]);
+    expect(registry.avatarLook("new")).toBeUndefined();
+  });
+
   it("keeps a Default row in Default when it moves", async () => {
     const registry = new Registry(memoryStore());
     await registry.pin("old");

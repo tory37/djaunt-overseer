@@ -33,7 +33,8 @@ import { SessionPreview } from "./sessionPreview";
 import { SESSION_PANEL_VIEW_ID, SessionPanelProvider } from "./sessionPanel";
 import { CORE_PANEL_VIEW_ID, CorePanelProvider } from "./corePanel";
 import { DRAGON_PANEL_VIEW_ID, DragonPanelProvider } from "./dragonPanel";
-import { OFFICE_PANEL_VIEW_ID, OfficePanelProvider, registerOfficeCommands } from "./officePanel";
+import { OFFICE_PANEL_VIEW_ID, OfficeBridge } from "./officeBridge";
+import { registerOfficeCommands } from "./officeCommands";
 import { PortraitIcons } from "./portraitIcons";
 import { registerSceneEventCommands, SceneEventDirector } from "./sceneEvents";
 import { registerTabSpotlightSync } from "./tabSpotlightSync";
@@ -71,7 +72,15 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   const analyzerTrigger = new AnalyzerTrigger({ liveMonitor, analyzer: sessionAnalyzer, findSessionMeta: findIndexedSession, log });
   const compactMonitor = new CompactMonitor(claudeHome, log);
-  const portraitIcons = new PortraitIcons(context.extension);
+  // The Office bridge comes later (it needs the session focus); the portraits only reach it when they draw.
+  let officeBridge: OfficeBridge | undefined;
+  const officeConnection = new vscode.EventEmitter<void>();
+  const portraitIcons = new PortraitIcons(context.extension, {
+    get api() {
+      return officeBridge?.api;
+    },
+    onDidChangeConnection: officeConnection.event,
+  });
   const createSectionTree = (section: SessionSection, viewId: string) => {
     const provider = new SessionTreeProvider(
       section, sessionIndex, liveMonitor, registry, compactMonitor, () => sessionAnalyzer.analyzerTitles(), portraitIcons,
@@ -181,8 +190,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
   const sceneEvents = new SceneEventDirector();
-  const officePanelProvider = new OfficePanelProvider({
-    extensionUri: context.extensionUri,
+  const officePanelProvider = new OfficeBridge({
     liveMonitor,
     registry,
     pinnedSessions,
@@ -190,7 +198,10 @@ export function activate(context: vscode.ExtensionContext): void {
     sceneEvents,
     focusedSessionId: () => sessionFocus.focusedSessionId(),
     onDidChangeFocus: sessionFocus.onDidChange,
+    globalState: context.globalState,
   });
+  officeBridge = officePanelProvider;
+  officePanelProvider.onDidChangeConnection(() => officeConnection.fire());
   const sessionPanelProvider = new SessionPanelProvider({
     extensionUri: context.extensionUri,
     registry,
@@ -266,17 +277,18 @@ export function activate(context: vscode.ExtensionContext): void {
       terminalTreeProvider.refresh();
     }),
     officePanelProvider,
+    officeConnection,
     vscode.window.registerWebviewViewProvider(OFFICE_PANEL_VIEW_ID, officePanelProvider, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
-    ...registerOfficeCommands(registry, officePanelProvider),
+    ...registerOfficeCommands(officePanelProvider),
     jiraPanelProvider,
     vscode.window.registerWebviewViewProvider(JIRA_PANEL_VIEW_ID, jiraPanelProvider),
     ...registerJiraPanelCommands(jiraPanelProvider),
-    sessionIndex.onDidChange(() => officePanelProvider.refreshTitles()),
+    sessionIndex.onDidChange(() => officePanelProvider.refresh()),
     compactMonitor.onDidChange(refreshTree),
     sessionAnalyzer.onDidChangeTitles(() => {
-      officePanelProvider.refreshTitles();
+      officePanelProvider.refresh();
       treeProvider.refresh();
       terminalTreeProvider.refresh();
       repoTreeProvider.refresh();

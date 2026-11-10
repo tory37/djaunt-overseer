@@ -11,6 +11,5 @@
     "skipLibCheck": true,
     "rootDir": "."
   },
-  "include": ["src", "test"],
-  "exclude": ["src/officeView"]
+  "include": ["src", "test"]
 }
