@@ -35,6 +35,10 @@ export interface OfficeSimulationApi {
   // Starts an invasion now, opening the Office first if it isn't showing: an invasion id, or "random". Nothing happens
   // while one is already on.
   startInvasion(kind?: OfficeInvasionKind | "random"): void;
+  // Starts a group gathering now, opening the Office first if it isn't showing: a gathering id, or "random". The desks
+  // in the middle get pushed aside and everyone who isn't busy comes. Nothing happens while one, a show, or an
+  // invasion is on, or with too few free to come.
+  startGathering(kind?: OfficeGatheringKind | "random"): void;
   // Sends in a visitor now: a department id, or a random one.
   sendVisitor(kind?: OfficeVisitorKind): void;
   // Puts a line over a guy: an agent id, or "you" for your guy. Up to 80 characters; seconds is clamped to 1-20.
@@ -74,6 +78,9 @@ export interface OfficeSimulationApi {
   // An invasion started, or ended (everyone back on his feet and the mess swept up).
   readonly onDidStartInvasion: vscode.Event<OfficeInvasionKind>;
   readonly onDidEndInvasion: vscode.Event<OfficeInvasionKind>;
+  // A group gathering started, or ended (the desks back in place).
+  readonly onDidStartGathering: vscode.Event<OfficeGatheringKind>;
+  readonly onDidEndGathering: vscode.Event<OfficeGatheringKind>;
   // Someone asked for a scene event in the Office (its Trigger Event button or Play Scene Event command) after your
   // extension took over events. Play it with playEvent, and anywhere else you show events, so they play together.
   // Until something listens, a request plays in the Office alone.
@@ -105,6 +112,8 @@ export type OfficeMainGuyStatus = "auto" | "busy" | "idle";
 export type OfficeEventKind = "error" | "hack" | "defense";
 export type OfficeShowKind = "guitarist" | "band" | "lunch" | "snacks" | "comedian" | "magician" | "dj";
 export type OfficeInvasionKind = "aliens" | "zombies" | "raiders" | "vampires" | "robots" | "ghosts" | "werewolves" | "slimes" | "mummies" | "demons";
+export type OfficeGatheringKind =
+  | "yoga" | "fireSafety" | "cardDuel" | "danceCircle" | "birthday" | "allHands" | "trivia" | "karaoke" | "campfire" | "teamBuilding";
 export type OfficeVisitorKind =
   | "manager" | "vp" | "ceo" | "hr" | "it" | "sales" | "marketing" | "facilities" | "accounting" | "intern" | "legal" | "qa"
   | "security" | "design" | "product";
