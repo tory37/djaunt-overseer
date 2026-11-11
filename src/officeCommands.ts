@@ -12,6 +12,12 @@ export function registerOfficeCommands(office: OfficeBridge): vscode.Disposable[
     }
   };
   return [
+    // An Office from before Trigger Event only has Play Show.
+    vscode.commands.registerCommand("overseer.office.triggerEvent", (id?: unknown) =>
+      office.runOfficeCommand("officeSim.triggerEvent", id).catch(() => office.runOfficeCommand("officeSim.playShow"))),
+    ...(["stop", "quietOn", "quietOff", "toggleNight", "openSettings"] as const).map((name) =>
+      vscode.commands.registerCommand(`overseer.office.${name}`, () => office.runOfficeCommand(`officeSim.${name}`).catch(() =>
+        void vscode.window.showInformationMessage("Update Office Simulation to use this button.")))),
     vscode.commands.registerCommand("overseer.office.playShow", (kind?: unknown) => office.runOfficeCommand("officeSim.playShow", kind)),
     vscode.commands.registerCommand("overseer.office.chatterStyle", (style?: unknown) => office.runOfficeCommand("officeSim.chatter", style)),
     vscode.commands.registerCommand("overseer.office.switchScene", () => office.runOfficeCommand("officeSim.switchScene")),
