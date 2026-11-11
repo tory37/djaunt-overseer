@@ -137,6 +137,36 @@
         "icon": "$(zap)"
       },
       {
+        "command": "overseer.office.stop",
+        "title": "Stop Whatever's Playing in the Office",
+        "category": "Overseer",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "overseer.office.quietOn",
+        "title": "Quiet the Office",
+        "category": "Overseer",
+        "icon": "$(bell)"
+      },
+      {
+        "command": "overseer.office.quietOff",
+        "title": "Office Is Quiet: Let Things Happen Again",
+        "category": "Overseer",
+        "icon": "$(bell-slash)"
+      },
+      {
+        "command": "overseer.office.toggleNight",
+        "title": "Office Day / Night for Ten Minutes",
+        "category": "Overseer",
+        "icon": "$(color-mode)"
+      },
+      {
+        "command": "overseer.office.openSettings",
+        "title": "Office Settings",
+        "category": "Overseer",
+        "icon": "$(settings-gear)"
+      },
+      {
         "command": "overseer.office.playShow",
         "title": "Play Office Show…",
         "category": "Overseer",
@@ -654,26 +684,6 @@
           "group": "navigation@9"
         },
         {
-          "command": "overseer.office.switchScene",
-          "when": "view == overseer.office",
-          "group": "navigation@1"
-        },
-        {
-          "command": "overseer.office.triggerEvent",
-          "when": "view == overseer.office",
-          "group": "navigation@2"
-        },
-        {
-          "command": "overseer.office.chatterStyle",
-          "when": "view == overseer.office",
-          "group": "navigation@3"
-        },
-        {
-          "command": "overseer.office.customizeYou",
-          "when": "view == overseer.office",
-          "group": "navigation@4"
-        },
-        {
           "command": "overseer.jira.refresh",
           "when": "view == overseer.jira",
           "group": "navigation@0"
@@ -682,6 +692,51 @@
           "command": "overseer.jira.editQueries",
           "when": "view == overseer.jira",
           "group": "navigation@1"
+        },
+        {
+          "command": "overseer.office.triggerEvent",
+          "when": "view == overseer.office",
+          "group": "navigation@1"
+        },
+        {
+          "command": "overseer.office.stop",
+          "when": "view == overseer.office",
+          "group": "navigation@2"
+        },
+        {
+          "command": "overseer.office.quietOn",
+          "when": "view == overseer.office && !config.officeSim.quiet",
+          "group": "navigation@3"
+        },
+        {
+          "command": "overseer.office.quietOff",
+          "when": "view == overseer.office && config.officeSim.quiet",
+          "group": "navigation@3"
+        },
+        {
+          "command": "overseer.office.toggleNight",
+          "when": "view == overseer.office",
+          "group": "navigation@4"
+        },
+        {
+          "command": "overseer.office.switchScene",
+          "when": "view == overseer.office",
+          "group": "navigation@5"
+        },
+        {
+          "command": "overseer.office.chatterStyle",
+          "when": "view == overseer.office",
+          "group": "navigation@6"
+        },
+        {
+          "command": "overseer.office.customizeYou",
+          "when": "view == overseer.office",
+          "group": "navigation@7"
+        },
+        {
+          "command": "overseer.office.openSettings",
+          "when": "view == overseer.office",
+          "group": "navigation@8"
         }
       ],
       "view/item/context": [
@@ -1082,6 +1137,14 @@
         {
           "command": "overseer.jira.refresh",
           "when": "false"
+        },
+        {
+          "command": "overseer.office.quietOn",
+          "when": "!config.officeSim.quiet"
+        },
+        {
+          "command": "overseer.office.quietOff",
+          "when": "config.officeSim.quiet"
         }
       ],
       "editor/title": [
