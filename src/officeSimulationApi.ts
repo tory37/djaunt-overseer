@@ -104,7 +104,7 @@ export interface OfficeAgent {
 export type OfficeMainGuyStatus = "auto" | "busy" | "idle";
 export type OfficeEventKind = "error" | "hack" | "defense";
 export type OfficeShowKind = "guitarist" | "band" | "lunch" | "snacks" | "comedian" | "magician" | "dj";
-export type OfficeInvasionKind = "aliens" | "zombies" | "raiders" | "vampires";
+export type OfficeInvasionKind = "aliens" | "zombies" | "raiders" | "vampires" | "robots" | "ghosts" | "werewolves" | "slimes" | "mummies" | "demons";
 export type OfficeVisitorKind =
   | "manager" | "vp" | "ceo" | "hr" | "it" | "sales" | "marketing" | "facilities" | "accounting" | "intern" | "legal" | "qa"
   | "security" | "design" | "product";
