@@ -194,6 +194,8 @@ export class OfficeBridge implements vscode.WebviewViewProvider, vscode.Disposab
     this.officeListeners = [
       events.onDidPlay((message) => office.playEvent(message.kind, message.variant)),
       events.onDidTint((index) => office.setTint(index)),
+      // An event picked in the Office's Trigger Event plays in every view at once. An older Office has no such hook.
+      ...(typeof office.onDidRequestEvent === "function" ? [office.onDidRequestEvent((kind) => events.play(kind))] : []),
       office.onDidClickAgent((id) => {
         if (id !== "you") {
           void vscode.commands.executeCommand("overseer.clickSession", id);

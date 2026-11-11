@@ -32,6 +32,9 @@ export interface OfficeSimulationApi {
   takeOverEvents(): void;
   // Puts on a show now, opening the Office first if it isn't showing: a show id, or "random".
   playShow(kind?: OfficeShowKind | "random"): void;
+  // Starts an invasion now, opening the Office first if it isn't showing: an invasion id, or "random". Nothing happens
+  // while one is already on.
+  startInvasion(kind?: OfficeInvasionKind | "random"): void;
   // Sends in a visitor now: a department id, or a random one.
   sendVisitor(kind?: OfficeVisitorKind): void;
   // Puts a line over a guy: an agent id, or "you" for your guy. Up to 80 characters; seconds is clamped to 1-20.
@@ -68,6 +71,13 @@ export interface OfficeSimulationApi {
   // A show started or ended.
   readonly onDidStartShow: vscode.Event<OfficeShowKind>;
   readonly onDidEndShow: vscode.Event<OfficeShowKind>;
+  // An invasion started, or ended (everyone back on his feet and the mess swept up).
+  readonly onDidStartInvasion: vscode.Event<OfficeInvasionKind>;
+  readonly onDidEndInvasion: vscode.Event<OfficeInvasionKind>;
+  // Someone asked for a scene event in the Office (its Trigger Event button or Play Scene Event command) after your
+  // extension took over events. Play it with playEvent, and anywhere else you show events, so they play together.
+  // Until something listens, a request plays in the Office alone.
+  readonly onDidRequestEvent: vscode.Event<OfficeEventKind>;
   // A scene event finished playing in an Office.
   readonly onDidFinishEvent: vscode.Event<OfficeEventKind>;
   // Your guy's look changed (the character maker or the officeSim.yourLook setting).
@@ -78,6 +88,7 @@ export interface OfficeSimulationApi {
 
 export interface OfficeAgent {
   id: string;
+  // Asleep (a suspended session) does the same idle things as idle, naps included.
   status: "busy" | "idle" | "asleep";
   // What his tooltip says.
   title?: string;
@@ -93,6 +104,7 @@ export interface OfficeAgent {
 export type OfficeMainGuyStatus = "auto" | "busy" | "idle";
 export type OfficeEventKind = "error" | "hack" | "defense";
 export type OfficeShowKind = "guitarist" | "band" | "lunch" | "snacks" | "comedian" | "magician" | "dj";
+export type OfficeInvasionKind = "aliens" | "zombies" | "raiders" | "vampires";
 export type OfficeVisitorKind =
   | "manager" | "vp" | "ceo" | "hr" | "it" | "sales" | "marketing" | "facilities" | "accounting" | "intern" | "legal" | "qa"
   | "security" | "design" | "product";

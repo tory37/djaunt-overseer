@@ -131,6 +131,12 @@
         "icon": "$(layout)"
       },
       {
+        "command": "overseer.office.triggerEvent",
+        "title": "Trigger Office Event…",
+        "category": "Overseer",
+        "icon": "$(zap)"
+      },
+      {
         "command": "overseer.office.playShow",
         "title": "Play Office Show…",
         "category": "Overseer",
@@ -653,7 +659,7 @@
           "group": "navigation@1"
         },
         {
-          "command": "overseer.office.playShow",
+          "command": "overseer.office.triggerEvent",
           "when": "view == overseer.office",
           "group": "navigation@2"
         },
