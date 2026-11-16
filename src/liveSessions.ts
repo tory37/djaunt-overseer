@@ -3,11 +3,11 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { LiveSession, LiveStatus, parseAgentsJson } from "./liveParse";
+import { executableNames, loginShellLookupCommand, resolveLoginShell } from "./loginShell";
 
 const POLL_INTERVAL_MS = 15_000;
 const WATCH_DEBOUNCE_MS = 300;
 const COMMAND_TIMEOUT_MS = 10_000;
-const FALLBACK_SHELL = "/bin/zsh";
 
 export class LiveSessionMonitor implements vscode.Disposable {
   private liveSessions = new Map<string, LiveSession>();
@@ -87,13 +87,18 @@ export function resolveClaudeBinary(): Promise<string> {
 
 // VS Code's own PATH can miss version-manager installs like nvm, so ask the user's login shell.
 export async function resolveCliBinary(binaryName: string): Promise<string> {
-  if (await isOnPath(binaryName)) {
-    return binaryName;
+  const pathMatch = await findOnPath(binaryName);
+  if (pathMatch !== undefined) {
+    // Windows cannot run a bare "claude" without its extension, so it gets the full path.
+    return process.platform === "win32" ? pathMatch : binaryName;
   }
-  const userShell = process.env.SHELL ?? FALLBACK_SHELL;
-  const resolvedPath = (await execFileText(userShell, ["-l", "-i", "-c", `command -v ${binaryName}`]))
+  const userShell = resolveLoginShell(process.platform, process.env, fs.existsSync);
+  if (userShell === undefined) {
+    throw new Error(`${binaryName} not found on PATH, and Git Bash is not installed to look further`);
+  }
+  const resolvedPath = (await execFileText(userShell, ["-l", "-i", "-c", loginShellLookupCommand(binaryName, process.platform)]))
     .trim()
-    .split("\n")
+    .split(/\r?\n/)
     .pop();
   if (!resolvedPath) {
     throw new Error(`${binaryName} not found on PATH or in the login shell`);
@@ -101,18 +106,22 @@ export async function resolveCliBinary(binaryName: string): Promise<string> {
   return resolvedPath;
 }
 
-async function isOnPath(binaryName: string): Promise<boolean> {
+async function findOnPath(binaryName: string): Promise<string | undefined> {
   const pathDirectories = (process.env.PATH ?? "").split(path.delimiter).filter((directory) => directory !== "");
+  const fileNames = executableNames(binaryName, process.platform, process.env);
   for (const directory of pathDirectories) {
-    const isExecutable = await fs.promises
-      .access(path.join(directory, binaryName), fs.constants.X_OK)
-      .then(() => true)
-      .catch(() => false);
-    if (isExecutable) {
-      return true;
+    for (const fileName of fileNames) {
+      const candidate = path.join(directory, fileName);
+      const isExecutable = await fs.promises
+        .access(candidate, fs.constants.X_OK)
+        .then(() => true)
+        .catch(() => false);
+      if (isExecutable) {
+        return candidate;
+      }
     }
   }
-  return false;
+  return undefined;
 }
 
 function execFileText(file: string, args: string[]): Promise<string> {

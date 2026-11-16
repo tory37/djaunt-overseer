@@ -3,9 +3,9 @@ import * as vscode from "vscode";
 import { launchShellCommand, newSessionCommand } from "./claudeLaunch";
 import { displayTitle, SessionMeta } from "./indexer";
 import { LiveSession } from "./liveParse";
+import { GIT_BASH_MISSING_MESSAGE, resolveLoginShell } from "./loginShell";
 
 const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const FALLBACK_SHELL = "/bin/zsh";
 const SUSPEND_TIMEOUT_MS = 8_000;
 const CLEAR_INPUT_LINE = "\x15";
 const TERMINAL_ICON_COLOR_ID = "overseer.terminalIcon";
@@ -211,10 +211,15 @@ function launchClaudeTerminal(
   sessionId: string,
   claudeCommand: string,
 ): vscode.Terminal {
+  const loginShell = resolveLoginShell(process.platform, process.env, fs.existsSync);
+  if (loginShell === undefined) {
+    void vscode.window.showErrorMessage(GIT_BASH_MISSING_MESSAGE);
+    throw new Error(GIT_BASH_MISSING_MESSAGE);
+  }
   const terminal = vscode.window.createTerminal({
     name: title,
     cwd,
-    shellPath: process.env.SHELL ?? FALLBACK_SHELL,
+    shellPath: loginShell,
     shellArgs: ["-l", "-i", "-c", launchShellCommand(claudeCommand)],
     env: { [SESSION_ID_ENV_VAR]: sessionId },
     location: vscode.TerminalLocation.Editor,
