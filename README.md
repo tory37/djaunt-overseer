@@ -213,11 +213,13 @@ Decorative only. They read nothing and do nothing.
 ## Install
 
 ```bash
-curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.56.vsix
-code --install-extension djaunt-overseer-0.0.56.vsix
+curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.57.vsix
+code --install-extension djaunt-overseer-0.0.57.vsix
 ```
 
 If `code` isn't on your PATH, use `"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"`.
+
+On Windows, Overseer starts Claude through Git Bash, so install Git for Windows first. It finds `bash.exe` from `git.exe` on PATH, then in the default Git folders. It never uses the WSL `bash.exe` in System32.
 
 Then run **Developer: Reload Window**. Cmd+R only reloads in the F5 development host.
 
@@ -265,7 +267,7 @@ The analyzer and Summarize with Haiku run through your `claude` CLI, so they cou
 npm install
 npm test
 npm run package
-code --install-extension djaunt-overseer-0.0.56.vsix --force
+code --install-extension djaunt-overseer-0.0.57.vsix --force
 ```
 
 Not affiliated with Anthropic.

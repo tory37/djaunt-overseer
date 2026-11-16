@@ -70,6 +70,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `repoColors.ts` | Pure: a repo row's icon and label color. Clean is `overseer.repoClean`, dirty is the git modified color, failed is a warning. |
 | `quickPick.ts` / `repoFilter.ts` | All Sessions picker and the `repo:` filter. |
 | `claudeLaunch.ts` | Pure: the plain `exec claude` launch command, the new-session command with an optional first prompt, and `quoteForShell`. |
+| `loginShell.ts` | Pure: the shell that runs launch commands (`$SHELL` on macOS and Linux, Git Bash on Windows, never the WSL launcher), and PATH lookup with PATHEXT on Windows. |
 | `handoff.ts` | Pure: handoff draft and approved paths under `~/.claude/overseer/handoffs/`, the one-line write, revise, and seed prompts, and the order that puts the new session below the old one. |
 | `handoffCommands.ts` | Handoff: asks the idle session for a draft, opens it when written, and the draft tab's Revise, Approve (Start below or Replace), and Cancel buttons. |
 | `sessionFocus.ts` / `sessionFocusState.ts` | The focused session: the active Claude terminal or the preview tab. The state rules are pure. |
