@@ -36,7 +36,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `commands.ts` | Every command handler. |
 | `linkCandidates.ts` | Pure: scans a transcript for PR, ticket, artifact, and commit candidates with signals, titles, and the nearest user prompt. Counts user prompts by offset. Resumes from a byte offset. |
 | `candidateEnrichment.ts` | Pure: attaches cached PR and ticket status (title, branch, state, summary, parent) to scanned candidates. |
-| `claudeRunner.ts` | Shared headless `claude -p` runner and its flags (`--json-schema` included). |
+| `claudeRunner.ts` | Shared headless `claude -p` runner and its flags (`--json-schema` included). An optional timeout overrides the 120s default. |
 | `linkCache.ts` | The scan cache in globalStorage, and the versioned cache file helpers. |
 | `linkView.ts` | Pure: link URLs, display ids, a row link from an item key, concurrency limiter. |
 | `transcriptLines.ts` | Reads complete transcript lines from a byte offset, and one line back from its end offset. |
@@ -71,6 +71,8 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `quickPick.ts` / `repoFilter.ts` | All Sessions picker and the `repo:` filter. |
 | `claudeLaunch.ts` | Pure: the plain `exec claude` launch command, the new-session command with an optional first prompt, and `quoteForShell`. |
 | `handoff.ts` | Pure: handoff draft and approved paths under `~/.claude/overseer/handoffs/`, the one-line write, revise, and seed prompts, and the order that puts the new session below the old one. |
+| `whereAreWe.ts` | Pure: Where Are We run ids and paths under `~/.claude/overseer/briefs/`, the one-line question and its end sentinel, targets (idle now, busy when idle, skip the rest), skip reasons, the merge prompt, input, and args, the brief header, merge parse and fallback, the newest brief, and the Discuss prompt. |
+| `whereAreWeCommands.ts` | Where Are We: types the question into each live session with a terminal here, watches the run folder for replies until all answer, the timeout, Merge Now, or Cancel, then merges them with a headless run (300s) into one brief and opens it. Discuss starts a new session in the home folder that reads the brief. Logs with `[whereAreWe]`. |
 | `handoffCommands.ts` | Handoff: asks the idle session for a draft, opens it when written, and the draft tab's Revise, Approve (Start below or Replace), and Cancel buttons. |
 | `sessionFocus.ts` / `sessionFocusState.ts` | The focused session: the active Claude terminal or the preview tab. The state rules are pure. |
 | `sessionPanel.ts` | Secondary Side Bar webview for the focused session: header with the title, a lock icon when locked, and the derived status; the Now lines; resume or suspend; workstreams with Unsorted and Removed. Session actions are on the tree row's right-click menu (`overseer.claude` and `overseer.pixelGuy` submenus), not here. Edits write `overseer.workstreamEdits.v2` and show at once. |
@@ -108,7 +110,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 - Send slash commands only when the session is idle. Typed input is lost while Claude is busy.
 - Never resume a session that is live elsewhere. Two processes on one transcript corrupt it. Offer a fork.
 - Session names reach the shell. Quote with `quoteForShell` and strip newlines.
-- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `jiraQueries`, `jiraFilter`, `jiraTicketsView`, `claudeLaunch`, `handoff`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerEval`, `analyzerFlags`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`, `sessionTitle`, `tabSpotlight`, `groupIcons`, `repoColors`, `sceneEventSchedule`, `portraitBadge`, `officeAgents`, `officeSettingsMigration`) and test it there. `vscode` can't be imported in unit tests.
+- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `jiraQueries`, `jiraFilter`, `jiraTicketsView`, `claudeLaunch`, `handoff`, `whereAreWe`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerEval`, `analyzerFlags`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`, `sessionTitle`, `tabSpotlight`, `groupIcons`, `repoColors`, `sceneEventSchedule`, `portraitBadge`, `officeAgents`, `officeSettingsMigration`) and test it there. `vscode` can't be imported in unit tests.
 - The agent is not told about Overseer. Sessions launch as plain `claude`. The extension derives tracking from transcripts.
 - New commands need an entry in `contributes.commands`, a menu `when` clause, and `"when": "false"` under `commandPalette` if they need a tree node.
 

@@ -75,6 +75,15 @@ Mission control for Claude CLI sessions in VS Code. Find, group, suspend, and re
   - **Cancel Handoff** closes the tab and deletes the draft.
 - The new session starts in the old one's folder with one prompt: read the handoff and continue. The approved handoff moves to `~/.claude/overseer/handoffs/`.
 
+### Where Are We
+- **Where Are We** (compass button on the Sessions view) asks every live session where it stands, then merges the answers into one brief.
+- Each session gets one line: write a short reply to a file with Goal, Done, State, Next, and Needs Tory. It must not run other tools or change code.
+- Only sessions with a terminal in this window get asked. Idle ones get the question now. Busy ones get it when they go idle. Background agents and sessions in other windows are skipped, with the reason.
+- The run waits until all answer or `overseer.whereAreWe.timeoutMinutes` passes. **Merge Now** (on the notification or the view) stops waiting. **Cancel** stops with no brief.
+- A headless `claude -p` run with `overseer.whereAreWe.model` writes the brief: a Start here list, one block per session, and the skipped list. If the merge fails, the brief holds the raw replies.
+- Briefs go to `~/.claude/overseer/briefs/<run>.md`. The replies stay in `~/.claude/overseer/briefs/<run>/`.
+- **Discuss** (on the brief-ready notice, or **Where Are We: Discuss Latest Brief**) starts a new session in your home folder. It reads the newest brief and its replies, then waits for your questions.
+
 ### Statuses
 - **Set Status…** (right-click a session, or **Set Status…** in the palette for the selected rows) marks a session or terminal with a status. **Clear Status** removes it.
 - With no status set, the Session sidebar shows the status the analyzer derived, marked as automatic. A status you set wins.
@@ -246,6 +255,9 @@ For the matching look, pick an Overseer color theme. See [Themes](#themes).
 | `overseer.jira.queries` | seven status queries | JQL sections for the Jira Tickets sidebar: `name`, `jql`, `fields`, `intervalMinutes`. |
 | `overseer.links.liveStatus` | `true` | Show PR and ticket status through `gh` and your Jira MCP server. |
 | `overseer.summary.model` | `haiku` | Model for Summarize with Haiku. |
+| `overseer.whereAreWe.timeoutMinutes` | `10` | Minutes Where Are We waits for replies. |
+| `overseer.whereAreWe.instructions` | empty | Extra text added to the question each session gets. |
+| `overseer.whereAreWe.model` | `sonnet` | Model that merges the replies into the brief. |
 | `overseer.sessionCommands` | three starters | Prompts the **Commands…** picker sends. `{name}` in a prompt asks for a value. |
 | `overseer.sessionIcons.working` | `loading~spin` | Icon for a session working in this window. |
 | `overseer.sessionIcons.running` | `terminal` | Icon for a session running in this window. |
@@ -257,7 +269,7 @@ For the matching look, pick an Overseer color theme. See [Themes](#themes).
 | `overseer.office.sleepers` | `true` | Give suspended sessions a guy too, asleep at his desk. |
 | `overseer.views.office` | `true` | Show the Office view. |
 
-The analyzer and Summarize with Haiku run through your `claude` CLI, so they count against your Claude usage. Everything else makes no model calls.
+The analyzer, Summarize with Haiku, and the Where Are We merge run through your `claude` CLI, so they count against your Claude usage. Everything else makes no model calls.
 
 ## Build from source
 
