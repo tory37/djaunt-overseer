@@ -222,8 +222,8 @@ Decorative only. They read nothing and do nothing.
 ## Install
 
 ```bash
-curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.57.vsix
-code --install-extension djaunt-overseer-0.0.57.vsix
+curl -LO https://github.com/tory37/djaunt-overseer/releases/latest/download/djaunt-overseer-0.0.58.vsix
+code --install-extension djaunt-overseer-0.0.58.vsix
 ```
 
 If `code` isn't on your PATH, use `"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"`.
@@ -279,7 +279,7 @@ The analyzer, Summarize with Haiku, and the Where Are We merge run through your 
 npm install
 npm test
 npm run package
-code --install-extension djaunt-overseer-0.0.57.vsix --force
+code --install-extension djaunt-overseer-0.0.58.vsix --force
 ```
 
 Not affiliated with Anthropic.
