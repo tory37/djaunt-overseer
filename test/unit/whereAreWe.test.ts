@@ -7,8 +7,12 @@ import {
   SKIP_REASON_BACKGROUND,
   SKIP_REASON_NOT_LIVE,
   SKIP_REASON_TERMINAL_CLOSED,
+  buildBrief,
   buildMergeInput,
   briefFile,
+  briefHeader,
+  noRepliesMessage,
+  parseMergeOutput,
   checkTarget,
   noTargetsMessage,
   progressMessage,
@@ -166,6 +170,53 @@ describe("fallbackBrief", () => {
     const brief = fallbackBrief([], [], RUN_ID);
     expect(brief).toContain("No replies");
     expect(brief).not.toContain("## Skipped");
+  });
+});
+
+describe("brief", () => {
+  const replies = [{ sessionId: "sid-1", title: "Auth fix", repo: "api", branch: "fix/auth", body: "## Goal\nFix login" }];
+  const skipped = [{ sessionId: "sid-3", title: "Other window", reason: "no terminal in this window" }];
+  const mergeStdout = (result: unknown, isError = false): string => JSON.stringify({ is_error: isError, result });
+
+  it("heads the brief with the run id and the counts", () => {
+    expect(briefHeader(RUN_ID, 2, 1)).toBe(`# Where are we: ${RUN_ID}\n\n2 answered, 1 skipped.`);
+  });
+
+  it("parses the merged markdown from the JSON envelope", () => {
+    expect(parseMergeOutput(mergeStdout("  ## Start here\n- Auth fix  "))).toBe("## Start here\n- Auth fix");
+  });
+
+  it("rejects an error envelope, empty text, and output that is not JSON", () => {
+    expect(() => parseMergeOutput(mergeStdout("rate limited", true))).toThrow("rate limited");
+    expect(() => parseMergeOutput(mergeStdout("   "))).toThrow("no text");
+    expect(() => parseMergeOutput("not json")).toThrow();
+  });
+
+  it("puts the header above the merged markdown", () => {
+    const brief = buildBrief({ stdout: mergeStdout("## Start here\n- Auth fix") }, replies, skipped, RUN_ID);
+    expect(brief.mergeError).toBeUndefined();
+    expect(brief.text).toBe(`${briefHeader(RUN_ID, 1, 1)}\n\n## Start here\n- Auth fix\n`);
+  });
+
+  it("falls back to the raw replies when the run fails", () => {
+    const brief = buildBrief({ error: "timed out after 300s" }, replies, skipped, RUN_ID);
+    expect(brief.mergeError).toBe("timed out after 300s");
+    expect(brief.text).toBe(fallbackBrief(replies, skipped, RUN_ID));
+  });
+
+  it("falls back to the raw replies when the merge returns nothing", () => {
+    const brief = buildBrief({ stdout: mergeStdout("") }, replies, skipped, RUN_ID);
+    expect(brief.mergeError).toContain("no text");
+    expect(brief.text).toContain("Fix login");
+  });
+
+  it("uses the same header in the fallback", () => {
+    expect(fallbackBrief(replies, skipped, RUN_ID).startsWith(briefHeader(RUN_ID, 1, 1))).toBe(true);
+  });
+
+  it("lists the skipped reasons when no session answered", () => {
+    expect(noRepliesMessage(skipped)).toBe("Where are we: no session answered. Skipped: Other window (no terminal in this window).");
+    expect(noRepliesMessage([])).toBe("Where are we: no session answered.");
   });
 });
 

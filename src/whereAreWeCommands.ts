@@ -2,17 +2,26 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { SessionMeta } from "./indexer";
-import { LiveSessionMonitor } from "./liveSessions";
+import { createClaudeRunner } from "./claudeRunner";
+import { LiveSessionMonitor, resolveClaudeBinary } from "./liveSessions";
 import { tildePath } from "./paths";
 import { findSessionTerminal, sendSlashCommand } from "./terminals";
 import {
+  DEFAULT_MERGE_MODEL,
+  MERGE_TIMEOUT_MS,
+  MergeOutcome,
   RunEndReason,
   SkippedSession,
   WhereAreWeReply,
   WhereAreWeTargets,
+  briefFile,
   briefRunDir,
+  buildBrief,
+  buildMergeInput,
   checkTarget,
   isCompleteReply,
+  mergeArgs,
+  noRepliesMessage,
   noTargetsMessage,
   pickTargets,
   progressMessage,
@@ -62,7 +71,7 @@ interface PendingTarget {
 const RUNNING_CONTEXT_KEY = "overseer.whereAreWeRunning";
 const LOG_PREFIX = "[whereAreWe]";
 const PROGRESS_TITLE = "Where are we";
-const OPEN_FOLDER_ACTION = "Open Folder";
+const MERGE_PROGRESS_TITLE = "Where are we: writing the brief…";
 
 function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | undefined)?.code;
@@ -253,19 +262,35 @@ export function registerWhereAreWeCommands(dependencies: WhereAreWeDependencies)
     return { targets, skipped };
   };
 
-  // Phase 3 replaces this with the merge.
-  const showCollectedReplies = async (collected: CollectedReplies): Promise<void> => {
-    const firstReply = collected.replies[0];
-    if (firstReply !== undefined) {
-      await vscode.window.showTextDocument(vscode.Uri.file(replyFile(claudeHome, collected.runId, firstReply.sessionId)), { preview: false });
+  const runMerge = async (collected: CollectedReplies, model: string): Promise<MergeOutcome> => {
+    try {
+      const runClaude = createClaudeRunner(await resolveClaudeBinary(), { timeoutMs: MERGE_TIMEOUT_MS });
+      return { stdout: await runClaude(mergeArgs(model), buildMergeInput(collected.replies, collected.skipped)) };
+    } catch (error) {
+      return { error: String(error) };
     }
-    const pickedAction = await vscode.window.showInformationMessage(
-      `Where are we: ${collected.replies.length} replied, ${collected.skipped.length} skipped. Replies are in ${tildePath(collected.runDir)}.`,
-      OPEN_FOLDER_ACTION,
+  };
+
+  const mergeAndShowBrief = async (collected: CollectedReplies, model: string): Promise<void> => {
+    if (collected.replies.length === 0) {
+      void vscode.window.showInformationMessage(`Overseer: ${noRepliesMessage(collected.skipped)}`);
+      return;
+    }
+    const startedAtMs = Date.now();
+    const mergeOutcome = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: MERGE_PROGRESS_TITLE },
+      () => runMerge(collected, model),
     );
-    if (pickedAction === OPEN_FOLDER_ACTION) {
-      await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(collected.runDir));
+    const brief = buildBrief(mergeOutcome, collected.replies, collected.skipped, collected.runId);
+    const briefPath = briefFile(claudeHome, collected.runId);
+    await fs.promises.writeFile(briefPath, brief.text, "utf8");
+    if (brief.mergeError === undefined) {
+      log.appendLine(`${LOG_PREFIX} merged run ${collected.runId} with ${model} in ${Date.now() - startedAtMs}ms`);
+    } else {
+      log.appendLine(`${LOG_PREFIX} merge failed for run ${collected.runId}: ${brief.mergeError}`);
+      void vscode.window.showWarningMessage(`Overseer: the Where Are We merge failed, so the brief holds the raw replies. ${brief.mergeError}`);
     }
+    await vscode.window.showTextDocument(vscode.Uri.file(briefPath), { preview: false });
   };
 
   const runWithProgress = (request: Omit<CollectRequest, "reportProgress">): Thenable<CollectedReplies> =>
@@ -312,7 +337,7 @@ export function registerWhereAreWeCommands(dependencies: WhereAreWeDependencies)
         timeoutMs: whereAreWeTimeoutMs(settings.get<unknown>("timeoutMinutes")),
       });
       if (collected.endReason !== "cancelled") {
-        await showCollectedReplies(collected);
+        await mergeAndShowBrief(collected, settings.get<string>("model", DEFAULT_MERGE_MODEL) || DEFAULT_MERGE_MODEL);
       }
     } catch (error) {
       log.appendLine(`${LOG_PREFIX} run failed: ${String(error)}`);

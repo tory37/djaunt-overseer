@@ -16,6 +16,9 @@ export const SKIP_REASON_NOT_LIVE = "stopped running";
 export const SKIP_REASON_TERMINAL_CLOSED = "terminal closed";
 
 export const DEFAULT_TIMEOUT_MINUTES = 10;
+export const DEFAULT_MERGE_MODEL = "sonnet";
+// Merging many replies with sonnet can outlast the runner's default two minutes.
+export const MERGE_TIMEOUT_MS = 300_000;
 const MIN_TIMEOUT_MINUTES = 1;
 const MS_PER_MINUTE = 60_000;
 
@@ -35,6 +38,13 @@ export interface WhereAreWeReply {
   repo?: string;
   branch?: string;
   body: string;
+}
+
+export type MergeOutcome = { stdout: string } | { error: string };
+
+export interface BriefResult {
+  text: string;
+  mergeError?: string;
 }
 
 export interface SkippedSession {
@@ -155,12 +165,22 @@ export function progressMessage(answeredCount: number, askableCount: number): st
   return `${answeredCount} of ${askableCount} answered`;
 }
 
+function skippedSummary(skipped: SkippedSession[]): string {
+  return skipped.map((session) => `${session.title} (${session.reason})`).join("; ");
+}
+
 export function noTargetsMessage(skipped: SkippedSession[]): string {
   if (skipped.length === 0) {
     return "Where are we: no live sessions to ask.";
   }
-  const skippedText = skipped.map((session) => `${session.title} (${session.reason})`).join("; ");
-  return `Where are we: no session here to ask. Skipped: ${skippedText}.`;
+  return `Where are we: no session here to ask. Skipped: ${skippedSummary(skipped)}.`;
+}
+
+export function noRepliesMessage(skipped: SkippedSession[]): string {
+  if (skipped.length === 0) {
+    return "Where are we: no session answered.";
+  }
+  return `Where are we: no session answered. Skipped: ${skippedSummary(skipped)}.`;
 }
 
 // Keeps line breaks, because the replies are markdown.
@@ -202,8 +222,47 @@ export function mergeArgs(model: string): string[] {
   ];
 }
 
+// The merge prompt asks for no preamble, so this is the brief's only header.
+export function briefHeader(runId: string, answeredCount: number, skippedCount: number): string {
+  return `# Where are we: ${runId}\n\n${answeredCount} answered, ${skippedCount} skipped.`;
+}
+
+export function parseMergeOutput(stdout: string): string {
+  const envelope = JSON.parse(stdout) as { is_error?: boolean; result?: unknown };
+  if (envelope.is_error) {
+    throw new Error(`merge run failed: ${String(envelope.result)}`);
+  }
+  const mergedText = typeof envelope.result === "string" ? envelope.result.trim() : "";
+  if (mergedText === "") {
+    throw new Error("merge run returned no text");
+  }
+  return mergedText;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function buildBrief(
+  mergeOutcome: MergeOutcome,
+  replies: WhereAreWeReply[],
+  skipped: SkippedSession[],
+  runId: string,
+): BriefResult {
+  if ("error" in mergeOutcome) {
+    return { text: fallbackBrief(replies, skipped, runId), mergeError: mergeOutcome.error };
+  }
+  let mergedText: string;
+  try {
+    mergedText = parseMergeOutput(mergeOutcome.stdout);
+  } catch (error) {
+    return { text: fallbackBrief(replies, skipped, runId), mergeError: errorMessage(error) };
+  }
+  return { text: `${briefHeader(runId, replies.length, skipped.length)}\n\n${mergedText}\n` };
+}
+
 export function fallbackBrief(replies: WhereAreWeReply[], skipped: SkippedSession[], runId: string): string {
-  const sections = [`# Where are we: ${runId}`, "The merge failed. These are the raw replies."];
+  const sections = [briefHeader(runId, replies.length, skipped.length), "The merge failed. These are the raw replies."];
   if (replies.length === 0) {
     sections.push("No replies.");
   }

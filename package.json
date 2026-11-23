@@ -1586,6 +1586,11 @@
           "default": "",
           "description": "Extra text added to the question Where Are We types into each session."
         },
+        "overseer.whereAreWe.model": {
+          "type": "string",
+          "default": "sonnet",
+          "description": "Model that merges the Where Are We replies into one brief."
+        },
         "overseer.summary.model": {
           "type": "string",
           "default": "haiku",

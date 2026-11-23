@@ -3,6 +3,10 @@ import * as os from "os";
 
 export type ClaudeRunner = (claudeArgs: string[], stdinText: string) => Promise<string>;
 
+export interface ClaudeRunnerOptions {
+  timeoutMs?: number;
+}
+
 const HEADLESS_TIMEOUT_MS = 120_000;
 const HEADLESS_MAX_BUFFER_BYTES = 4 * 1024 * 1024;
 const MAX_FAILURE_OUTPUT_CHARS = 300;
@@ -25,16 +29,17 @@ export function headlessClaudeArgs(model: string, systemPrompt: string, outputSc
 }
 
 // Headless runs start in the temp dir so no project CLAUDE.md rides along with the digest.
-export function createClaudeRunner(claudeBinary: string): ClaudeRunner {
+export function createClaudeRunner(claudeBinary: string, options: ClaudeRunnerOptions = {}): ClaudeRunner {
+  const timeoutMs = options.timeoutMs ?? HEADLESS_TIMEOUT_MS;
   return (claudeArgs, stdinText) =>
     new Promise((resolve, reject) => {
       const claudeProcess = execFile(
         claudeBinary,
         claudeArgs,
-        { cwd: os.tmpdir(), timeout: HEADLESS_TIMEOUT_MS, maxBuffer: HEADLESS_MAX_BUFFER_BYTES },
+        { cwd: os.tmpdir(), timeout: timeoutMs, maxBuffer: HEADLESS_MAX_BUFFER_BYTES },
         (error, stdout, stderr) => {
           if (error) {
-            reject(new Error(`headless claude run failed: ${describeRunFailure(error, stdout, stderr)}`));
+            reject(new Error(`headless claude run failed: ${describeRunFailure(error, stdout, stderr, timeoutMs)}`));
           } else {
             resolve(stdout);
           }
@@ -44,9 +49,9 @@ export function createClaudeRunner(claudeBinary: string): ClaudeRunner {
     });
 }
 
-function describeRunFailure(error: ExecFileException, stdout: string, stderr: string): string {
+function describeRunFailure(error: ExecFileException, stdout: string, stderr: string, timeoutMs: number): string {
   if (error.killed) {
-    return `timed out after ${HEADLESS_TIMEOUT_MS / 1000}s`;
+    return `timed out after ${timeoutMs / 1000}s`;
   }
   const output = (stderr.trim() || stdout.trim()).slice(0, MAX_FAILURE_OUTPUT_CHARS);
   const exitDescription = error.signal ? `signal ${error.signal}` : `exit code ${error.code}`;
