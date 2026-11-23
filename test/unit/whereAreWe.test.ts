@@ -9,6 +9,10 @@ import {
   SKIP_REASON_TERMINAL_CLOSED,
   buildBrief,
   buildMergeInput,
+  briefReadyMessage,
+  discussPrompt,
+  discussSessionName,
+  latestBriefRunId,
   briefFile,
   briefHeader,
   noRepliesMessage,
@@ -217,6 +221,34 @@ describe("brief", () => {
   it("lists the skipped reasons when no session answered", () => {
     expect(noRepliesMessage(skipped)).toBe("Where are we: no session answered. Skipped: Other window (no terminal in this window).");
     expect(noRepliesMessage([])).toBe("Where are we: no session answered.");
+  });
+});
+
+describe("discuss", () => {
+  it("picks the newest brief by run id and ignores other files", () => {
+    const fileNames = ["2026-11-23T09-05-12.md", "2026-11-23T10-00-00.md", "2026-11-22T23-59-59.md", "2026-11-24T00-00-00", "notes.md"];
+    expect(latestBriefRunId(fileNames)).toBe("2026-11-23T10-00-00");
+  });
+
+  it("finds nothing among run folders and other files", () => {
+    expect(latestBriefRunId([RUN_ID, "notes.md"])).toBeUndefined();
+    expect(latestBriefRunId([])).toBeUndefined();
+  });
+
+  it("asks for one line that reads the brief and replies, then waits without changing code", () => {
+    const briefPath = briefFile(CLAUDE_HOME, RUN_ID);
+    const runDir = briefRunDir(CLAUDE_HOME, RUN_ID);
+    const prompt = discussPrompt(briefPath, runDir);
+    expect(prompt).not.toMatch(/[\r\n]/);
+    expect(prompt).toContain(briefPath);
+    expect(prompt).toContain(runDir);
+    expect(prompt).toContain("wait for my questions");
+    expect(prompt).toContain("Do not change any code");
+  });
+
+  it("names the session and the ready notice", () => {
+    expect(discussSessionName(RUN_ID)).toBe(`Where are we ${RUN_ID}`);
+    expect(briefReadyMessage(2, 1)).toBe("Where are we: brief ready (2 answered, 1 skipped)");
   });
 });
 

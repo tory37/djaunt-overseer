@@ -1,11 +1,14 @@
+import { randomUUID } from "crypto";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { SessionMeta } from "./indexer";
 import { createClaudeRunner } from "./claudeRunner";
 import { LiveSessionMonitor, resolveClaudeBinary } from "./liveSessions";
 import { tildePath } from "./paths";
-import { findSessionTerminal, sendSlashCommand } from "./terminals";
+import { Registry } from "./registry";
+import { findSessionTerminal, sendSlashCommand, startNewSession } from "./terminals";
 import {
   DEFAULT_MERGE_MODEL,
   MERGE_TIMEOUT_MS,
@@ -15,11 +18,16 @@ import {
   WhereAreWeReply,
   WhereAreWeTargets,
   briefFile,
+  briefReadyMessage,
   briefRunDir,
+  briefsDir,
   buildBrief,
   buildMergeInput,
   checkTarget,
+  discussPrompt,
+  discussSessionName,
   isCompleteReply,
+  latestBriefRunId,
   mergeArgs,
   noRepliesMessage,
   noTargetsMessage,
@@ -35,6 +43,7 @@ import {
 
 export interface WhereAreWeDependencies {
   claudeHome: string;
+  registry: Registry;
   liveMonitor: LiveSessionMonitor;
   findSessionMeta: (sessionId: string) => SessionMeta | undefined;
   sessionTitle: (sessionId: string) => string;
@@ -71,6 +80,7 @@ interface PendingTarget {
 const RUNNING_CONTEXT_KEY = "overseer.whereAreWeRunning";
 const LOG_PREFIX = "[whereAreWe]";
 const PROGRESS_TITLE = "Where are we";
+const DISCUSS_ACTION = "Discuss";
 const MERGE_PROGRESS_TITLE = "Where are we: writing the brief…";
 
 function errorCode(error: unknown): string | undefined {
@@ -247,7 +257,7 @@ function collectReplies(dependencies: WhereAreWeDependencies, request: CollectRe
 }
 
 export function registerWhereAreWeCommands(dependencies: WhereAreWeDependencies): vscode.Disposable[] {
-  const { claudeHome, liveMonitor, sessionTitle, log } = dependencies;
+  const { claudeHome, registry, liveMonitor, sessionTitle, log } = dependencies;
   let isRunning = false;
   let endActiveRun: ((reason: RunEndReason) => void) | undefined;
 
@@ -291,6 +301,47 @@ export function registerWhereAreWeCommands(dependencies: WhereAreWeDependencies)
       void vscode.window.showWarningMessage(`Overseer: the Where Are We merge failed, so the brief holds the raw replies. ${brief.mergeError}`);
     }
     await vscode.window.showTextDocument(vscode.Uri.file(briefPath), { preview: false });
+    void offerDiscuss(collected);
+  };
+
+  // Not awaited by the run, so an unanswered notification doesn't keep the run marked as running.
+  const offerDiscuss = async (collected: CollectedReplies): Promise<void> => {
+    const pickedAction = await vscode.window.showInformationMessage(
+      briefReadyMessage(collected.replies.length, collected.skipped.length),
+      DISCUSS_ACTION,
+    );
+    if (pickedAction === DISCUSS_ACTION) {
+      await discussBrief(collected.runId);
+    }
+  };
+
+  // No repo applies to a brief across sessions, so the session starts in the home folder.
+  const discussBrief = async (runId: string): Promise<void> => {
+    const sessionId = randomUUID();
+    const cwd = os.homedir();
+    const sessionName = discussSessionName(runId);
+    await registry.addPendingSession(sessionId, { cwd, createdAtMs: Date.now() });
+    await registry.setLabel(sessionId, sessionName);
+    await registry.pin(sessionId);
+    startNewSession(sessionId, sessionName, cwd, log, discussPrompt(briefFile(claudeHome, runId), briefRunDir(claudeHome, runId)));
+  };
+
+  const discussLatestBrief = async (): Promise<void> => {
+    let briefFileNames: string[];
+    try {
+      briefFileNames = await fs.promises.readdir(briefsDir(claudeHome));
+    } catch (error) {
+      if (errorCode(error) !== "ENOENT") {
+        log.appendLine(`${LOG_PREFIX} can't list ${briefsDir(claudeHome)}: ${String(error)}`);
+      }
+      briefFileNames = [];
+    }
+    const runId = latestBriefRunId(briefFileNames);
+    if (runId === undefined) {
+      void vscode.window.showInformationMessage("Overseer: no Where Are We brief yet. Run Where Are We first.");
+      return;
+    }
+    await discussBrief(runId);
   };
 
   const runWithProgress = (request: Omit<CollectRequest, "reportProgress">): Thenable<CollectedReplies> =>
@@ -360,6 +411,7 @@ export function registerWhereAreWeCommands(dependencies: WhereAreWeDependencies)
   return [
     vscode.commands.registerCommand("overseer.whereAreWe", runWhereAreWe),
     vscode.commands.registerCommand("overseer.whereAreWe.mergeNow", mergeNow),
+    vscode.commands.registerCommand("overseer.whereAreWe.discuss", discussLatestBrief),
     { dispose: () => endActiveRun?.("cancelled") },
   ];
 }

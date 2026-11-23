@@ -137,6 +137,12 @@
         "icon": "$(check-all)"
       },
       {
+        "command": "overseer.whereAreWe.discuss",
+        "title": "Where Are We: Discuss Latest Brief",
+        "category": "Overseer",
+        "icon": "$(comment-discussion)"
+      },
+      {
         "command": "overseer.office.switchScene",
         "title": "Switch Office Scene…",
         "category": "Overseer",

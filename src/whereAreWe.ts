@@ -9,6 +9,7 @@ export const REPLY_END_SENTINEL = "<!-- end -->";
 const MAX_REPLY_WORDS = 120;
 const MAX_MERGE_INPUT_CHARS = 48 * 1024;
 const CLIP_MARKER = "…";
+const BRIEF_FILE_PATTERN = /^(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})\.md$/;
 
 export const SKIP_REASON_NO_TERMINAL = "no terminal in this window";
 export const SKIP_REASON_BACKGROUND = "background agent, no terminal to type into";
@@ -93,6 +94,25 @@ function singleLine(text: string): string {
   return text.replace(/[\r\n]+/g, " ").trim();
 }
 
+export function discussPrompt(briefPath: string, runDir: string): string {
+  return singleLine(
+    `Read the brief at ${briefPath} and the reply files in ${runDir}. ` +
+      "Then wait for my questions about where my sessions stand. Do not change any code.",
+  );
+}
+
+export function discussSessionName(runId: string): string {
+  return `Where are we ${runId}`;
+}
+
+// Run ids are zero-padded local times, so the newest sorts last.
+export function latestBriefRunId(fileNames: string[]): string | undefined {
+  const runIds = fileNames
+    .map((fileName) => BRIEF_FILE_PATTERN.exec(fileName)?.[1])
+    .filter((runId): runId is string => runId !== undefined);
+  return runIds.sort().at(-1);
+}
+
 export function whereAreWePrompt(replyPath: string, extraInstructions?: string): string {
   const extraText = singleLine(extraInstructions ?? "");
   const extraSentence = extraText === "" ? "" : ` Extra instructions: ${extraText}`;
@@ -174,6 +194,10 @@ export function noTargetsMessage(skipped: SkippedSession[]): string {
     return "Where are we: no live sessions to ask.";
   }
   return `Where are we: no session here to ask. Skipped: ${skippedSummary(skipped)}.`;
+}
+
+export function briefReadyMessage(answeredCount: number, skippedCount: number): string {
+  return `Where are we: brief ready (${answeredCount} answered, ${skippedCount} skipped)`;
 }
 
 export function noRepliesMessage(skipped: SkippedSession[]): string {

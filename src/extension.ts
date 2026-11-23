@@ -358,7 +358,7 @@ export function activate(context: vscode.ExtensionContext): void {
       groupSessionIdsHolding: (sessionId) => treeProvider.groupSessionIdsHolding(sessionId),
       log,
     }),
-    ...registerWhereAreWeCommands({ claudeHome, liveMonitor, findSessionMeta: findIndexedSession, sessionTitle, log }),
+    ...registerWhereAreWeCommands({ claudeHome, registry, liveMonitor, findSessionMeta: findIndexedSession, sessionTitle, log }),
     vscode.commands.registerCommand("overseer.openHistory", () =>
       HistoryPanel.show({ extensionUri: context.extensionUri, sessionIndex, liveMonitor, registry, claudeHome }),
     ),
