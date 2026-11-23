@@ -70,6 +70,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `repoColors.ts` | Pure: a repo row's icon and label color. Clean is `overseer.repoClean`, dirty is the git modified color, failed is a warning. |
 | `quickPick.ts` / `repoFilter.ts` | All Sessions picker and the `repo:` filter. |
 | `claudeLaunch.ts` | Pure: the plain `exec claude` launch command, the new-session command with an optional first prompt, and `quoteForShell`. |
+| `loginShell.ts` | Pure: the shell that runs launch commands (`$SHELL` on macOS and Linux, Git Bash on Windows, never the WSL launcher), and PATH lookup with PATHEXT on Windows. |
 | `handoff.ts` | Pure: handoff draft and approved paths under `~/.claude/overseer/handoffs/`, the one-line write, revise, and seed prompts, and the order that puts the new session below the old one. |
 | `whereAreWe.ts` | Pure: Where Are We run ids and paths under `~/.claude/overseer/briefs/`, the one-line question and its end sentinel, targets (idle now, busy when idle, skip the rest), skip reasons, the merge prompt, input, and args, the brief header, merge parse and fallback, the newest brief, and the Discuss prompt. |
 | `whereAreWeCommands.ts` | Where Are We: types the question into each live session with a terminal here, watches the run folder for replies until all answer, the timeout, Merge Now, or Cancel, then merges them with a headless run (300s) into one brief and opens it. Discuss starts a new session in the home folder that reads the brief. Logs with `[whereAreWe]`. |
