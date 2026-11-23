@@ -12,6 +12,16 @@ const CLIP_MARKER = "…";
 
 export const SKIP_REASON_NO_TERMINAL = "no terminal in this window";
 export const SKIP_REASON_BACKGROUND = "background agent, no terminal to type into";
+export const SKIP_REASON_NOT_LIVE = "stopped running";
+export const SKIP_REASON_TERMINAL_CLOSED = "terminal closed";
+
+export const DEFAULT_TIMEOUT_MINUTES = 10;
+const MIN_TIMEOUT_MINUTES = 1;
+const MS_PER_MINUTE = 60_000;
+
+export type RunEndReason = "allAnswered" | "timeout" | "mergeNow" | "cancelled";
+
+export type TargetCheck = { action: "send" } | { action: "wait" } | { action: "skip"; reason: string };
 
 export interface WhereAreWeTargets {
   sendNow: LiveSession[];
@@ -114,6 +124,43 @@ export function pickTargets(liveSessions: LiveSession[], hasTerminalHere: (sessi
     }
   }
   return targets;
+}
+
+// Run right before each send: the session may have started work, closed, or left since the targets were picked.
+export function checkTarget(liveSession: LiveSession | undefined, hasTerminalHere: boolean): TargetCheck {
+  if (liveSession === undefined) {
+    return { action: "skip", reason: SKIP_REASON_NOT_LIVE };
+  }
+  if (liveSession.status === "background") {
+    return { action: "skip", reason: SKIP_REASON_BACKGROUND };
+  }
+  if (!hasTerminalHere) {
+    return { action: "skip", reason: SKIP_REASON_TERMINAL_CLOSED };
+  }
+  return liveSession.status === "busy" ? { action: "wait" } : { action: "send" };
+}
+
+export function unansweredReason(wasAsked: boolean, endReason: RunEndReason): string {
+  const endedBy = endReason === "mergeNow" ? "Merge now" : "the timeout";
+  return wasAsked ? `no answer before ${endedBy}` : `busy until ${endedBy}`;
+}
+
+export function whereAreWeTimeoutMs(configuredMinutes: unknown): number {
+  const isUsableNumber = typeof configuredMinutes === "number" && Number.isFinite(configuredMinutes);
+  const minutes = isUsableNumber ? Math.max(MIN_TIMEOUT_MINUTES, configuredMinutes) : DEFAULT_TIMEOUT_MINUTES;
+  return minutes * MS_PER_MINUTE;
+}
+
+export function progressMessage(answeredCount: number, askableCount: number): string {
+  return `${answeredCount} of ${askableCount} answered`;
+}
+
+export function noTargetsMessage(skipped: SkippedSession[]): string {
+  if (skipped.length === 0) {
+    return "Where are we: no live sessions to ask.";
+  }
+  const skippedText = skipped.map((session) => `${session.title} (${session.reason})`).join("; ");
+  return `Where are we: no session here to ask. Skipped: ${skippedText}.`;
 }
 
 // Keeps line breaks, because the replies are markdown.

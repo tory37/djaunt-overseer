@@ -41,6 +41,7 @@ import { registerTabSpotlightSync } from "./tabSpotlightSync";
 import { SessionTreeProvider } from "./tree";
 import { ShownSessionTitle, shownSessionTitle } from "./sessionTitle";
 import { SessionStatusDecorations } from "./sessionStatusView";
+import { registerWhereAreWeCommands } from "./whereAreWeCommands";
 import { registerWorkspaceCommands } from "./workspaceCommands";
 
 const INDEX_REFRESH_INTERVAL_MS = 60_000;
@@ -357,6 +358,7 @@ export function activate(context: vscode.ExtensionContext): void {
       groupSessionIdsHolding: (sessionId) => treeProvider.groupSessionIdsHolding(sessionId),
       log,
     }),
+    ...registerWhereAreWeCommands({ claudeHome, liveMonitor, findSessionMeta: findIndexedSession, sessionTitle, log }),
     vscode.commands.registerCommand("overseer.openHistory", () =>
       HistoryPanel.show({ extensionUri: context.extensionUri, sessionIndex, liveMonitor, registry, claudeHome }),
     ),

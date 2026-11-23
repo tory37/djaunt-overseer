@@ -125,6 +125,18 @@
         "icon": "$(history)"
       },
       {
+        "command": "overseer.whereAreWe",
+        "title": "Where Are We",
+        "category": "Overseer",
+        "icon": "$(compass)"
+      },
+      {
+        "command": "overseer.whereAreWe.mergeNow",
+        "title": "Where Are We: Merge Now",
+        "category": "Overseer",
+        "icon": "$(check-all)"
+      },
+      {
         "command": "overseer.office.switchScene",
         "title": "Switch Office Scene…",
         "category": "Overseer",
@@ -659,6 +671,16 @@
           "group": "navigation@1"
         },
         {
+          "command": "overseer.whereAreWe",
+          "when": "view == overseer.sessions && !overseer.whereAreWeRunning",
+          "group": "navigation@2"
+        },
+        {
+          "command": "overseer.whereAreWe.mergeNow",
+          "when": "view == overseer.sessions && overseer.whereAreWeRunning",
+          "group": "navigation@2"
+        },
+        {
           "command": "overseer.newGroup",
           "when": "view == overseer.sessions",
           "group": "2_manage@1"
@@ -942,6 +964,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "overseer.whereAreWe.mergeNow",
+          "when": "overseer.whereAreWeRunning"
+        },
         {
           "command": "overseer.killTerminal",
           "when": "false"
@@ -1548,6 +1574,17 @@
           "type": "boolean",
           "default": true,
           "description": "Show live PR state through gh and Jira status through your Jira MCP server. Checked every five minutes for expanded sessions."
+        },
+        "overseer.whereAreWe.timeoutMinutes": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "description": "Minutes Where Are We waits for replies. Busy sessions get the question when they go idle within this time."
+        },
+        "overseer.whereAreWe.instructions": {
+          "type": "string",
+          "default": "",
+          "description": "Extra text added to the question Where Are We types into each session."
         },
         "overseer.summary.model": {
           "type": "string",

@@ -3,8 +3,17 @@ import { LiveSession } from "../../src/liveParse";
 import {
   MERGE_SYSTEM_PROMPT,
   REPLY_END_SENTINEL,
+  DEFAULT_TIMEOUT_MINUTES,
+  SKIP_REASON_BACKGROUND,
+  SKIP_REASON_NOT_LIVE,
+  SKIP_REASON_TERMINAL_CLOSED,
   buildMergeInput,
   briefFile,
+  checkTarget,
+  noTargetsMessage,
+  progressMessage,
+  unansweredReason,
+  whereAreWeTimeoutMs,
   briefRunDir,
   fallbackBrief,
   isCompleteReply,
@@ -157,5 +166,48 @@ describe("fallbackBrief", () => {
     const brief = fallbackBrief([], [], RUN_ID);
     expect(brief).toContain("No replies");
     expect(brief).not.toContain("## Skipped");
+  });
+});
+
+describe("checkTarget", () => {
+  it("sends to an idle session with a terminal here", () => {
+    expect(checkTarget(liveSession("sid-1", "idle"), true)).toEqual({ action: "send" });
+  });
+
+  it("waits on a busy session", () => {
+    expect(checkTarget(liveSession("sid-1", "busy"), true)).toEqual({ action: "wait" });
+  });
+
+  it("skips a session that left the live list, went to the background, or lost its terminal", () => {
+    expect(checkTarget(undefined, true)).toEqual({ action: "skip", reason: SKIP_REASON_NOT_LIVE });
+    expect(checkTarget(liveSession("sid-1", "background"), true)).toEqual({ action: "skip", reason: SKIP_REASON_BACKGROUND });
+    expect(checkTarget(liveSession("sid-1", "idle"), false)).toEqual({ action: "skip", reason: SKIP_REASON_TERMINAL_CLOSED });
+  });
+});
+
+describe("run bookkeeping", () => {
+  it("says why a target has no answer, by whether it was asked and how the run ended", () => {
+    expect(unansweredReason(true, "timeout")).toBe("no answer before the timeout");
+    expect(unansweredReason(false, "timeout")).toBe("busy until the timeout");
+    expect(unansweredReason(true, "mergeNow")).toBe("no answer before Merge now");
+    expect(unansweredReason(false, "mergeNow")).toBe("busy until Merge now");
+  });
+
+  it("reads the timeout in minutes with a floor of one and a default for junk", () => {
+    expect(whereAreWeTimeoutMs(5)).toBe(5 * 60_000);
+    expect(whereAreWeTimeoutMs(0)).toBe(60_000);
+    expect(whereAreWeTimeoutMs("ten")).toBe(DEFAULT_TIMEOUT_MINUTES * 60_000);
+    expect(whereAreWeTimeoutMs(Number.NaN)).toBe(DEFAULT_TIMEOUT_MINUTES * 60_000);
+  });
+
+  it("shows the answered count over the askable count", () => {
+    expect(progressMessage(4, 6)).toBe("4 of 6 answered");
+  });
+
+  it("lists each skipped session and its reason when nothing can be asked", () => {
+    expect(noTargetsMessage([])).toBe("Where are we: no live sessions to ask.");
+    expect(noTargetsMessage([{ sessionId: "sid-1", title: "Auth fix", reason: "no terminal in this window" }])).toBe(
+      "Where are we: no session here to ask. Skipped: Auth fix (no terminal in this window).",
+    );
   });
 });
