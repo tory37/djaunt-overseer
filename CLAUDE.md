@@ -30,6 +30,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `grouping.ts` | Pure: builds the group list. User groups, then Ungrouped, then the saved order on top. |
 | `sessionTitle.ts` | Pure: the shown session title (locked label, analyzer title, label, indexed title) and the label's ticket keys the title hides. Grouping still reads the label. |
 | `reorder.ts` | Pure: drag reorder (`moveBeside`) and saved-order sort. |
+| `terminalTabOrder.ts` | Pure: each terminal tab's 1-based target position within its editor group, in tree order. Sort Terminal Tabs moves the tabs there. |
 | `tree.ts` | TreeDataProvider and drag-and-drop. |
 | `groupIcons.ts` | Pure: a group's folder icon color. User groups cycle `overseer.groupIcon1`-`6` by their saved order; Ungrouped uses `icon.foreground`. |
 | `terminals.ts` | Launch, find, suspend, slash commands. A slash command sends Enter in its own write 200ms after the text, because Claude takes one chunk as a paste. Terminals `exec claude`, so the terminal pid is Claude's pid. Tab icons use `overseer.terminalIcon`. |
@@ -111,7 +112,7 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 - Send slash commands only when the session is idle. Typed input is lost while Claude is busy.
 - Never resume a session that is live elsewhere. Two processes on one transcript corrupt it. Offer a fork.
 - Session names reach the shell. Quote with `quoteForShell` and strip newlines.
-- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `jiraQueries`, `jiraFilter`, `jiraTicketsView`, `claudeLaunch`, `handoff`, `whereAreWe`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerEval`, `analyzerFlags`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`, `sessionTitle`, `tabSpotlight`, `groupIcons`, `repoColors`, `sceneEventSchedule`, `portraitBadge`, `officeAgents`, `officeSettingsMigration`) and test it there. `vscode` can't be imported in unit tests.
+- Keep logic that can be pure in pure modules (`grouping`, `reorder`, `terminalTabOrder`, `repoFilter`, `liveParse`, `ticket`, `linkCandidates`, `candidateEnrichment`, `linkView`, `linkStatus`, `jiraQueries`, `jiraFilter`, `jiraTicketsView`, `claudeLaunch`, `handoff`, `whereAreWe`, `analysisState`, `workstreamEdits`, `legacyDeclarations`, `analysisSeed`, `analyzerDigest`, `analyzerOps`, `analyzerUsage`, `analyzerEval`, `analyzerFlags`, `analyzerGates`, `workstreamDisplay`, `liveTransitions`, `resourceRows`, `sessionFocusState`, `sessionPreviewModel`, `sessionSidebarText`, `sessionTitle`, `tabSpotlight`, `groupIcons`, `repoColors`, `sceneEventSchedule`, `portraitBadge`, `officeAgents`, `officeSettingsMigration`) and test it there. `vscode` can't be imported in unit tests.
 - The agent is not told about Overseer. Sessions launch as plain `claude`. The extension derives tracking from transcripts.
 - New commands need an entry in `contributes.commands`, a menu `when` clause, and `"when": "false"` under `commandPalette` if they need a tree node.
 

@@ -55,6 +55,7 @@ Mission control for Claude CLI sessions in VS Code. Find, group, suspend, and re
 - Clicking a session with a terminal in this window focuses the terminal. Clicking any other session opens it in the [preview](#session-preview).
 - **New Session** (+) asks for a folder and an optional name, then runs `claude --session-id <id> -n <name>` in an editor terminal.
 - **New Terminal** asks the same questions, then opens a plain shell in that folder. It sits in the Terminals view, under the same groups as your sessions. It acts like a session: click to focus, drag into a group, Rename, Remove, Kill. When it is closed, **Open** starts a new shell in the same folder. Claude-only actions do not show on it.
+- **Sort Terminal Tabs by Tree Order** (numbered-list button on the Sessions and Terminals views) moves the open terminal tabs left to right in the sidebar's top-down order. Each editor group sorts its own tabs.
 - Clicking a terminal tab selects that session's row in the sidebar. A row that is already selected stays, so a multi-select survives.
 - **Suspend** (pause) sends `/exit`, so the process and its memory go away. It warns first when Claude is mid-task.
 - **Resume** (play) brings the session back with its history.

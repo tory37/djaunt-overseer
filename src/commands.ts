@@ -31,6 +31,7 @@ import { SessionPreview } from "./sessionPreview";
 import { askStatusReason, configuredStatuses, pickSessionStatus, shownSessionStatus } from "./sessionStatusView";
 import { ShownSessionTitle } from "./sessionTitle";
 import { busySessions, confirmStopBusySessions, runningClaudeSessions, suspendSessions } from "./suspend";
+import { TerminalTabPositions } from "./terminalTabOrder";
 import { TreeNode } from "./tree";
 import { pickTargetWorkspace } from "./workspaceCommands";
 
@@ -427,6 +428,27 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     }),
     vscode.commands.registerCommand("overseer.refreshIndex", async () => {
       await Promise.all([sessionIndex.refresh(), liveMonitor.refresh()]);
+    }),
+    vscode.commands.registerCommand("overseer.sortTerminalTabs", async () => {
+      const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+      const terminalToRefocus = activeTab?.input instanceof vscode.TabInputTerminal ? vscode.window.activeTerminal : undefined;
+      // Tab inputs carry no terminal handle, so each terminal is shown to learn its group and make it the editor that moves.
+      const positions = new TerminalTabPositions<vscode.ViewColumn>();
+      for (const pinned of pinnedSessions()) {
+        const terminal = findSessionTerminal(pinned.sessionId);
+        if (terminal === undefined) {
+          continue;
+        }
+        terminal.show(false);
+        const activeTabGroup = vscode.window.tabGroups.activeTabGroup;
+        const isEditorTerminal = activeTabGroup.activeTab?.input instanceof vscode.TabInputTerminal;
+        if (!isEditorTerminal) {
+          continue;
+        }
+        const position = positions.next(activeTabGroup.viewColumn);
+        await vscode.commands.executeCommand("moveActiveEditor", { to: "position", by: "tab", value: position });
+      }
+      terminalToRefocus?.show(false);
     }),
     vscode.commands.registerCommand("overseer.focusSession", (sessionId: string) => {
       findSessionTerminal(sessionId)?.show();

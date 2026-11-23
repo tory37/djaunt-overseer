@@ -269,6 +269,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "overseer.sortTerminalTabs",
+        "title": "Sort Terminal Tabs by Tree Order",
+        "category": "Overseer",
+        "icon": "$(list-ordered)"
+      },
+      {
         "command": "overseer.newGroup",
         "title": "New Group…",
         "category": "Overseer",
@@ -685,6 +691,11 @@
           "command": "overseer.whereAreWe.mergeNow",
           "when": "view == overseer.sessions && overseer.whereAreWeRunning",
           "group": "navigation@2"
+        },
+        {
+          "command": "overseer.sortTerminalTabs",
+          "when": "view =~ /^overseer\\.(sessions|terminals)$/",
+          "group": "navigation@3"
         },
         {
           "command": "overseer.newGroup",
