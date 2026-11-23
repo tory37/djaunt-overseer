@@ -8,6 +8,8 @@ const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 const FALLBACK_SHELL = "/bin/zsh";
 const SUSPEND_TIMEOUT_MS = 8_000;
 const CLEAR_INPUT_LINE = "\x15";
+const SUBMIT_KEY = "\r";
+const SUBMIT_DELAY_MS = 200;
 const TERMINAL_ICON_COLOR_ID = "overseer.terminalIcon";
 export const SESSION_ID_ENV_VAR = "OVERSEER_SESSION_ID";
 
@@ -174,9 +176,12 @@ export function attachBackgroundSession(
 }
 
 // Clears any half-typed draft first so the slash command isn't appended to it and sent as a prompt.
-export function sendSlashCommand(terminal: vscode.Terminal, slashCommand: string): void {
+// Enter goes in its own write after a pause: Claude reads text and Enter in one chunk as a paste and drops the Enter.
+export async function sendSlashCommand(terminal: vscode.Terminal, slashCommand: string): Promise<void> {
   terminal.sendText(CLEAR_INPUT_LINE, false);
-  terminal.sendText(slashCommand, true);
+  terminal.sendText(slashCommand, false);
+  await new Promise((resolve) => setTimeout(resolve, SUBMIT_DELAY_MS));
+  terminal.sendText(SUBMIT_KEY, false);
 }
 
 // /exit lets Claude shut down cleanly; if the tab is still open after the timeout, close it, which ends the process.
@@ -193,7 +198,7 @@ export async function suspendTerminal(terminal: vscode.Terminal): Promise<void> 
   const timedOut = new Promise<"timeout">((resolve) => {
     timeoutHandle = setTimeout(() => resolve("timeout"), SUSPEND_TIMEOUT_MS);
   });
-  sendSlashCommand(terminal, "/exit");
+  await sendSlashCommand(terminal, "/exit");
   try {
     if ((await Promise.race([terminalClosed, timedOut])) === "timeout") {
       terminal.dispose();

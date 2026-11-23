@@ -6,10 +6,13 @@ export interface LiveSession {
   pid: number | undefined;
   kind: string;
   status: LiveStatus;
+  isWaitingWithBackgroundShell: boolean;
   name: string | undefined;
   cwd: string | undefined;
   processCount: number;
 }
+
+const BACKGROUND_SHELL_SESSION_STATUS = "shell";
 
 const FINISHED_BACKGROUND_STATES = new Set(["failed", "stopped", "completed", "done", "cancelled", "killed", "exited"]);
 
@@ -60,10 +63,25 @@ export function parseAgentsJson(agentsJson: string): Map<string, LiveSession> {
       pid: typeof entry.pid === "number" ? entry.pid : undefined,
       kind,
       status,
+      isWaitingWithBackgroundShell: false,
       name: typeof entry.name === "string" ? entry.name : undefined,
       cwd: typeof entry.cwd === "string" ? entry.cwd : undefined,
       processCount: 1,
     });
   }
   return liveSessions;
+}
+
+// `claude agents --json` reports busy while a session waits for input with a background shell; only sessions/<pid>.json says "shell".
+export function sessionFileShowsBackgroundShell(sessionFileText: string): boolean {
+  try {
+    const sessionFile: unknown = JSON.parse(sessionFileText);
+    return (
+      typeof sessionFile === "object" &&
+      sessionFile !== null &&
+      (sessionFile as { status?: unknown }).status === BACKGROUND_SHELL_SESSION_STATUS
+    );
+  } catch {
+    return false;
+  }
 }

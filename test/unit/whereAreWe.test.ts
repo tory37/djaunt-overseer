@@ -38,7 +38,21 @@ const RUN_ID = "2026-11-23T09-05-12";
 const REPLY_PATH = "/home/me/.claude/overseer/briefs/2026-11-23T09-05-12/sid-1.md";
 
 function liveSession(sessionId: string, status: LiveSession["status"], name?: string): LiveSession {
-  return { sessionId, agentId: undefined, pid: 1, kind: "interactive", status, name, cwd: "/repo", processCount: 1 };
+  return {
+    sessionId,
+    agentId: undefined,
+    pid: 1,
+    kind: "interactive",
+    status,
+    isWaitingWithBackgroundShell: false,
+    name,
+    cwd: "/repo",
+    processCount: 1,
+  };
+}
+
+function busyWithBackgroundShell(sessionId: string): LiveSession {
+  return { ...liveSession(sessionId, "busy"), isWaitingWithBackgroundShell: true };
 }
 
 describe("where are we paths", () => {
@@ -107,6 +121,12 @@ describe("pickTargets", () => {
       { sessionId: "idle-elsewhere", reason: "no terminal in this window" },
       { sessionId: "background-here", reason: "background agent, no terminal to type into" },
     ]);
+  });
+
+  it("sends now to a busy session that only waits with a background shell", () => {
+    const targets = pickTargets([busyWithBackgroundShell("shell-here")], () => true);
+    expect(targets.sendNow.map((session) => session.sessionId)).toEqual(["shell-here"]);
+    expect(targets.sendWhenIdle).toEqual([]);
   });
 });
 
@@ -259,6 +279,10 @@ describe("checkTarget", () => {
 
   it("waits on a busy session", () => {
     expect(checkTarget(liveSession("sid-1", "busy"), true)).toEqual({ action: "wait" });
+  });
+
+  it("sends to a busy session that only waits with a background shell", () => {
+    expect(checkTarget(busyWithBackgroundShell("sid-1"), true)).toEqual({ action: "send" });
   });
 
   it("skips a session that left the live list, went to the background, or lost its terminal", () => {

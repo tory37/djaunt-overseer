@@ -146,7 +146,7 @@ export function registerHandoffCommands(dependencies: HandoffDependencies): vsco
       return;
     }
     openDraftWhenWritten(sourceSessionId);
-    sendSlashCommand(terminal, writeHandoffPrompt(draftPath, extraRules));
+    await sendSlashCommand(terminal, writeHandoffPrompt(draftPath, extraRules));
     log.appendLine(`Asked ${sourceSessionId} for a handoff at ${draftPath}`);
   };
 
@@ -190,7 +190,7 @@ export function registerHandoffCommands(dependencies: HandoffDependencies): vsco
     }
     const terminal = idleTerminalOf(draft.sourceSessionId, "Revise");
     if (terminal !== undefined) {
-      sendSlashCommand(terminal, reviseHandoffPrompt(draft.draftPath, feedback));
+      await sendSlashCommand(terminal, reviseHandoffPrompt(draft.draftPath, feedback));
     }
   };
 

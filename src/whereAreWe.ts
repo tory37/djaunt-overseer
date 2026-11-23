@@ -147,7 +147,7 @@ export function pickTargets(liveSessions: LiveSession[], hasTerminalHere: (sessi
       targets.skipped.push({ sessionId: session.sessionId, reason: SKIP_REASON_BACKGROUND });
     } else if (!hasTerminalHere(session.sessionId)) {
       targets.skipped.push({ sessionId: session.sessionId, reason: SKIP_REASON_NO_TERMINAL });
-    } else if (session.status === "busy") {
+    } else if (isWorking(session)) {
       targets.sendWhenIdle.push(session);
     } else {
       targets.sendNow.push(session);
@@ -167,7 +167,12 @@ export function checkTarget(liveSession: LiveSession | undefined, hasTerminalHer
   if (!hasTerminalHere) {
     return { action: "skip", reason: SKIP_REASON_TERMINAL_CLOSED };
   }
-  return liveSession.status === "busy" ? { action: "wait" } : { action: "send" };
+  return isWorking(liveSession) ? { action: "wait" } : { action: "send" };
+}
+
+// A session that waits for input while a background shell runs reads as busy, but typed input reaches it.
+function isWorking(liveSession: LiveSession): boolean {
+  return liveSession.status === "busy" && !liveSession.isWaitingWithBackgroundShell;
 }
 
 export function unansweredReason(wasAsked: boolean, endReason: RunEndReason): string {

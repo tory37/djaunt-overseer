@@ -321,20 +321,20 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
       );
       return;
     }
-    sendSlashCommand(terminal, `/rename ${newName.replace(/[\r\n]+/g, " ")}`);
+    await sendSlashCommand(terminal, `/rename ${newName.replace(/[\r\n]+/g, " ")}`);
   };
 
   // Busy sessions are skipped because Claude drops input typed while it works.
-  const sendToIdleSessions = (sessions: PinnedSession[], slashCommand: string): void => {
+  const sendToIdleSessions = async (sessions: PinnedSession[], slashCommand: string): Promise<void> => {
     const idleTerminals = sessions
       .filter((pinned) => pinned.terminal === undefined)
       .filter((pinned) => liveMonitor.get(pinned.sessionId)?.status !== "busy")
       .map((pinned) => findSessionTerminal(pinned.sessionId))
       .filter(isDefined);
-    idleTerminals.forEach((terminal) => sendSlashCommand(terminal, slashCommand));
     if (idleTerminals.length === 1) {
       idleTerminals[0].show();
     }
+    await Promise.all(idleTerminals.map((terminal) => sendSlashCommand(terminal, slashCommand)));
   };
 
   const pickModel = async (): Promise<string | undefined> => {
@@ -629,27 +629,27 @@ export function registerCommands(dependencies: CommandDependencies): vscode.Disp
     vscode.commands.registerCommand("overseer.suspendSession", async (clicked?: TreeNode | string) => {
       await suspendSessionsAfterAsking(targetSessions(clicked));
     }),
-    vscode.commands.registerCommand("overseer.compactSession", (clicked?: TreeNode | string) => {
-      sendToIdleSessions(targetSessions(clicked), "/compact");
-    }),
-    vscode.commands.registerCommand("overseer.clearSession", (clicked?: TreeNode | string) => {
-      sendToIdleSessions(targetSessions(clicked), "/clear");
-    }),
-    vscode.commands.registerCommand("overseer.costSession", (clicked?: TreeNode | string) => {
-      sendToIdleSessions(targetSessions(clicked), "/cost");
-    }),
+    vscode.commands.registerCommand("overseer.compactSession", (clicked?: TreeNode | string) =>
+      sendToIdleSessions(targetSessions(clicked), "/compact"),
+    ),
+    vscode.commands.registerCommand("overseer.clearSession", (clicked?: TreeNode | string) =>
+      sendToIdleSessions(targetSessions(clicked), "/clear"),
+    ),
+    vscode.commands.registerCommand("overseer.costSession", (clicked?: TreeNode | string) =>
+      sendToIdleSessions(targetSessions(clicked), "/cost"),
+    ),
     vscode.commands.registerCommand("overseer.switchModel", async (clicked?: TreeNode | string) => {
       const sessions = targetSessions(clicked);
       const modelAlias = await pickModel();
       if (modelAlias !== undefined) {
-        sendToIdleSessions(sessions, `/model ${modelAlias}`);
+        await sendToIdleSessions(sessions, `/model ${modelAlias}`);
       }
     }),
     vscode.commands.registerCommand("overseer.runSessionCommand", async (clicked?: TreeNode | string) => {
       const sessions = targetSessions(clicked);
       const prompt = await pickSessionPrompt();
       if (prompt !== undefined) {
-        sendToIdleSessions(sessions, prompt);
+        await sendToIdleSessions(sessions, prompt);
       }
     }),
     // The hover link passes a session ID; the context menu passes the clicked node.

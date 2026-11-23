@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { LiveSession, LiveStatus, parseAgentsJson } from "./liveParse";
+import { LiveSession, LiveStatus, parseAgentsJson, sessionFileShowsBackgroundShell } from "./liveParse";
 
 const POLL_INTERVAL_MS = 15_000;
 const WATCH_DEBOUNCE_MS = 300;
@@ -16,6 +16,7 @@ export class LiveSessionMonitor implements vscode.Disposable {
   private sessionsDirWatcher: fs.FSWatcher | undefined;
   private watchDebounceTimer: NodeJS.Timeout | undefined;
   private readonly pollTimer: NodeJS.Timeout;
+  private readonly sessionsDir: string;
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChange = this.changeEmitter.event;
 
@@ -23,8 +24,9 @@ export class LiveSessionMonitor implements vscode.Disposable {
     claudeHome: string,
     private readonly log: vscode.OutputChannel,
   ) {
+    this.sessionsDir = path.join(claudeHome, "sessions");
     this.pollTimer = setInterval(() => void this.refresh(), POLL_INTERVAL_MS);
-    this.watchSessionsDir(path.join(claudeHome, "sessions"));
+    this.watchSessionsDir(this.sessionsDir);
   }
 
   get(sessionId: string): LiveSession | undefined {
@@ -46,6 +48,7 @@ export class LiveSessionMonitor implements vscode.Disposable {
     try {
       const agentsJson = await this.runClaude(["agents", "--json"]);
       const refreshedSessions = parseAgentsJson(agentsJson);
+      await this.markBackgroundShellWaits(refreshedSessions);
       if (!sameLiveSessions(this.liveSessions, refreshedSessions)) {
         this.liveSessions = refreshedSessions;
         this.changeEmitter.fire();
@@ -54,6 +57,20 @@ export class LiveSessionMonitor implements vscode.Disposable {
       this.log.appendLine(`Live session refresh failed: ${String(error)}`);
     }
     return this.liveSessions;
+  }
+
+  private async markBackgroundShellWaits(liveSessions: Map<string, LiveSession>): Promise<void> {
+    const busySessions = [...liveSessions.values()].filter(
+      (liveSession) => liveSession.status === "busy" && liveSession.pid !== undefined,
+    );
+    await Promise.all(
+      busySessions.map(async (liveSession) => {
+        const sessionFileText = await fs.promises
+          .readFile(path.join(this.sessionsDir, `${liveSession.pid}.json`), "utf8")
+          .catch(() => "");
+        liveSession.isWaitingWithBackgroundShell = sessionFileShowsBackgroundShell(sessionFileText);
+      }),
+    );
   }
 
   // Claude rewrites sessions/<pid>.json on every busy/idle flip, so the directory is a cheap change signal.
@@ -134,6 +151,7 @@ function sameLiveSessions(left: Map<string, LiveSession>, right: Map<string, Liv
   for (const [sessionId, leftSession] of left) {
     const rightSession = right.get(sessionId);
     if (rightSession === undefined || rightSession.status !== leftSession.status ||
+      rightSession.isWaitingWithBackgroundShell !== leftSession.isWaitingWithBackgroundShell ||
       rightSession.pid !== leftSession.pid ||
       rightSession.processCount !== leftSession.processCount) {
       return false;

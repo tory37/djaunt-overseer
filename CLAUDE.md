@@ -25,14 +25,14 @@ F5 opens the Extension Development Host. Cmd+R reloads only there; in normal VS 
 | `indexCache.ts` | Cache keyed by path + mtime + size. Bump `CACHE_SCHEMA_VERSION` when `SessionMeta` changes. |
 | `sessionIndex.ts` | Holds the current index and refreshes it on file changes. |
 | `gitRoots.ts` | Directory to git root, memoized. Worktrees map to the main repo. |
-| `liveParse.ts` / `liveSessions.ts` | `claude agents --json` plus a watch on `~/.claude/sessions` for busy/idle status. |
+| `liveParse.ts` / `liveSessions.ts` | `claude agents --json` plus a watch on `~/.claude/sessions` for busy/idle status. A busy session whose `sessions/<pid>.json` says `shell` waits for input with a background shell: `isWaitingWithBackgroundShell`. Only Where Are We reads it. |
 | `registry.ts` | globalState: pinned ids, user groups, assignments, labels, title locks, pending sessions, group and session order, pixel guy seeds. One key per field so two windows don't clobber each other. |
 | `grouping.ts` | Pure: builds the group list. User groups, then Ungrouped, then the saved order on top. |
 | `sessionTitle.ts` | Pure: the shown session title (locked label, analyzer title, label, indexed title) and the label's ticket keys the title hides. Grouping still reads the label. |
 | `reorder.ts` | Pure: drag reorder (`moveBeside`) and saved-order sort. |
 | `tree.ts` | TreeDataProvider and drag-and-drop. |
 | `groupIcons.ts` | Pure: a group's folder icon color. User groups cycle `overseer.groupIcon1`-`6` by their saved order; Ungrouped uses `icon.foreground`. |
-| `terminals.ts` | Launch, find, suspend, slash commands. Terminals `exec claude`, so the terminal pid is Claude's pid. Tab icons use `overseer.terminalIcon`. |
+| `terminals.ts` | Launch, find, suspend, slash commands. A slash command sends Enter in its own write 200ms after the text, because Claude takes one chunk as a paste. Terminals `exec claude`, so the terminal pid is Claude's pid. Tab icons use `overseer.terminalIcon`. |
 | `commands.ts` | Every command handler. |
 | `linkCandidates.ts` | Pure: scans a transcript for PR, ticket, artifact, and commit candidates with signals, titles, and the nearest user prompt. Counts user prompts by offset. Resumes from a byte offset. |
 | `candidateEnrichment.ts` | Pure: attaches cached PR and ticket status (title, branch, state, summary, parent) to scanned candidates. |

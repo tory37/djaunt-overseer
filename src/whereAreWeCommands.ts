@@ -166,7 +166,7 @@ function collectReplies(dependencies: WhereAreWeDependencies, request: CollectRe
   };
 
   // Rechecks the status and the terminal right before typing, because input typed while Claude works is lost.
-  const askOrWait = (sessionId: string): void => {
+  const askOrWait = async (sessionId: string): Promise<void> => {
     if (hasEnded || !pendingTargets.has(sessionId)) {
       return;
     }
@@ -180,7 +180,7 @@ function collectReplies(dependencies: WhereAreWeDependencies, request: CollectRe
       return;
     }
     pendingTargets.set(sessionId, { wasAsked: true });
-    sendSlashCommand(terminal, whereAreWePrompt(replyFile(claudeHome, runId, sessionId), extraInstructions));
+    await sendSlashCommand(terminal, whereAreWePrompt(replyFile(claudeHome, runId, sessionId), extraInstructions));
     log.appendLine(`${LOG_PREFIX} asked ${sessionId}`);
   };
 
@@ -192,7 +192,7 @@ function collectReplies(dependencies: WhereAreWeDependencies, request: CollectRe
     try {
       for (const [sessionId, pendingTarget] of [...pendingTargets]) {
         if (!pendingTarget.wasAsked) {
-          askOrWait(sessionId);
+          void askOrWait(sessionId);
           continue;
         }
         const check = checkTarget(liveMonitor.get(sessionId), findSessionTerminal(sessionId) !== undefined);
@@ -249,7 +249,7 @@ function collectReplies(dependencies: WhereAreWeDependencies, request: CollectRe
   }
   showProgress();
   for (const sessionId of [...pendingTargets.keys()]) {
-    askOrWait(sessionId);
+    void askOrWait(sessionId);
   }
   // A reply written before the watcher saw it would otherwise wait for the next status change.
   readAskedReplies();

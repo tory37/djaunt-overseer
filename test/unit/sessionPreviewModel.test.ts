@@ -18,6 +18,7 @@ function liveSession(overrides: Partial<LiveSession>): LiveSession {
     pid: 4821,
     kind: "interactive",
     status: "idle",
+    isWaitingWithBackgroundShell: false,
     name: undefined,
     cwd: undefined,
     processCount: 1,
