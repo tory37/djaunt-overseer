@@ -132,9 +132,11 @@ export function startNewSession(
   cwd: string,
   log: vscode.OutputChannel,
   initialPrompt?: string,
+  appendedSystemPrompt?: string,
 ): vscode.Terminal {
   log.appendLine(`Starting new session ${sessionId} in ${cwd}`);
-  return launchClaudeTerminal(sessionName ?? "New session", cwd, sessionId, newSessionCommand(sessionId, sessionName, initialPrompt));
+  const claudeCommand = newSessionCommand(sessionId, sessionName, initialPrompt, appendedSystemPrompt);
+  return launchClaudeTerminal(sessionName ?? "New session", cwd, sessionId, claudeCommand);
 }
 
 // Uses the user's default terminal profile, so it is the same shell as any other VS Code terminal.

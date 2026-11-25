@@ -23,4 +23,10 @@ describe("newSessionCommand", () => {
       `claude --session-id sid -n 'it'\\''s mine' 'Read /a b.md now'`,
     );
   });
+
+  it("quotes an appended system prompt before the initial prompt", () => {
+    expect(newSessionCommand("sid", undefined, "go", "You're the\ncoordinator.")).toBe(
+      `claude --session-id sid --append-system-prompt 'You'\\''re the coordinator.' 'go'`,
+    );
+  });
 });

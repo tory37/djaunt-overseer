@@ -31,6 +31,14 @@ import {
   replyFile,
   whereAreWePrompt,
   whereAreWeRunId,
+  COORDINATOR_SYSTEM_PROMPT,
+  askReplyFile,
+  asksDir,
+  combineInstructions,
+  coordinatorPrompt,
+  followUpPrompt,
+  parseAskFileName,
+  unreachableReply,
 } from "../../src/whereAreWe";
 
 const CLAUDE_HOME = "/home/me/.claude";
@@ -81,10 +89,11 @@ describe("whereAreWePrompt", () => {
     expect(prompt).not.toContain("Extra instructions");
   });
 
-  it("appends extra instructions on the same line", () => {
+  it("puts extra instructions on the same line, before the sentinel sentence", () => {
     const prompt = whereAreWePrompt(REPLY_PATH, "mention the ticket\nand the PR");
     expect(prompt).not.toMatch(/[\r\n]/);
-    expect(prompt).toContain("Extra instructions: mention the ticket and the PR");
+    expect(prompt).toContain("Extra instructions: mention the ticket and the PR The last line");
+    expect(prompt.endsWith(`The last line must be exactly ${REPLY_END_SENTINEL}`)).toBe(true);
   });
 
   it("ignores blank extra instructions", () => {
@@ -316,5 +325,87 @@ describe("run bookkeeping", () => {
     expect(noTargetsMessage([{ sessionId: "sid-1", title: "Auth fix", reason: "no terminal in this window" }])).toBe(
       "Where are we: no session here to ask. Skipped: Auth fix (no terminal in this window).",
     );
+  });
+});
+
+const RUN_DIR = "/home/me/.claude/overseer/briefs/2026-11-23T09-05-12";
+const SESSION_UUID = "0b7f3c1e-1a2b-4c3d-8e9f-0123456789ab";
+
+describe("combineInstructions", () => {
+  it("puts the setting first, then the run text, on one line", () => {
+    expect(combineInstructions("name the PR", "anything for\nRodrigo?")).toBe("name the PR anything for Rodrigo?");
+  });
+
+  it("drops blank parts", () => {
+    expect(combineInstructions("", "  ")).toBe("");
+    expect(combineInstructions(" ", "only this")).toBe("only this");
+  });
+});
+
+describe("ask files", () => {
+  it("parses a question file name into the session id and number", () => {
+    expect(parseAskFileName(`${SESSION_UUID}-3.md`)).toEqual({ sessionId: SESSION_UUID, askNumber: 3 });
+    expect(parseAskFileName("sid-12.md")).toEqual({ sessionId: "sid", askNumber: 12 });
+  });
+
+  it("ignores reply files and anything else", () => {
+    expect(parseAskFileName(`${SESSION_UUID}-3.reply.md`)).toBeUndefined();
+    expect(parseAskFileName(`${SESSION_UUID}.md`)).toBeUndefined();
+    expect(parseAskFileName(`${SESSION_UUID}-3.md.swp`)).toBeUndefined();
+    expect(parseAskFileName("-3.md")).toBeUndefined();
+    expect(parseAskFileName("../x-1.md")).toBeUndefined();
+  });
+
+  it("puts the reply beside the question in the asks folder", () => {
+    expect(asksDir(RUN_DIR)).toBe(`${RUN_DIR}/asks`);
+    expect(askReplyFile(RUN_DIR, SESSION_UUID, 2)).toBe(`${RUN_DIR}/asks/${SESSION_UUID}-2.reply.md`);
+  });
+
+  it("writes an unreachable reply that ends with the sentinel", () => {
+    const reply = unreachableReply("sid", "terminal closed");
+    expect(reply).toBe(`Session sid is not reachable: terminal closed\n${REPLY_END_SENTINEL}\n`);
+    expect(isCompleteReply(reply)).toBe(true);
+  });
+});
+
+describe("followUpPrompt", () => {
+  it("is one line with the question, the reply path, and the sentinel last", () => {
+    const replyPath = askReplyFile(RUN_DIR, "sid", 1);
+    const prompt = followUpPrompt("Is PR 42\nwaiting on Rodrigo?", replyPath);
+    expect(prompt).not.toMatch(/[\r\n]/);
+    expect(prompt).toContain("Is PR 42 waiting on Rodrigo?");
+    expect(prompt).toContain(`only to ${replyPath}`);
+    expect(prompt).toContain("overwrite");
+    expect(prompt).toContain("Do not change any code");
+    expect(prompt.endsWith(`exactly ${REPLY_END_SENTINEL}`)).toBe(true);
+  });
+});
+
+describe("coordinator prompts", () => {
+  it("lists the run prompt, the run folder, the asked sessions, and the skipped ones", () => {
+    const prompt = coordinatorPrompt(
+      "anything waiting on Rodrigo?",
+      RUN_DIR,
+      [{ sessionId: "sid-1", title: "Login\nfix", replyPath: `${RUN_DIR}/sid-1.md` }],
+      [{ sessionId: "sid-2", title: "Docs", reason: "terminal closed" }],
+    );
+    expect(prompt).not.toMatch(/[\r\n]/);
+    expect(prompt).toContain("Tory's prompt for this run: anything waiting on Rodrigo?");
+    expect(prompt).toContain(`Run folder: ${RUN_DIR}`);
+    expect(prompt).toContain(`Login fix (session sid-1, reply ${RUN_DIR}/sid-1.md)`);
+    expect(prompt).toContain("Docs (session sid-2): terminal closed");
+  });
+
+  it("says none for an empty run prompt and no skipped sessions", () => {
+    const prompt = coordinatorPrompt("  ", RUN_DIR, [], []);
+    expect(prompt).toContain("Tory's prompt for this run: none.");
+    expect(prompt).toContain("Sessions skipped: none.");
+  });
+
+  it("tells the coordinator about the reply files, the ask channel, and no code changes", () => {
+    expect(COORDINATOR_SYSTEM_PROMPT).toContain(REPLY_END_SENTINEL);
+    expect(COORDINATOR_SYSTEM_PROMPT).toContain("<runDir>/asks/<sessionId>-<n>.md");
+    expect(COORDINATOR_SYSTEM_PROMPT).toContain("<runDir>/asks/<sessionId>-<n>.reply.md");
+    expect(COORDINATOR_SYSTEM_PROMPT).toContain("Do not change any code.");
   });
 });

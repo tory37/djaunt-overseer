@@ -7,9 +7,12 @@ import { SessionMeta } from "./indexer";
 import { createClaudeRunner } from "./claudeRunner";
 import { LiveSessionMonitor, resolveClaudeBinary } from "./liveSessions";
 import { tildePath } from "./paths";
-import { Registry } from "./registry";
+import { Registry, UserGroup, userGroupRef } from "./registry";
 import { findSessionTerminal, sendSlashCommand, startNewSession } from "./terminals";
+import { startAskChannel } from "./whereAreWeAsks";
 import {
+  COORDINATOR_GROUP_NAME,
+  COORDINATOR_SYSTEM_PROMPT,
   DEFAULT_MERGE_MODEL,
   MERGE_TIMEOUT_MS,
   MergeOutcome,
@@ -24,6 +27,8 @@ import {
   buildBrief,
   buildMergeInput,
   checkTarget,
+  combineInstructions,
+  coordinatorPrompt,
   discussPrompt,
   discussSessionName,
   isCompleteReply,
@@ -82,6 +87,8 @@ const LOG_PREFIX = "[whereAreWe]";
 const PROGRESS_TITLE = "Where are we";
 const DISCUSS_ACTION = "Discuss";
 const MERGE_PROGRESS_TITLE = "Where are we: writing the brief…";
+const RUN_PROMPT_TEXT = "Anything to add for every session? Optional.";
+const RUN_PROMPT_PLACEHOLDER = "anything waiting on Rodrigo to review?";
 
 function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | undefined)?.code;
@@ -260,6 +267,7 @@ export function registerWhereAreWeCommands(dependencies: WhereAreWeDependencies)
   const { claudeHome, registry, liveMonitor, sessionTitle, log } = dependencies;
   let isRunning = false;
   let endActiveRun: ((reason: RunEndReason) => void) | undefined;
+  const askChannels = new Set<vscode.Disposable>();
 
   const setRunningContext = (running: boolean): void => {
     void vscode.commands.executeCommand("setContext", RUNNING_CONTEXT_KEY, running);
@@ -326,6 +334,53 @@ export function registerWhereAreWeCommands(dependencies: WhereAreWeDependencies)
     startNewSession(sessionId, sessionName, cwd, log, discussPrompt(briefFile(claudeHome, runId), briefRunDir(claudeHome, runId)));
   };
 
+  const coordinatorGroup = async (): Promise<UserGroup> =>
+    registry.userGroupsInActiveWorkspace().find((group) => group.name === COORDINATOR_GROUP_NAME) ??
+    (await registry.createGroup(COORDINATOR_GROUP_NAME, randomUUID()));
+
+  // The ask channel is optional: without it the coordinator still reads the replies, so its failure is only logged.
+  const openAskChannel = async (runDir: string, coordinatorTerminal: vscode.Terminal): Promise<void> => {
+    try {
+      askChannels.add(await startAskChannel({ runDir, coordinatorTerminal, liveMonitor, log }));
+    } catch (error) {
+      log.appendLine(`${LOG_PREFIX} can't open the ask channel for ${runDir}: ${String(error)}`);
+    }
+  };
+
+  // Resolves to whether the coordinator started, so a failed launch falls back to the headless merge.
+  // No repo applies to a run across sessions, so the coordinator starts in the home folder.
+  const launchCoordinator = async (
+    runId: string,
+    runDir: string,
+    runPrompt: string,
+    targets: WhereAreWeTargets,
+    skipped: SkippedSession[],
+  ): Promise<boolean> => {
+    let coordinatorTerminal: vscode.Terminal;
+    try {
+      const sessionId = randomUUID();
+      const cwd = os.homedir();
+      const sessionName = discussSessionName(runId);
+      const roster = [...targets.sendNow, ...targets.sendWhenIdle].map((session) => ({
+        sessionId: session.sessionId,
+        title: sessionTitle(session.sessionId),
+        replyPath: replyFile(claudeHome, runId, session.sessionId),
+      }));
+      await registry.addPendingSession(sessionId, { cwd, createdAtMs: Date.now() });
+      await registry.setLabel(sessionId, sessionName);
+      await registry.pin(sessionId);
+      await registry.assign([sessionId], userGroupRef((await coordinatorGroup()).id));
+      const firstPrompt = coordinatorPrompt(runPrompt, runDir, roster, skipped);
+      coordinatorTerminal = startNewSession(sessionId, sessionName, cwd, log, firstPrompt, COORDINATOR_SYSTEM_PROMPT);
+      log.appendLine(`${LOG_PREFIX} run ${runId}: coordinator ${sessionId} started`);
+    } catch (error) {
+      log.appendLine(`${LOG_PREFIX} can't start the coordinator for run ${runId}: ${String(error)}`);
+      return false;
+    }
+    await openAskChannel(runDir, coordinatorTerminal);
+    return true;
+  };
+
   const discussLatestBrief = async (): Promise<void> => {
     let briefFileNames: string[];
     try {
@@ -362,6 +417,14 @@ export function registerWhereAreWeCommands(dependencies: WhereAreWeDependencies)
     }
     isRunning = true;
     try {
+      const runPrompt = await vscode.window.showInputBox({
+        prompt: RUN_PROMPT_TEXT,
+        placeHolder: RUN_PROMPT_PLACEHOLDER,
+        ignoreFocusOut: true,
+      });
+      if (runPrompt === undefined) {
+        return;
+      }
       const { targets, skipped } = await pickRunTargets();
       if (targets.sendNow.length + targets.sendWhenIdle.length === 0) {
         void vscode.window.showInformationMessage(`Overseer: ${noTargetsMessage(skipped)}`);
@@ -377,6 +440,7 @@ export function registerWhereAreWeCommands(dependencies: WhereAreWeDependencies)
         return;
       }
       const settings = vscode.workspace.getConfiguration("overseer.whereAreWe");
+      const isCoordinatorRunning = await launchCoordinator(runId, runDir, runPrompt, targets, skipped);
       setRunningContext(true);
       log.appendLine(`${LOG_PREFIX} run ${runId}: ${targets.sendNow.length} idle, ${targets.sendWhenIdle.length} busy, ${skipped.length} skipped`);
       const collected = await runWithProgress({
@@ -384,10 +448,10 @@ export function registerWhereAreWeCommands(dependencies: WhereAreWeDependencies)
         runDir,
         targets,
         skipped,
-        extraInstructions: settings.get<string>("instructions") ?? "",
+        extraInstructions: combineInstructions(settings.get<string>("instructions") ?? "", runPrompt),
         timeoutMs: whereAreWeTimeoutMs(settings.get<unknown>("timeoutMinutes")),
       });
-      if (collected.endReason !== "cancelled") {
+      if (collected.endReason !== "cancelled" && !isCoordinatorRunning) {
         await mergeAndShowBrief(collected, settings.get<string>("model", DEFAULT_MERGE_MODEL) || DEFAULT_MERGE_MODEL);
       }
     } catch (error) {
@@ -413,5 +477,6 @@ export function registerWhereAreWeCommands(dependencies: WhereAreWeDependencies)
     vscode.commands.registerCommand("overseer.whereAreWe.mergeNow", mergeNow),
     vscode.commands.registerCommand("overseer.whereAreWe.discuss", discussLatestBrief),
     { dispose: () => endActiveRun?.("cancelled") },
+    { dispose: () => askChannels.forEach((askChannel) => askChannel.dispose()) },
   ];
 }

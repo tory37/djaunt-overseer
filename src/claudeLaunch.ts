@@ -9,8 +9,14 @@ export function launchShellCommand(claudeCommand: string): string {
   return `exec ${claudeCommand}`;
 }
 
-export function newSessionCommand(sessionId: string, sessionName: string | undefined, initialPrompt: string | undefined): string {
+export function newSessionCommand(
+  sessionId: string,
+  sessionName: string | undefined,
+  initialPrompt: string | undefined,
+  appendedSystemPrompt?: string,
+): string {
   const nameArgument = sessionName === undefined ? "" : ` -n ${quoteForShell(sessionName)}`;
+  const systemPromptArgument = appendedSystemPrompt === undefined ? "" : ` --append-system-prompt ${quoteForShell(appendedSystemPrompt)}`;
   const promptArgument = initialPrompt === undefined ? "" : ` ${quoteForShell(initialPrompt)}`;
-  return `claude --session-id ${sessionId}${nameArgument}${promptArgument}`;
+  return `claude --session-id ${sessionId}${nameArgument}${systemPromptArgument}${promptArgument}`;
 }

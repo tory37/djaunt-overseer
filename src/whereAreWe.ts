@@ -10,6 +10,12 @@ const MAX_REPLY_WORDS = 120;
 const MAX_MERGE_INPUT_CHARS = 48 * 1024;
 const CLIP_MARKER = "…";
 const BRIEF_FILE_PATTERN = /^(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})\.md$/;
+const ASKS_DIR_NAME = "asks";
+const ASK_REPLY_SUFFIX = ".reply.md";
+const ASK_FILE_PATTERN = /^([0-9A-Za-z][0-9A-Za-z-]*)-(\d+)\.md$/;
+const COORDINATOR_POLL_CAP_MINUTES = 5;
+
+export const COORDINATOR_GROUP_NAME = "Where Are We";
 
 export const SKIP_REASON_NO_TERMINAL = "no terminal in this window";
 export const SKIP_REASON_BACKGROUND = "background agent, no terminal to type into";
@@ -46,6 +52,17 @@ export type MergeOutcome = { stdout: string } | { error: string };
 export interface BriefResult {
   text: string;
   mergeError?: string;
+}
+
+export interface AskFile {
+  sessionId: string;
+  askNumber: number;
+}
+
+export interface CoordinatorRosterEntry {
+  sessionId: string;
+  title: string;
+  replyPath: string;
 }
 
 export interface SkippedSession {
@@ -113,9 +130,18 @@ export function latestBriefRunId(fileNames: string[]): string | undefined {
   return runIds.sort().at(-1);
 }
 
+// The setting applies to every run, so it comes before the text typed for this run.
+export function combineInstructions(settingText: string, runText: string): string {
+  return [settingText, runText]
+    .map(singleLine)
+    .filter((text) => text !== "")
+    .join(" ");
+}
+
+// The sentinel sentence stays last, so a session reads it as the final rule.
 export function whereAreWePrompt(replyPath: string, extraInstructions?: string): string {
   const extraText = singleLine(extraInstructions ?? "");
-  const extraSentence = extraText === "" ? "" : ` Extra instructions: ${extraText}`;
+  const extraSentence = extraText === "" ? "" : `Extra instructions: ${extraText} `;
   return singleLine(
     `Where are we? Write your answer only to ${replyPath}, and overwrite that file if it exists. ` +
       "Do not run any other tool and do not change any code. " +
@@ -123,7 +149,67 @@ export function whereAreWePrompt(replyPath: string, extraInstructions?: string):
       "Goal (one line); Done (finished work, with PR, ticket, and branch); " +
       "State (where it stands now: uncommitted work, failing tests); Next (the next concrete step); " +
       'Needs Tory (decisions, approvals, and blockers, or "none"). ' +
-      `The last line must be exactly ${REPLY_END_SENTINEL}${extraSentence}`,
+      `${extraSentence}The last line must be exactly ${REPLY_END_SENTINEL}`,
+  );
+}
+
+export function asksDir(runDir: string): string {
+  return path.join(runDir, ASKS_DIR_NAME);
+}
+
+export function askReplyFile(runDir: string, sessionId: string, askNumber: number): string {
+  return path.join(asksDir(runDir), `${sessionId}-${askNumber}${ASK_REPLY_SUFFIX}`);
+}
+
+export function parseAskFileName(fileName: string): AskFile | undefined {
+  const match = ASK_FILE_PATTERN.exec(fileName);
+  if (match === null) {
+    return undefined;
+  }
+  return { sessionId: match[1], askNumber: Number(match[2]) };
+}
+
+export function followUpPrompt(question: string, replyPath: string): string {
+  return singleLine(
+    `Follow-up from the Where Are We coordinator: ${singleLine(question)} ` +
+      `Write your answer only to ${replyPath}, and overwrite that file if it exists. ` +
+      "Do not change any code. Do not run any other tool unless the question asks you to read something. " +
+      `The last line must be exactly ${REPLY_END_SENTINEL}`,
+  );
+}
+
+export function unreachableReply(sessionId: string, reason: string): string {
+  return `Session ${sessionId} is not reachable: ${reason}\n${REPLY_END_SENTINEL}\n`;
+}
+
+export const COORDINATOR_SYSTEM_PROMPT = [
+  "You coordinate Tory's live Claude Code sessions for a Where Are We run.",
+  `Each asked session writes its status reply to <runDir>/<sessionId>.md, and a complete reply ends with the line ${REPLY_END_SENTINEL}.`,
+  `Wait for the replies with the Monitor tool or a background until-loop, never a foreground sleep, for at most ${COORDINATOR_POLL_CAP_MINUTES} minutes, until all are in or Tory says go.`,
+  "Then read them against Tory's prompt for this run and answer Tory tersely.",
+  "Do not change any code.",
+  `To ask one session a follow-up, write the question to <runDir>/${ASKS_DIR_NAME}/<sessionId>-<n>.md, where n starts at 1 and goes up by one per session.`,
+  `Then wait the same way for <runDir>/${ASKS_DIR_NAME}/<sessionId>-<n>${ASK_REPLY_SUFFIX} until it ends with ${REPLY_END_SENTINEL}.`,
+  "Overseer types each question into its session once, when that session is idle.",
+  "When Tory says an answer is missing something, ask that session a follow-up on your own.",
+].join(" ");
+
+export function coordinatorPrompt(
+  runPrompt: string,
+  runDir: string,
+  roster: CoordinatorRosterEntry[],
+  skipped: SkippedSession[],
+): string {
+  const promptText = singleLine(runPrompt);
+  const rosterText = roster.map((entry) => `${singleLine(entry.title)} (session ${entry.sessionId}, reply ${entry.replyPath})`).join("; ");
+  const skippedText =
+    skipped.length === 0
+      ? "none"
+      : skipped.map((session) => `${singleLine(session.title)} (session ${session.sessionId}): ${session.reason}`).join("; ");
+  return singleLine(
+    `Where Are We run. Tory's prompt for this run: ${promptText === "" ? "none" : promptText}. ` +
+      `Run folder: ${runDir}. Sessions asked: ${rosterText === "" ? "none" : rosterText}. ` +
+      `Sessions skipped: ${skippedText}. Wait for the replies, then answer Tory.`,
   );
 }
 
